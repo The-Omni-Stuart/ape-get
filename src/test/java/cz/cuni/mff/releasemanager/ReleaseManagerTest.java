@@ -16,6 +16,7 @@ import org.mockito.InOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -29,6 +30,7 @@ import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
+import cz.cuni.mff.releasemanager.state.BackupManager;
 import cz.cuni.mff.releasemanager.state.ConfigStore;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.GrmIndex;
@@ -51,6 +53,7 @@ class ReleaseManagerTest {
     private PlatformHandler mockPlatformHandler;
     private AssetVerifier mockVerifier;
     private StateStore mockStateStore;
+    private BackupManager mockBackupManager;
     private AppPaths mockPaths;
     private Prompt mockPrompt;
 
@@ -63,6 +66,7 @@ class ReleaseManagerTest {
         mockPlatformHandler = mock(PlatformHandler.class);
         mockVerifier = mock(AssetVerifier.class);
         mockStateStore = mock(StateStore.class);
+        mockBackupManager = mock(BackupManager.class);
         mockPrompt = mock(Prompt.class);
         mockPaths = new AppPaths(
             Path.of(System.getProperty("java.io.tmpdir"), "grm-test-state"));
@@ -92,7 +96,12 @@ class ReleaseManagerTest {
         promptField.setAccessible(true);
         promptField.set(releaseManager, mockPrompt);
 
+        Field backupField = ReleaseManager.class.getDeclaredField("backupManager");
+        backupField.setAccessible(true);
+        backupField.set(releaseManager, mockBackupManager);
+
         when(mockStateStore.paths()).thenReturn(mockPaths);
+        when(mockBackupManager.createAndPrune(any(), anyInt())).thenReturn(List.of());
         when(mockStateStore.loadConfig()).thenReturn(
             new ConfigStore.LoadResult(GrmConfig.defaults(), false, null));
         when(mockStateStore.scanManifests()).thenReturn(List.of());
@@ -254,6 +263,7 @@ class ReleaseManagerTest {
         verify(mockGithubClient).downloadAsset(newAsset);
         verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
         verify(mockPlatformHandler, never()).uninstall(any());
+        verify(mockBackupManager).createAndPrune(any(), anyInt());
         ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
         verify(mockStateStore).saveManifest(captor.capture());
         verify(mockStateStore).rebuildIndex();
@@ -567,12 +577,78 @@ class ReleaseManagerTest {
         verify(mockStateStore, atLeastOnce()).scanManifests();
     }
 
+    private static AppManifest.Backup backup(String version) {
+        return new AppManifest.Backup(
+            version,
+            "/backup/" + version,
+            "/backup/" + version + "/artifact",
+            "/tmp/live",
+            Instant.parse("2026-01-01T00:00:00Z"),
+            "appimage",
+            "/backup/" + version + "/grm_backup_manifest.json");
+    }
+
     private AppPaths tempPaths() throws IOException {
         AppPaths paths = new AppPaths(tempDir);
         when(mockStateStore.paths()).thenReturn(paths);
         Files.createDirectories(paths.root());
         Files.createFile(paths.configFile());
         return paths;
+    }
+
+    @Test
+    void testExecuteRollbackRestoresLatestBackup() throws Exception {
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest current = manifest(
+            "user/example", "http://new", "example.exe", "/tmp/live");
+        AppManifest restored = manifest(
+            "user/example", "http://old", "example.exe", "/tmp/live");
+        AppManifest.Backup backup = backup("0.9.0");
+        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(current));
+        when(mockBackupManager.latest(current)).thenReturn(Optional.of(backup));
+        when(mockBackupManager.readManifest(backup)).thenReturn(restored);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        assertEquals(0, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockBackupManager).restore(backup, Path.of("/tmp/live"));
+        verify(mockStateStore).saveManifest(any());
+        verify(mockStateStore).rebuildIndex();
+    }
+
+    @Test
+    void testExecuteRollbackRefusesWithoutBackups() throws Exception {
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest current = manifest(
+            "user/example", "http://new", "example.exe", "/tmp/live");
+        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(current));
+        when(mockBackupManager.latest(current)).thenReturn(Optional.empty());
+
+        assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockBackupManager, never()).restore(any(), any());
+    }
+
+    @Test
+    void testExecuteRollbackCanBeDeclined() throws Exception {
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest current = manifest(
+            "user/example", "http://new", "example.exe", "/tmp/live");
+        AppManifest.Backup backup = backup("0.9.0");
+        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(current));
+        when(mockBackupManager.latest(current)).thenReturn(Optional.of(backup));
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+
+        assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockBackupManager, never()).restore(any(), any());
+        verify(mockStateStore, never()).saveManifest(any());
     }
 
     @Test

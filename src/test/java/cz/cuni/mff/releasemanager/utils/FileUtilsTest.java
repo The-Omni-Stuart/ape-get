@@ -65,6 +65,21 @@ public class FileUtilsTest {
     }
 
     @Test
+    public void testCopyRecursively() throws IOException {
+        Path source = Files.createTempDirectory(TEST_DIR);
+        Path target = source.resolveSibling("copy-" + System.nanoTime());
+        Path nested = Files.createDirectories(source.resolve("a/b"));
+        Files.writeString(nested.resolve("file.txt"), "data");
+
+        FileUtils.copyRecursively(source, target);
+
+        assertEquals("data", Files.readString(target.resolve("a/b/file.txt")));
+
+        FileUtils.deleteRecursively(source);
+        FileUtils.deleteRecursively(target);
+    }
+
+    @Test
     public void testDeleteRecursively() throws IOException {
         Path dir = Files.createTempDirectory(TEST_DIR);
         Path nested = Files.createDirectories(dir.resolve("a/b"));

@@ -231,6 +231,34 @@ public class FileUtils {
     }
 
     /**
+     * Copies a directory tree without following symbolic links.
+     * @param source source directory
+     * @param target target directory
+     * @throws IOException if any entry cannot be copied
+     */
+    public static void copyRecursively(Path source, Path target) throws IOException {
+        Files.walkFileTree(source, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(
+                Path dir, BasicFileAttributes attrs) throws IOException {
+                Files.createDirectories(target.resolve(source.relativize(dir)));
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(
+                Path file, BasicFileAttributes attrs) throws IOException {
+                Files.copy(
+                    file,
+                    target.resolve(source.relativize(file)),
+                    StandardCopyOption.COPY_ATTRIBUTES,
+                    LinkOption.NOFOLLOW_LINKS);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    /**
      * Deletes a file or directory tree without following symbolic links.
      * @param path Path to delete
      * @throws IOException if any entry cannot be deleted

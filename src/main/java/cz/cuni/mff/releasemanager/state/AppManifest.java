@@ -73,7 +73,10 @@ public record AppManifest(
     public record Backup(
         String version,
         String path,
+        String artifact,
+        @JsonProperty("install_path") String installPath,
         @JsonProperty("created_at") Instant createdAt,
-        String kind
+        String kind,
+        String manifest
     ) {}
 }

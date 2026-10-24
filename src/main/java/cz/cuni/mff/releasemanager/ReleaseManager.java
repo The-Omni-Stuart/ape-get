@@ -19,6 +19,7 @@ import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
+import cz.cuni.mff.releasemanager.state.BackupManager;
 import cz.cuni.mff.releasemanager.state.ConfigStore;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.GrmIndex;
@@ -57,6 +58,7 @@ public class ReleaseManager {
     private final PlatformHandler platformHandler;
     private final AssetVerifier verifier;
     private final StateStore stateStore;
+    private final BackupManager backupManager;
     private final Prompt prompt;
     private GrmConfig toolConfig = GrmConfig.defaults();
 
@@ -66,6 +68,7 @@ public class ReleaseManager {
         platformHandler = Platform.getPlatformHandler();
         verifier = new AssetVerifier(githubClient);
         stateStore = new StateStore(AppPaths.forCurrentPlatform());
+        backupManager = new BackupManager(stateStore.paths());
         prompt = new ConsolePrompt();
     }
     /**
@@ -90,6 +93,7 @@ public class ReleaseManager {
             || command == Command.UPDATE
             || command == Command.UNINSTALL
             || command == Command.LIST
+            || command == Command.ROLLBACK
             || command == Command.ADOPT;
         if (!stateful) {
             return runCommand(command);
@@ -114,6 +118,7 @@ public class ReleaseManager {
             case UNINSTALL -> uninstall(command) ? 0 : 1;
             case UPDATE -> update(command) ? 0 : 1;
             case LIST -> list() ? 0 : 1;
+            case ROLLBACK -> rollback(command) ? 0 : 1;
             case DOCTOR -> doctor() ? 0 : 1;
             case ADOPT -> adopt(command) ? 0 : 1;
             case HELP -> {
@@ -562,6 +567,22 @@ public class ReleaseManager {
         if (!isAllowed(verification, downloadedAsset)) {
             return false;
         }
+
+        List<AppManifest.Backup> backups = previous.backups() == null
+            ? List.of()
+            : previous.backups();
+        if (toolConfig.backupCount() > 0
+            && Platform.detectPlatform().getOS() != Platform.OS.WINDOWS) {
+            try {
+                backups = backupManager.createAndPrune(
+                    previous, toolConfig.backupCount());
+            } catch (IOException e) {
+                System.err.println("Failed to create backup; update aborted: " + e.getMessage());
+                githubClient.discardAsset(downloadedAsset);
+                return false;
+            }
+        }
+
         Path installedAsset = githubClient.installDownloadedAsset(
             downloadedAsset, command.argument);
         if (installedAsset == null) {
@@ -576,7 +597,7 @@ public class ReleaseManager {
             installedAsset,
             verification,
             previous.installedAt(),
-            previous.backups() == null ? List.of() : previous.backups());
+            backups);
         if (!recordManifest(updated)) {
             return false;
         }
@@ -603,6 +624,80 @@ public class ReleaseManager {
             String version = manifest.version() == null ? "unknown" : manifest.version();
             System.out.println(manifest.repo() + " " + version);
         }
+        return true;
+    }
+
+    private boolean rollback(Command command) {
+        if (Platform.detectPlatform().getOS() == Platform.OS.WINDOWS) {
+            System.err.println("rollback is not supported for Windows installers yet.");
+            return false;
+        }
+        if (command.argument == null || command.argument.split("/").length != 2) {
+            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+            return false;
+        }
+
+        AppManifest current;
+        try {
+            var found = stateStore.findManifest(command.argument);
+            if (found.isEmpty()) {
+                System.err.println("Release " + command.argument + " is not found.");
+                return false;
+            }
+            current = found.get();
+        } catch (IOException e) {
+            System.err.println("Failed to load application state: " + e.getMessage());
+            return false;
+        }
+
+        var latestBackup = backupManager.latest(current);
+        if (latestBackup.isEmpty()) {
+            System.err.println("No backups are available for " + command.argument + ".");
+            return false;
+        }
+        AppManifest.Backup backup = latestBackup.get();
+
+        String message = "Roll back " + current.repo() + " from "
+            + (current.version() == null ? "unknown" : current.version())
+            + " to " + (backup.version() == null ? "unknown" : backup.version())
+            + "?\nThis will replace:\n  " + current.install().path()
+            + "\nwith the backup at:\n  " + backup.artifact();
+        if (!confirm(message)) {
+            System.err.println("Rollback declined.");
+            return false;
+        }
+
+        AppManifest restored;
+        try {
+            restored = backupManager.readManifest(backup);
+            if (restored == null || !restored.isValid()) {
+                System.err.println("Backup manifest is invalid.");
+                return false;
+            }
+            backupManager.restore(backup, Path.of(current.install().path()));
+        } catch (IOException e) {
+            System.err.println("Rollback failed: " + e.getMessage());
+            return false;
+        }
+
+        AppManifest rolledBack = new AppManifest(
+            restored.kind(),
+            restored.schemaVersion(),
+            restored.provider(),
+            restored.repo(),
+            restored.version(),
+            restored.releaseId(),
+            restored.asset(),
+            restored.install(),
+            restored.verification(),
+            current.backups() == null ? List.of() : current.backups(),
+            restored.installedAt(),
+            Instant.now());
+        if (!recordManifest(rolledBack)) {
+            return false;
+        }
+        System.out.println("Rolled back " + command.argument + " to "
+            + (backup.version() == null ? "unknown" : backup.version()) + ".");
         return true;
     }
 
@@ -785,6 +880,7 @@ public class ReleaseManager {
         out.println("  uninstall [name] - uninstall the release by name");
         out.println("  update [name] - update the installed release by name");
         out.println("  list - list all installed releases");
+        out.println("  rollback [name] - restore the latest backup");
         out.println("  doctor - diagnose state and orphaned installs");
         out.println("  adopt [name] - adopt an existing Linux install");
         out.println("  help - display this help message");
