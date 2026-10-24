@@ -27,8 +27,17 @@ public class CmdParser {
             return defaultCommand;
         }
         Command command = Command.fromName(args[0]).orElseGet(() -> defaultCommand);
-        if (command.requiresArgument()) {
+        if (command == Command.SEARCH) {
             if (args.length < 2) {
+                defaultCommand.argument = null;
+                return defaultCommand;
+            }
+            command.argument = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+            return command;
+        }
+        if (command.requiresArgument()) {
+            if (args.length != 2) {
+                defaultCommand.argument = null;
                 return defaultCommand;
             }
             command.argument = args[1];

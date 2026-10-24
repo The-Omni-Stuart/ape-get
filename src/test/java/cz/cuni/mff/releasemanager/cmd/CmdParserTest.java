@@ -60,4 +60,28 @@ class CmdParserTest {
             assertEquals(Command.HELP, result, command);
         }
     }
+
+    @Test
+    void testParseSearchJoinsMultipleWords() {
+        Command result = cmdParser.parse(new String[] {"search", "two", "words"});
+
+        assertEquals(Command.SEARCH, result);
+        assertEquals("two words", result.argument);
+    }
+
+    @Test
+    void testParseSearchKeepsQuotedPhrase() {
+        Command result = cmdParser.parse(new String[] {"search", "two words"});
+
+        assertEquals(Command.SEARCH, result);
+        assertEquals("two words", result.argument);
+    }
+
+    @Test
+    void testParseInstallRejectsExtraArguments() {
+        for (String command : new String[] {"install", "uninstall", "update"}) {
+            Command result = cmdParser.parse(new String[] {command, "owner/repo", "extra"});
+            assertEquals(Command.HELP, result, command);
+        }
+    }
 }

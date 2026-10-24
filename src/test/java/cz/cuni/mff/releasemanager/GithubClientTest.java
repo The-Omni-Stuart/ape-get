@@ -11,9 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
@@ -99,6 +101,21 @@ class GithubClientTest {
     void getLatestReleaseAssets_returnsEmptyForInvalidRepoName() {
         List<Asset> assets = githubClient.getLatestReleaseAssets("invalidRepoName");
         assertTrue(assets.isEmpty());
+    }
+
+    @Test
+    void searchRepoByName_urlEncodesQuery() throws Exception {
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("{\"items\":[]}");
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+                .thenReturn(mockResponse);
+
+        githubClient.searchRepoByName("two words & more");
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(requestCaptor.capture(), eq(HttpResponse.BodyHandlers.ofString()));
+        assertEquals("q=two+words+%26+more&per_page=5", requestCaptor.getValue().uri().getRawQuery());
     }
 
 }

@@ -4,10 +4,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.ConnectException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
@@ -56,7 +58,8 @@ public class GithubClient {
      * @return An Optional containing the SearchResult if found, otherwise empty.
      */
     public Optional<SearchResult> searchRepoByName(String name) {
-        String url = API_URL + "/search/repositories?q=" + name + "&per_page=" + RESULT_COUNT;
+        String query = URLEncoder.encode(name, StandardCharsets.UTF_8);
+        String url = API_URL + "/search/repositories?q=" + query + "&per_page=" + RESULT_COUNT;
         try {
             var jsonResponse = request(URI.create(url));
             if (!jsonResponse.isPresent()) {
