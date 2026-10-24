@@ -16,6 +16,8 @@ public enum Command {
     UNINSTALL("uninstall", 1),
     UPDATE("update", 1),
     LIST("list", 0),
+    DOCTOR("doctor", 0),
+    ADOPT("adopt", 1),
     HELP("help", 0),
     USAGE("", 0);
 

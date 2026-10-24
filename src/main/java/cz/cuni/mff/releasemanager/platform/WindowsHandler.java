@@ -219,4 +219,10 @@ public final class WindowsHandler extends PlatformHandler {
         return new String[] {".msi", ".exe"};
     }
 
+    @Override
+    public Path getInstallRoot() {
+        String programFiles = System.getenv("ProgramFiles");
+        return programFiles == null ? null : Paths.get(programFiles);
+    }
+
 }

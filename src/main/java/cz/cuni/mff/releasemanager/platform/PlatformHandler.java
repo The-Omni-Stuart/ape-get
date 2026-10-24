@@ -44,6 +44,11 @@ public abstract class PlatformHandler {
     public abstract String[] getFormats();
 
     /**
+     * @return Root directory where this platform installs applications.
+     */
+    public abstract Path getInstallRoot();
+
+    /**
      * Checks whether a path is strictly inside a root directory.
      * @param path path to check
      * @param root allowed root directory

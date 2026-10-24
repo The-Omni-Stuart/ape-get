@@ -182,4 +182,9 @@ public final class MacHandler extends PlatformHandler {
         return new String[] { ".dmg" };
     }
 
+    @Override
+    public Path getInstallRoot() {
+        return Paths.get("/Applications");
+    }
+
 }

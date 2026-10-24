@@ -2,6 +2,7 @@ package cz.cuni.mff.releasemanager;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.HashSet;
@@ -88,7 +89,8 @@ public class ReleaseManager {
         boolean stateful = command == Command.INSTALL
             || command == Command.UPDATE
             || command == Command.UNINSTALL
-            || command == Command.LIST;
+            || command == Command.LIST
+            || command == Command.ADOPT;
         if (!stateful) {
             return runCommand(command);
         }
@@ -112,6 +114,8 @@ public class ReleaseManager {
             case UNINSTALL -> uninstall(command) ? 0 : 1;
             case UPDATE -> update(command) ? 0 : 1;
             case LIST -> list() ? 0 : 1;
+            case DOCTOR -> doctor() ? 0 : 1;
+            case ADOPT -> adopt(command) ? 0 : 1;
             case HELP -> {
                 help();
                 yield 0;
@@ -407,7 +411,11 @@ public class ReleaseManager {
     }
 
     private static String installKind(Asset asset) {
-        String name = asset.name().toLowerCase(Locale.ROOT);
+        return installKind(asset.name());
+    }
+
+    private static String installKind(String fileName) {
+        String name = fileName.toLowerCase(Locale.ROOT);
         if (name.endsWith(".appimage")) {
             return "appimage";
         }
@@ -598,6 +606,157 @@ public class ReleaseManager {
         return true;
     }
 
+    private boolean doctor() {
+        System.out.println("State root: " + stateStore.paths().root());
+        System.out.println("Config: " + stateStore.paths().configFile());
+        System.out.println("Index: " + stateStore.paths().indexFile());
+
+        boolean healthy = true;
+        if (!Files.exists(stateStore.paths().configFile())) {
+            System.out.println("Config: missing");
+            healthy = false;
+        }
+
+        List<AppManifest> manifests;
+        try {
+            manifests = stateStore.scanManifests();
+        } catch (IOException e) {
+            System.err.println("Failed to read manifests: " + e.getMessage());
+            return false;
+        }
+        System.out.println("Manifests: " + manifests.size());
+
+        Optional<GrmIndex> index;
+        try {
+            index = stateStore.loadIndex();
+        } catch (IOException e) {
+            System.err.println("Failed to read index: " + e.getMessage());
+            index = Optional.empty();
+            healthy = false;
+        }
+        if (index.isEmpty()) {
+            System.out.println("Index: missing or corrupt (run a stateful command to rebuild)");
+            healthy = false;
+        } else {
+            for (StateStore.RecoveryIssue issue
+                : stateStore.findRecoveryIssues(index.get(), manifests)) {
+                System.out.println("Recovery: " + issue.kind() + " " + issue.entry().repo());
+                healthy = false;
+            }
+        }
+
+        for (AppManifest manifest : manifests) {
+            String installPath = manifest.install().path();
+            if (installPath == null || !Files.exists(Path.of(installPath))) {
+                System.out.println("Missing live app: " + manifest.repo() + " -> " + installPath);
+                healthy = false;
+            }
+        }
+
+        if (Platform.detectPlatform().getOS() == Platform.OS.LINUX) {
+            healthy &= scanOrphans();
+        }
+        return healthy;
+    }
+
+    private boolean scanOrphans() {
+        Path liveRoot = platformHandler.getInstallRoot();
+        if (liveRoot == null || !Files.isDirectory(liveRoot)) {
+            return true;
+        }
+        boolean healthy = true;
+        try (var files = Files.list(liveRoot)) {
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                String repo = repoFromInstallFile(file);
+                if (repo == null || stateStore.findManifest(repo).isPresent()) {
+                    continue;
+                }
+                System.out.println("Orphan candidate: " + file + " (repo: " + repo + ")");
+                healthy = false;
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to scan " + liveRoot + ": " + e.getMessage());
+            return false;
+        }
+        return healthy;
+    }
+
+    private static String repoFromInstallFile(Path file) {
+        String name = file.getFileName().toString();
+        int separator = name.indexOf("__");
+        if (separator <= 0 || separator + 2 >= name.length()) {
+            return null;
+        }
+        return name.substring(0, separator) + "/" + name.substring(separator + 2);
+    }
+
+    private boolean adopt(Command command) {
+        if (Platform.detectPlatform().getOS() != Platform.OS.LINUX) {
+            System.err.println("adopt is currently supported on Linux only.");
+            return false;
+        }
+        if (command.argument == null || command.argument.split("/").length != 2) {
+            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+            return false;
+        }
+        Path liveRoot = platformHandler.getInstallRoot();
+        if (liveRoot == null) {
+            System.err.println("Cannot determine the install root.");
+            return false;
+        }
+        Path live = liveRoot.resolve(AppPaths.repoDirectoryName(command.argument));
+        if (!Files.isRegularFile(live)) {
+            System.err.println("No installed file found at " + live + ".");
+            return false;
+        }
+        try {
+            if (stateStore.findManifest(command.argument).isPresent()) {
+                System.err.println("Release " + command.argument + " is already tracked.");
+                return false;
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to read application state: " + e.getMessage());
+            return false;
+        }
+
+        String message = "Adopt " + live + " as " + command.argument
+            + "?\nVersion and checksum are unknown.";
+        if (!confirm(message)) {
+            System.err.println("Adoption declined.");
+            return false;
+        }
+
+        try {
+            String name = live.getFileName().toString();
+            AppManifest manifest = new AppManifest(
+                AppManifest.KIND,
+                AppManifest.SCHEMA_VERSION,
+                "github",
+                command.argument,
+                null,
+                null,
+                new AppManifest.Asset(
+                    name, live.toUri().toString(), Files.size(live), null),
+                new AppManifest.Install(
+                    installKind(name),
+                    live.toString(),
+                    stateStore.paths().appDir("github", command.argument).toString(),
+                    new AppManifest.Uninstall(live.toString(), List.of(), null)),
+                new AppManifest.Verification("unknown", "none", null, null, null),
+                List.of(),
+                Files.getLastModifiedTime(live).toInstant(),
+                Instant.now());
+            if (!recordManifest(manifest)) {
+                return false;
+            }
+            System.out.println("Adopted " + command.argument + " at " + live + ".");
+            return true;
+        } catch (IOException e) {
+            System.err.println("Failed to adopt " + command.argument + ": " + e.getMessage());
+            return false;
+        }
+    }
+
     /**
      * Prints usage help text.
      */
@@ -626,6 +785,8 @@ public class ReleaseManager {
         out.println("  uninstall [name] - uninstall the release by name");
         out.println("  update [name] - update the installed release by name");
         out.println("  list - list all installed releases");
+        out.println("  doctor - diagnose state and orphaned installs");
+        out.println("  adopt [name] - adopt an existing Linux install");
         out.println("  help - display this help message");
     }
 }

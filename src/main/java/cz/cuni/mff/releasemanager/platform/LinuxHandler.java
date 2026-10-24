@@ -91,5 +91,10 @@ public final class LinuxHandler extends PlatformHandler {
         return new String[] { ".appimage" };
     }
 
+    @Override
+    public Path getInstallRoot() {
+        return getInstallDir();
+    }
+
 
 }

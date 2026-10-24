@@ -2,6 +2,7 @@ package cz.cuni.mff.releasemanager;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,6 +41,9 @@ import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
 
 class ReleaseManagerTest {
+
+    @TempDir
+    Path tempDir;
 
     private ReleaseManager releaseManager;
     private CmdParser mockCmdParser;
@@ -560,6 +565,72 @@ class ReleaseManagerTest {
 
         assertEquals(0, releaseManager.execute(new String[]{"list"}));
         verify(mockStateStore, atLeastOnce()).scanManifests();
+    }
+
+    private AppPaths tempPaths() throws IOException {
+        AppPaths paths = new AppPaths(tempDir);
+        when(mockStateStore.paths()).thenReturn(paths);
+        Files.createDirectories(paths.root());
+        Files.createFile(paths.configFile());
+        return paths;
+    }
+
+    @Test
+    void testExecuteDoctorHealthy() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+
+        assertEquals(0, releaseManager.execute(new String[]{"doctor"}));
+    }
+
+    @Test
+    void testExecuteDoctorFindsOrphan() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        Files.writeString(bin.resolve("owner__repo"), "data");
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+
+        assertEquals(1, releaseManager.execute(new String[]{"doctor"}));
+    }
+
+    @Test
+    void testExecuteAdoptWritesManifest() throws Exception {
+        Command cmd = Command.ADOPT;
+        cmd.argument = "owner/repo";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        Files.writeString(bin.resolve("owner__repo"), "data");
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+        when(mockStateStore.findManifest("owner/repo")).thenReturn(Optional.empty());
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        assertEquals(0, releaseManager.execute(new String[]{"adopt", "owner/repo"}));
+
+        verify(mockStateStore).saveManifest(any());
+        verify(mockStateStore).rebuildIndex();
+    }
+
+    @Test
+    void testExecuteAdoptCanBeDeclined() throws Exception {
+        Command cmd = Command.ADOPT;
+        cmd.argument = "owner/repo";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        Files.writeString(bin.resolve("owner__repo"), "data");
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+        when(mockStateStore.findManifest("owner/repo")).thenReturn(Optional.empty());
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+
+        assertEquals(1, releaseManager.execute(new String[]{"adopt", "owner/repo"}));
+
+        verify(mockStateStore, never()).saveManifest(any());
     }
 
     @Test

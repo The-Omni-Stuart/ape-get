@@ -39,6 +39,11 @@ class PlatformHandlerTest {
         public String[] getFormats() {
             return new String[] {"zip"};
         }
+
+        @Override
+        public Path getInstallRoot() {
+            return tempDir.resolve("bin");
+        }
     }
 
     private Path tempDir;
