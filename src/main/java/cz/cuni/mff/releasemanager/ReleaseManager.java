@@ -60,6 +60,7 @@ public class ReleaseManager {
     private final StateStore stateStore;
     private final BackupManager backupManager;
     private final Prompt prompt;
+    private Platform.OS os = Platform.detectPlatform().getOS();
     private GrmConfig toolConfig = GrmConfig.defaults();
 
     private ReleaseManager() {
@@ -572,7 +573,7 @@ public class ReleaseManager {
             ? List.of()
             : previous.backups();
         if (toolConfig.backupCount() > 0
-            && Platform.detectPlatform().getOS() != Platform.OS.WINDOWS) {
+            && os != Platform.OS.WINDOWS) {
             try {
                 backups = backupManager.createAndPrune(
                     previous, toolConfig.backupCount());
@@ -628,7 +629,7 @@ public class ReleaseManager {
     }
 
     private boolean rollback(Command command) {
-        if (Platform.detectPlatform().getOS() == Platform.OS.WINDOWS) {
+        if (os == Platform.OS.WINDOWS) {
             System.err.println("rollback is not supported for Windows installers yet.");
             return false;
         }
@@ -748,7 +749,7 @@ public class ReleaseManager {
             }
         }
 
-        if (Platform.detectPlatform().getOS() == Platform.OS.LINUX) {
+        if (os == Platform.OS.LINUX) {
             healthy &= scanOrphans();
         }
         return healthy;
@@ -786,7 +787,7 @@ public class ReleaseManager {
     }
 
     private boolean adopt(Command command) {
-        if (Platform.detectPlatform().getOS() != Platform.OS.LINUX) {
+        if (os != Platform.OS.LINUX) {
             System.err.println("adopt is currently supported on Linux only.");
             return false;
         }

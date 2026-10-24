@@ -1,135 +1,134 @@
-name: Build and Test GitHub Release Manager
+name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, develop ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
-    name: Test on ${{ matrix.os }}
+  test:
+    name: Test (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
-      matrix:
-        os: [ macos-latest, ubuntu-latest ]
       fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+            arch: x86_64
+          - os: windows-latest
+            name: windows-x64
+            arch: AMD64
+          - os: macos-14
+            name: macos-arm64
+            arch: arm64
+          - os: macos-15-intel
+            name: macos-x64
+            arch: x86_64
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - name: Set Up Java 21
-        uses: actions/setup-java@v3
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '21'
+          cache: maven
 
-      - name: Cache Maven Dependencies
-        uses: actions/cache@v4
+      - name: Build and test
+        run: mvn -B package
+
+      - name: Check runner architecture
+        if: runner.os != 'Windows'
+        run: |
+          actual="$(uname -m)"
+          echo "runner=${{ matrix.name }} expected=${{ matrix.arch }} actual=$actual"
+          test "$actual" = "${{ matrix.arch }}"
+
+      - name: Check runner architecture (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $actual = $env:PROCESSOR_ARCHITECTURE
+          Write-Host "runner=${{ matrix.name }} expected=${{ matrix.arch }} actual=$actual"
+          if ($actual -ne '${{ matrix.arch }}') { throw "unexpected architecture: $actual" }
+
+      - name: Smoke test (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$(ls target/*-jar-with-dependencies.jar)"
+          smoke_home="$RUNNER_TEMP/grm-smoke-home"
+          rm -rf "$smoke_home"
+          mkdir -p "$smoke_home"
+          run() { java -Duser.home="$smoke_home" -jar "$jar" "$@"; }
+
+          run help > /dev/null
+          run list > /dev/null
+
+          set +e
+          run install > /dev/null 2>&1
+          usage_exit=$?
+          set -e
+          test "$usage_exit" -eq 2
+
+          if [ "$(uname -s)" = "Darwin" ]; then
+            state="$smoke_home/Library/Application Support/github-release-manager"
+          else
+            state="$smoke_home/.local/share/github-release-manager"
+          fi
+          test -f "$state/grm_config.json"
+          test -f "$state/grm_index.json"
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $jar = (Get-ChildItem target/*-jar-with-dependencies.jar).FullName
+          $smokeHome = Join-Path $env:RUNNER_TEMP 'grm-smoke-home'
+          $localAppData = Join-Path $env:RUNNER_TEMP 'grm-smoke-localappdata'
+          New-Item -ItemType Directory -Force $smokeHome, $localAppData | Out-Null
+          $env:LOCALAPPDATA = $localAppData
+          Write-Host "jar=$jar home=$smokeHome localappdata=$localAppData"
+
+          java "-Duser.home=$smokeHome" -jar $jar help | Out-Null
+          Write-Host "help exit=$LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "help exited with $LASTEXITCODE" }
+
+          java "-Duser.home=$smokeHome" -jar $jar list | Out-Null
+          Write-Host "list exit=$LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "list exited with $LASTEXITCODE" }
+
+          java "-Duser.home=$smokeHome" -jar $jar install 2>$null | Out-Null
+          Write-Host "install exit=$LASTEXITCODE"
+          if ($LASTEXITCODE -ne 2) { throw "install without an argument exited with $LASTEXITCODE, expected 2" }
+
+          $state = Join-Path $localAppData 'github-release-manager'
+          Write-Host "state=$state"
+          if (!(Test-Path (Join-Path $state 'grm_config.json'))) { throw "config was not created in $state" }
+          if (!(Test-Path (Join-Path $state 'grm_index.json'))) { throw "index was not created in $state" }
+
+          Write-Host "smoke test passed"
+          exit 0
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
         with:
-          path: |
-            ~/.m2/repository
-            target/
-          key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
-
-      - name: Build with Maven
-        run: mvn clean package
-
-      - name: Verify JAR Creation
-        run: |
-          ls target/
-
-      - name: Test Search Command
-        run: |
-          java -jar ./target/github-releases-manager-1.0-jar-with-dependencies.jar search keepass
-
-      - name: Test Installation Command
-        run: |
-          echo 1 | java -jar ./target/github-releases-manager-1.0-jar-with-dependencies.jar install keepassxreboot/keepassxc
-
-      - name: Test Update Command
-        run: |
-          java -jar ./target/github-releases-manager-1.0-jar-with-dependencies.jar update keepassxreboot/keepassxc
-
-      - name: Verify Installation (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          echo "Checking installed files..."
-          ls -la ~/.local/bin
-          echo "Checking config file..."
-          ls -la ~/.local/share
-
-      - name: Verify Installation (MacOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          echo "Checking installed files..."
-          ls -la /Applications
-          echo "Checking mount dir..."
-          ls -la ~/Volumes
-          echo "Checking config file..."
-          ls -la ~/Library/Application\ Support/
-
-      - name: Verify Installation (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          echo "Checking installed files..."
-          dir "$env:PROGRAMFILES"
-          echo "Checking installers dir..."
-          dir "$env:PROGRAMDATA"
-          echo "Checking config file..."
-          dir "$env:APPDATA"
-
-      - name: Test list
-        run: |
-            java -jar ./target/github-releases-manager-1.0-jar-with-dependencies.jar list
-
-      - name: Test uninstall
-        run: |
-            java -jar ./target/github-releases-manager-1.0-jar-with-dependencies.jar uninstall keepassxreboot/keepassxc
-
-      - name: Test list after uninstall
-        run: |
-            java -jar ./target/github-releases-manager-1.0-jar-with-dependencies.jar list
-
-      - name: Verify all cleaned up (MacOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          echo "Checking installed files..."
-          ls -la /Applications
-          echo "Checking mount dir..."
-          ls -la ~/Volumes
-          echo "Checking config file..."
-          ls -la ~/Library/Application\ Support/
-
-      - name:  Verify all cleaned up (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          echo "Ubuntu: Checking installed files..."
-          ls -la ~/.local/bin
-          echo "Checking config file..."
-          ls -la ~/.local/share
-
-      - name:  Verify all cleaned up (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          echo "Checking installed files..."
-          dir "$env:PROGRAMFILES"
-          echo "Checking installers dir..."
-          dir "$env:PROGRAMDATA"
-          echo "Checking config file..."
-          dir "$env:APPDATA"
-
-      - name: Test Help Command
-        run: |
-          java -jar ./target/github-releases-manager-1.0-jar-with-dependencies.jar help
-
-      - name: Upload Artifacts on Failure
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-logs-${{ matrix.os }}
-          path: |
-            target/
-            **/surefire-reports/
-            **/failsafe-reports/
+          name: surefire-${{ matrix.name }}
+          path: target/surefire-reports/
+          if-no-files-found: ignore

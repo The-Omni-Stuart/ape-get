@@ -48,7 +48,8 @@ class AppPathsTest {
         AppPaths paths = AppPaths.forPlatform(
             Platform.OS.LINUX, "/home/me", "/local");
 
-        assertEquals(Path.of("/home/me", ".local", "share", AppPaths.APP_DIR), paths.root());
+        assertEquals(Path.of("/home/me", ".local", "share", AppPaths.APP_DIR)
+            .toAbsolutePath().normalize(), paths.root());
     }
 
     @Test
@@ -56,8 +57,8 @@ class AppPathsTest {
         AppPaths paths = AppPaths.forPlatform(
             Platform.OS.MAC, "/Users/me", "/local");
 
-        assertEquals(Path.of("/Users/me", "Library", "Application Support", AppPaths.APP_DIR),
-            paths.root());
+        assertEquals(Path.of("/Users/me", "Library", "Application Support", AppPaths.APP_DIR)
+            .toAbsolutePath().normalize(), paths.root());
     }
 
     @Test
@@ -65,6 +66,7 @@ class AppPathsTest {
         AppPaths paths = AppPaths.forPlatform(
             Platform.OS.WINDOWS, "/home/me", "/local");
 
-        assertEquals(Path.of("/local", AppPaths.APP_DIR), paths.root());
+        assertEquals(Path.of("/local", AppPaths.APP_DIR).toAbsolutePath().normalize(),
+            paths.root());
     }
 }

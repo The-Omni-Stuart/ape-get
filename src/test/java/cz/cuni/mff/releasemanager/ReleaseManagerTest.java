@@ -27,6 +27,7 @@ import static org.mockito.Mockito.when;
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.cmd.Prompt;
+import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
@@ -100,6 +101,8 @@ class ReleaseManagerTest {
         backupField.setAccessible(true);
         backupField.set(releaseManager, mockBackupManager);
 
+        setOs(Platform.OS.LINUX);
+
         when(mockStateStore.paths()).thenReturn(mockPaths);
         when(mockBackupManager.createAndPrune(any(), anyInt())).thenReturn(List.of());
         when(mockStateStore.loadConfig()).thenReturn(
@@ -107,6 +110,12 @@ class ReleaseManagerTest {
         when(mockStateStore.scanManifests()).thenReturn(List.of());
         when(mockStateStore.loadIndex()).thenReturn(Optional.of(GrmIndex.empty()));
         when(mockStateStore.findRecoveryIssues(any(), any())).thenReturn(List.of());
+    }
+
+    private void setOs(Platform.OS os) throws Exception {
+        Field field = ReleaseManager.class.getDeclaredField("os");
+        field.setAccessible(true);
+        field.set(releaseManager, os);
     }
 
     private static AppManifest manifest(
@@ -174,7 +183,8 @@ class ReleaseManagerTest {
         AppManifest saved = manifestCaptor.getValue();
         assertEquals("user/example", saved.repo());
         assertEquals("example.exe", saved.asset().name());
-        assertEquals("/ProgramFiles/example.exe", saved.install().path());
+        assertEquals(Path.of("/ProgramFiles/example.exe").toString(),
+            saved.install().path());
     }
 
     @Test
@@ -648,6 +658,47 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
 
         verify(mockBackupManager, never()).restore(any(), any());
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteRollbackRefusedOnWindows() throws Exception {
+        setOs(Platform.OS.WINDOWS);
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockStateStore, never()).findManifest(any());
+        verify(mockBackupManager, never()).latest(any());
+    }
+
+    @Test
+    void testExecuteDoctorSkipsOrphansOutsideLinux() throws Exception {
+        setOs(Platform.OS.MAC);
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        Files.writeString(bin.resolve("owner__repo"), "data");
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+
+        assertEquals(0, releaseManager.execute(new String[]{"doctor"}));
+
+        verify(mockPlatformHandler, never()).getInstallRoot();
+    }
+
+    @Test
+    void testExecuteAdoptRefusedOutsideLinux() throws Exception {
+        setOs(Platform.OS.MAC);
+        Command cmd = Command.ADOPT;
+        cmd.argument = "owner/repo";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        assertEquals(1, releaseManager.execute(new String[]{"adopt", "owner/repo"}));
+
+        verify(mockStateStore, never()).findManifest(any());
         verify(mockStateStore, never()).saveManifest(any());
     }
 
