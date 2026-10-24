@@ -441,7 +441,29 @@ class ReleaseManagerTest {
         assertEquals(productCode, captor.getValue().install().uninstall().productCode());
     }
 
+    @Test
+    void testExecuteInfo() throws Exception {
+        Command cmd = Command.INFO;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(manifest(
+                "user/example", "http://url", "example.exe", "/tmp/live")));
 
+        assertEquals(0, releaseManager.execute(new String[]{"info", "user/example"}));
+
+        verify(mockStateStore).findManifest("user/example");
+    }
+
+    @Test
+    void testExecuteInfoMissing() throws Exception {
+        Command cmd = Command.INFO;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.empty());
+
+        assertEquals(1, releaseManager.execute(new String[]{"info", "user/example"}));
+    }
 
     @Test
     void testExecuteUpdate() throws Exception {

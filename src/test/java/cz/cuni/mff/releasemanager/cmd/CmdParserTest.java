@@ -28,6 +28,13 @@ class CmdParserTest {
         assertEquals("argument", result.argument);
     }
 
+    @Test
+    void testParseInfo() {
+        Command result = cmdParser.parse(new String[] {"info", "owner/repo"});
+
+        assertEquals(Command.INFO, result);
+        assertEquals("owner/repo", result.argument);
+    }
 
     @Test
     void testParseWithValidCommand() {
@@ -59,7 +66,7 @@ class CmdParserTest {
 
     @Test
     void testParseWithMissingRequiredArgument() {
-        for (String command : new String[] {"search", "install", "uninstall", "update"}) {
+        for (String command : new String[] {"search", "install", "uninstall", "update", "info"}) {
             Command result = assertDoesNotThrow(() -> cmdParser.parse(new String[] {command}));
             assertEquals(Command.USAGE, result, command);
         }

@@ -126,6 +126,7 @@ public class ReleaseManager {
             case UNINSTALL -> uninstall(command) ? 0 : 1;
             case UPDATE -> update(command) ? 0 : 1;
             case LIST -> list() ? 0 : 1;
+            case INFO -> info(command) ? 0 : 1;
             case ROLLBACK -> rollback(command) ? 0 : 1;
             case DOCTOR -> doctor() ? 0 : 1;
             case ADOPT -> adopt(command) ? 0 : 1;
@@ -785,6 +786,77 @@ public class ReleaseManager {
         return true;
     }
 
+    private boolean info(Command command) {
+        if (command.argument == null || command.argument.split("/").length != 2) {
+            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+            return false;
+        }
+        AppManifest manifest;
+        try {
+            var found = stateStore.findManifest(command.argument);
+            if (found.isEmpty()) {
+                System.err.println("Release " + command.argument + " is not found.");
+                return false;
+            }
+            manifest = found.get();
+        } catch (IOException e) {
+            System.err.println("Failed to load application state: " + e.getMessage());
+            return false;
+        }
+
+        System.out.println("Repository: " + manifest.repo());
+        System.out.println("Provider: " + manifest.provider());
+        System.out.println("Version: "
+            + (manifest.version() == null ? "unknown" : manifest.version()));
+        System.out.println("Installed: " + manifest.installedAt());
+        System.out.println("Updated: " + manifest.updatedAt());
+        System.out.println("Path: " + manifest.install().path());
+        System.out.println("Asset: " + manifest.asset().name());
+        System.out.println("Checksum: " + describeVerification(manifest.verification()));
+        System.out.println("Signature: " + describePinnedSignature(manifest.signature()));
+        if (manifest.install().uninstall() != null) {
+            String productCode = manifest.install().uninstall().productCode();
+            if (productCode != null && !productCode.isBlank()) {
+                System.out.println("Product code: " + productCode);
+            }
+        }
+        List<AppManifest.Backup> backups = manifest.backups() == null
+            ? List.of()
+            : manifest.backups();
+        System.out.println("Backups: " + backups.size());
+        for (AppManifest.Backup backup : backups) {
+            System.out.println("  - "
+                + (backup.version() == null ? "unknown" : backup.version())
+                + " (" + backup.createdAt() + ") " + backup.path());
+        }
+        return true;
+    }
+
+    private static String describeVerification(AppManifest.Verification verification) {
+        if (verification == null) {
+            return "not recorded";
+        }
+        StringBuilder value = new StringBuilder(verification.status());
+        if (verification.method() != null) {
+            value.append(" (").append(verification.method());
+            if (verification.checksumAsset() != null) {
+                value.append(", ").append(verification.checksumAsset());
+            }
+            value.append(")");
+        }
+        return value.toString();
+    }
+
+    private static String describePinnedSignature(AppManifest.Signature signature) {
+        if (signature == null) {
+            return "not recorded";
+        }
+        if (signature.isVerified()) {
+            return "verified (" + signature.mechanism() + ") by " + describe(signature);
+        }
+        return signature.status()
+            + (signature.mechanism() == null ? "" : " (" + signature.mechanism() + ")");
+    }
 
     private boolean rollback(Command command) {
         if (os == Platform.OS.WINDOWS) {
@@ -1060,6 +1132,7 @@ public class ReleaseManager {
         out.println("  uninstall [name] - uninstall the release by name");
         out.println("  update [name] - update the installed release by name");
         out.println("  list - list all installed releases");
+        out.println("  info [name] - show details for an installed release");
         out.println("  rollback [name] - restore the latest backup");
         out.println("  doctor - diagnose state and orphaned installs");
         out.println("  adopt [name] - adopt an existing Linux install");
