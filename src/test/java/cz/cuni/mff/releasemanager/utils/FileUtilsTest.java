@@ -65,27 +65,6 @@ public class FileUtilsTest {
     }
 
     @Test
-    public void testCreateDirectory_createsAndReturnsPath() throws IOException {
-        Path dir = FileUtils.createDirectory(TEST_DIR);
-
-        assertTrue(Files.exists(dir));
-        assertTrue(Files.isDirectory(dir));
-
-        Files.deleteIfExists(dir);
-    }
-
-    @Test
-    public void testCreateDirectory_alreadyExists() throws IOException {
-        Path dir1 = FileUtils.createDirectory(TEST_DIR);
-        Path dir2 = FileUtils.createDirectory(TEST_DIR);
-
-        assertEquals(dir1, dir2);
-
-        Files.deleteIfExists(dir1);
-        Files.deleteIfExists(dir2);
-    }
-
-    @Test
     public void testGetShortCut_withAlphaPrefix() {
         Path file = Paths.get("Release_v1.0.txt");
         String shortcut = FileUtils.getShortCut(file);

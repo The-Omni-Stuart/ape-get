@@ -1,15 +1,19 @@
 package cz.cuni.mff.releasemanager;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
@@ -134,6 +138,30 @@ class GithubClientTest {
 
         assertNull(result);
         verifyNoInteractions(mockPlatformHandler);
+    }
+
+    @Test
+    void installAsset_closesDownloadStream() throws Exception {
+        boolean[] closed = {false};
+        InputStream stream = new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public void close() throws IOException {
+                closed[0] = true;
+                super.close();
+            }
+        };
+        HttpResponse<InputStream> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn(stream);
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofInputStream())))
+                .thenReturn(mockResponse);
+        when(mockPlatformHandler.install(any(Path.class))).thenReturn(Path.of("/tmp/installed"));
+
+        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"));
+
+        assertNotNull(result);
+        assertTrue(closed[0]);
+        verify(mockPlatformHandler).install(any(Path.class));
     }
 
 }

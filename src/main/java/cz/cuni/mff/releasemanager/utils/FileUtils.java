@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -63,19 +62,6 @@ public class FileUtils {
         } catch (InvalidPathException e) {
             throw new IOException("Invalid filename: " + filename, e);
         }
-    }
-    /**
-     * Creates a directory with the given name if it does not already exist.
-     * @param directoryName
-     * @return Path to the created directory
-     * @throws IOException
-     */
-    public static Path createDirectory(String directoryName) throws IOException {
-        Path path = Paths.get(directoryName);
-        if (!Files.exists(path)) {
-            Files.createDirectories(path);
-        }
-        return path;
     }
     /**
      * Creates a short name for the given file
