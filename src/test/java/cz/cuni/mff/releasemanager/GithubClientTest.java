@@ -134,7 +134,7 @@ class GithubClientTest {
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofInputStream())))
                 .thenReturn(mockResponse);
 
-        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"));
+        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"), "owner/repo");
 
         assertNull(result);
         verifyNoInteractions(mockPlatformHandler);
@@ -155,13 +155,13 @@ class GithubClientTest {
         when(mockResponse.body()).thenReturn(stream);
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofInputStream())))
                 .thenReturn(mockResponse);
-        when(mockPlatformHandler.install(any(Path.class))).thenReturn(Path.of("/tmp/installed"));
+        when(mockPlatformHandler.install(any(Path.class), any())).thenReturn(Path.of("/tmp/installed"));
 
-        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"));
+        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"), "owner/repo");
 
         assertNotNull(result);
         assertTrue(closed[0]);
-        verify(mockPlatformHandler).install(any(Path.class));
+        verify(mockPlatformHandler).install(any(Path.class), any());
     }
 
 }

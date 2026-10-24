@@ -51,19 +51,21 @@ public final class WindowsHandler extends PlatformHandler {
     }
 
     @Override
-    public Path install(Path assetPath) {
+    public Path install(Path assetPath, String repoFullName) {
         try {
             String fileName = assetPath.getFileName().toString();
             if (fileName.endsWith(".msi")) {
                 return installMsi(assetPath);
             } else if (fileName.endsWith(".exe")) {
-                return installExe(assetPath);
+                return installExe(assetPath, repoFullName);
             } else {
                 System.out.println("Unsupported file format: " + fileName);
                 return null;
             }
         } catch (IOException | InterruptedException e) {
-            Thread.currentThread().interrupt();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             System.out.println("Installation error: " + e.getMessage());
             return null;
         }
@@ -93,21 +95,25 @@ public final class WindowsHandler extends PlatformHandler {
         Files.move(assetPath, target, StandardCopyOption.REPLACE_EXISTING);
         FileUtils.removeTempDir(assetPath);
 
-        String shortCut = FileUtils.getShortCut(assetPath);
-        System.out.println("Installed to: " + Paths.get(System.getenv("ProgramFiles"), shortCut).toString());
+        System.out.println("Installer cached at: " + target);
         return target;
     }
 
     /**
      * Installs the EXE asset.
      * @param assetPath Path to the asset to install.
+     * @param repoFullName Repository in owner/name form.
      * @return Path to the uninstallation file.
      * @throws IOException
      * @throws InterruptedException
      */
-    private Path installExe(Path assetPath) throws IOException, InterruptedException {
-        String shortCut = FileUtils.getShortCut(assetPath);
-        Path targetDir = Paths.get(System.getenv("ProgramFiles"), shortCut);
+    private Path installExe(Path assetPath, String repoFullName) throws IOException, InterruptedException {
+        String installName = FileUtils.getInstallName(repoFullName, assetPath);
+        Path targetDir = Paths.get(System.getenv("ProgramFiles"), installName);
+        if (Files.exists(targetDir) && isOwnedByAnotherRepo(targetDir, repoFullName)) {
+            System.out.println("Refusing to overwrite " + targetDir + " owned by another release.");
+            return null;
+        }
         String command = String.format("\"%s\" /S /D=%s", assetPath.toString(), targetDir.toString());
         Process process = new ProcessBuilder("cmd.exe", "/c", command)
             .inheritIO()

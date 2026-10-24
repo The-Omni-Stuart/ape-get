@@ -32,7 +32,7 @@ public final class MacHandler extends PlatformHandler {
     }
 
     @Override
-    public Path install(Path asset) {
+    public Path install(Path asset, String repoFullName) {
         try {
             mount(asset);
 

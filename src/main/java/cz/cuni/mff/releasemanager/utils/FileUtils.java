@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -66,6 +67,36 @@ public class FileUtils {
             throw new IOException("Invalid filename: " + filename, e);
         }
     }
+    /**
+     * Derives a stable, non-empty install name from a repository, falling back to the asset name.
+     * @param repoFullName Repository in owner/name form, or null.
+     * @param asset Downloaded asset path, used only as a fallback.
+     * @return a safe install name
+     */
+    public static String getInstallName(String repoFullName, Path asset) {
+        String base = repoFullName == null ? "" : repoFullName.replace("/", "__");
+        if (base.isBlank()) {
+            String fileName = asset == null ? "" : asset.getFileName().toString();
+            int dot = fileName.lastIndexOf('.');
+            base = dot > 0 ? fileName.substring(0, dot) : fileName;
+        }
+        String name = base.toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9._-]+", "-")
+            .replaceAll("^[._-]+|[._-]+$", "")
+            .replaceAll("-{2,}", "-");
+        if (name.isBlank() || isReservedWindowsName(name)) {
+            name = "app-" + Integer.toUnsignedString(base.hashCode(), 16);
+        }
+        return name;
+    }
+
+    private static boolean isReservedWindowsName(String name) {
+        return switch (name) {
+            case "con", "prn", "aux", "nul" -> true;
+            default -> name.matches("com[1-9]|lpt[1-9]");
+        };
+    }
+
     /**
      * Creates a short name for the given file
      * @param file Path to the file

@@ -30,7 +30,7 @@ public final class LinuxHandler extends PlatformHandler {
     }
 
     @Override
-    public Path install(Path assetPath) {
+    public Path install(Path assetPath, String repoFullName) {
         try {
             Files.setPosixFilePermissions(assetPath, Set.of(
                 PosixFilePermission.OWNER_READ,
@@ -45,8 +45,12 @@ public final class LinuxHandler extends PlatformHandler {
             Path targetDir = getInstallDir();
             Files.createDirectories(targetDir);
 
-            String shortCut = FileUtils.getShortCut(assetPath);
-            Path target = targetDir.resolve(shortCut);
+            String installName = FileUtils.getInstallName(repoFullName, assetPath);
+            Path target = targetDir.resolve(installName);
+            if (Files.exists(target) && isOwnedByAnotherRepo(target, repoFullName)) {
+                System.out.println("Refusing to overwrite " + target + " owned by another release.");
+                return null;
+            }
 
             Files.move(assetPath, target, StandardCopyOption.REPLACE_EXISTING);
             System.out.println("Installed to: " + target);

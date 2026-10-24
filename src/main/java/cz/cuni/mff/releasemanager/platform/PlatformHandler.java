@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.platform;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
@@ -31,9 +32,10 @@ public abstract class PlatformHandler {
     /**
      * * Installs the asset.
      * @param asset Path to the asset to install.
+     * @param repoFullName Repository in owner/name form.
      * @return Path to the installed application which is then used for uninstallation.
      */
-    public abstract Path install(Path asset);
+    public abstract Path install(Path asset, String repoFullName);
     /**
      * Uninstalls the asset.
      * @param asset Path to the asset to uninstall.
@@ -70,6 +72,31 @@ public abstract class PlatformHandler {
         Path normalizedPath = path.toAbsolutePath().normalize();
         Path normalizedRoot = root.toAbsolutePath().normalize();
         return normalizedPath.startsWith(normalizedRoot) && !normalizedPath.equals(normalizedRoot);
+    }
+
+    /**
+     * Checks whether a target path is already owned by a different installed repository.
+     * @param target path or directory that would be overwritten
+     * @param repoFullName repository requesting the target
+     * @return true if another repository owns the target or the state cannot be read
+     */
+    protected boolean isOwnedByAnotherRepo(Path target, String repoFullName) {
+        try {
+            ReleasesList releasesList = loadReleasesList();
+            if (releasesList == null) {
+                return false;
+            }
+            Path normalizedTarget = target.toAbsolutePath().normalize();
+            return releasesList.releases().stream()
+                .filter(release -> release != null
+                    && release.repo() != null
+                    && release.uninstallPath() != null
+                    && !release.repo().equals(repoFullName))
+                .map(release -> Path.of(release.uninstallPath()).toAbsolutePath().normalize())
+                .anyMatch(path -> path.equals(normalizedTarget) || path.startsWith(normalizedTarget));
+        } catch (IOException | InvalidPathException e) {
+            return true;
+        }
     }
 
     /**

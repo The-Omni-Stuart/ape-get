@@ -124,15 +124,16 @@ public class GithubClient {
     /**
      * Installs an already downloaded asset and removes the staged file afterwards.
      * @param assetPath The downloaded asset.
+     * @param repoFullName Repository in owner/name form.
      * @return The path to the file for uninstall.
      */
-    public Path installDownloadedAsset(Path assetPath) {
+    public Path installDownloadedAsset(Path assetPath, String repoFullName) {
         if (assetPath == null) {
             return null;
         }
         Path installed = null;
         try {
-            installed = platformHandler.install(assetPath);
+            installed = platformHandler.install(assetPath, repoFullName);
             return installed;
         } finally {
             if (!assetPath.equals(installed)) {
@@ -160,9 +161,10 @@ public class GithubClient {
     /**
      * Installs the asset by downloading it and passing it to the platform handler for installation.
      * @param asset The asset to install.
+     * @param repoFullName Repository in owner/name form.
      * @return The path to the file for uninstall.
      */
-    public Path installAsset(Asset asset) {
+    public Path installAsset(Asset asset, String repoFullName) {
         Path assetPath;
         try {
             assetPath = downloadAsset(asset);
@@ -173,7 +175,7 @@ public class GithubClient {
             System.out.println("Error downloading asset: " + e.getMessage());
             return null;
         }
-        return installDownloadedAsset(assetPath);
+        return installDownloadedAsset(assetPath, repoFullName);
     }
 
     /**

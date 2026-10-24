@@ -80,11 +80,12 @@ class ReleaseManagerTest {
 
         Asset asset = new Asset("http://url", "example.exe");
         when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(asset));
-        when(mockGithubClient.installAsset(asset)).thenReturn(Path.of("/ProgramFiles/example.exe"));
+        when(mockGithubClient.installAsset(asset, "user/example"))
+            .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         releaseManager.execute(new String[]{"install", "user/example"});
 
-        verify(mockGithubClient).installAsset(asset);
+        verify(mockGithubClient).installAsset(asset, "user/example");
     }
 
     @Test
@@ -141,13 +142,13 @@ class ReleaseManagerTest {
         when(mockPlatformHandler.uninstall(Path.of("/ProgramFiles/uninstall.exe"))).thenReturn(true);
         when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
-        when(mockGithubClient.installDownloadedAsset(downloaded))
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         releaseManager.execute(new String[]{"update", "user/example"});
 
         verify(mockGithubClient).downloadAsset(newAsset);
-        verify(mockGithubClient).installDownloadedAsset(downloaded);
+        verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
     }
 
     @Test
@@ -165,7 +166,7 @@ class ReleaseManagerTest {
         when(mockPlatformHandler.uninstall(Path.of("/ProgramFiles/uninstall.exe"))).thenReturn(true);
         when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
-        when(mockGithubClient.installDownloadedAsset(downloaded))
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         releaseManager.execute(new String[]{"update", "user/example"});
@@ -173,7 +174,7 @@ class ReleaseManagerTest {
         InOrder inOrder = inOrder(mockGithubClient, mockPlatformHandler);
         inOrder.verify(mockGithubClient).downloadAsset(newAsset);
         inOrder.verify(mockPlatformHandler).uninstall(Path.of("/ProgramFiles/uninstall.exe"));
-        inOrder.verify(mockGithubClient).installDownloadedAsset(downloaded);
+        inOrder.verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
     }
 
     @Test
@@ -195,7 +196,7 @@ class ReleaseManagerTest {
         releaseManager.execute(new String[]{"update", "user/example"});
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockGithubClient, never()).installDownloadedAsset(any());
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
     }
 
     @Test
@@ -215,7 +216,7 @@ class ReleaseManagerTest {
         releaseManager.execute(new String[]{"update", "user/example"});
 
         verify(mockPlatformHandler, never()).uninstall(any());
-        verify(mockGithubClient, never()).installDownloadedAsset(any());
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
     }
 
     @Test

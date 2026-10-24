@@ -26,7 +26,7 @@ class PlatformHandlerTest {
         private final String temp = "temp";
 
         @Override
-        public Path install(Path asset) { return null; }
+        public Path install(Path asset, String repoFullName) { return null; }
 
         @Override
         public boolean uninstall(Path asset) { return true; }
@@ -226,6 +226,21 @@ class PlatformHandlerTest {
         assertFalse(PlatformHandler.isUnder(root, root));
         assertFalse(PlatformHandler.isUnder(tempDir.resolve("other"), root));
         assertFalse(PlatformHandler.isUnder(root.resolve("..").resolve("other"), root));
+    }
+
+    @Test
+    void testIsOwnedByAnotherRepo() throws IOException {
+        Path target = tempDir.resolve("app");
+        Files.createDirectories(target);
+        ReleaseInfo release = new ReleaseInfo(
+            "repo1",
+            Instant.now(),
+            target.resolve("uninstall.exe").toString(),
+            new Asset("url", "name"));
+        handler.addReleaseToList(release);
+
+        assertTrue(handler.isOwnedByAnotherRepo(target, "repo2"));
+        assertFalse(handler.isOwnedByAnotherRepo(target, "repo1"));
     }
 
     @Test

@@ -76,6 +76,16 @@ public class FileUtilsTest {
     }
 
     @Test
+    public void testGetInstallName_usesRepoAndIsNeverEmpty() {
+        assertEquals("ip7z__7zip",
+            FileUtils.getInstallName("ip7z/7zip", Path.of("7z2408-x64.exe")));
+        assertEquals("keepassxreboot__keepassxc",
+            FileUtils.getInstallName("keepassxreboot/keepassxc", Path.of("KeePassXC-2.7.9.AppImage")));
+        assertFalse(FileUtils.getInstallName("/", Path.of("!!!")).isBlank());
+        assertFalse("con".equals(FileUtils.getInstallName("owner/CON", Path.of("x.exe"))));
+    }
+
+    @Test
     public void testGetShortCut_withAlphaPrefix() {
         Path file = Paths.get("Release_v1.0.txt");
         String shortcut = FileUtils.getShortCut(file);

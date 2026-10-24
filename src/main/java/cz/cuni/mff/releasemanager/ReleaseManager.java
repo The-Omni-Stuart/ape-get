@@ -106,7 +106,7 @@ public class ReleaseManager {
             return;
         }
         Asset asset = getSingleAsset(result);
-        Path installedAsset = githubClient.installAsset(asset);
+        Path installedAsset = githubClient.installAsset(asset, command.argument);
         if (installedAsset != null) {
             System.out.println("Installation successful.");
             addReleaseToList(command.argument, installedAsset, asset);
@@ -262,7 +262,8 @@ public class ReleaseManager {
                             githubClient.discardAsset(downloadedAsset);
                             return;
                         }
-                        Path installedAsset = githubClient.installDownloadedAsset(downloadedAsset);
+                        Path installedAsset = githubClient.installDownloadedAsset(
+                            downloadedAsset, command.argument);
                         if (installedAsset != null) {
                             System.out.println("Successfully updated.");
                             addReleaseToList(command.argument, installedAsset, newAsset);
