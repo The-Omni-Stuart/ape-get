@@ -116,6 +116,17 @@ class PlatformHandlerTest {
     }
 
     @Test
+    void reportsInstallStateFromTheLivePath() throws IOException {
+        Path live = Files.writeString(tempDir.resolve("app"), "data");
+
+        assertEquals(PlatformHandler.InstallState.INSTALLED,
+            handler.installState(manifest("owner/repo", live.toString())));
+        assertEquals(PlatformHandler.InstallState.MISSING,
+            handler.installState(manifest(
+                "owner/repo", tempDir.resolve("missing").toString())));
+    }
+
+    @Test
     void installRootOverrideReplacesPlatformDefault() {
         Path root = tempDir.resolve("custom-bin");
         LinuxHandler linux = LinuxHandler.getInstance();

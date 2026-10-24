@@ -120,6 +120,8 @@ class ReleaseManagerTest {
         when(mockStateStore.scanManifests()).thenReturn(List.of());
         when(mockStateStore.loadIndex()).thenReturn(Optional.of(GrmIndex.empty()));
         when(mockStateStore.findRecoveryIssues(any(), any())).thenReturn(List.of());
+        when(mockPlatformHandler.installState(any()))
+            .thenReturn(PlatformHandler.InstallState.INSTALLED);
     }
 
     private void setOs(Platform.OS os) throws Exception {
@@ -1162,6 +1164,19 @@ class ReleaseManagerTest {
         when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
 
         assertEquals(0, releaseManager.execute(new String[]{"doctor"}));
+    }
+
+    @Test
+    void testExecuteDoctorReportsMissingLiveApp() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        tempPaths();
+        when(mockStateStore.scanManifests()).thenReturn(List.of(
+            manifest("user/example", "http://url", "example.exe", "/tmp/live")));
+        when(mockPlatformHandler.installState(any()))
+            .thenReturn(PlatformHandler.InstallState.MISSING);
+
+        assertEquals(1, releaseManager.execute(new String[]{"doctor"}));
     }
 
     @Test

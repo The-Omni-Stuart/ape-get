@@ -71,7 +71,7 @@ class StateStoreTest {
             base.backups(),
             base.installedAt(),
             base.updatedAt(),
-            new AppManifest.Signature("verified", "gpg", "Old Signer", "OLD"));
+            new AppManifest.Signature("verified", "gpg", "Old Signer", "OLD", Boolean.TRUE));
 
         StateStore store = store();
         store.saveManifest(pinned);
@@ -79,6 +79,7 @@ class StateStoreTest {
         AppManifest read = store.findManifest("owner/repo").orElseThrow();
         assertEquals("OLD", read.signature().identity());
         assertTrue(read.signature().isVerified());
+        assertEquals(Boolean.TRUE, read.signature().notarized());
     }
 
     @Test

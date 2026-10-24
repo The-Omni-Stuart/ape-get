@@ -501,7 +501,8 @@ public class ReleaseManager {
             signature.status().name().toLowerCase(Locale.ROOT),
             signature.mechanism(),
             signature.signer(),
-            signature.identity());
+            signature.identity(),
+            signature.notarized());
     }
 
     private AppManifest createManifest(
@@ -811,6 +812,8 @@ public class ReleaseManager {
         System.out.println("Installed: " + manifest.installedAt());
         System.out.println("Updated: " + manifest.updatedAt());
         System.out.println("Path: " + manifest.install().path());
+        System.out.println("Install state: " + platformHandler.installState(manifest)
+            .name().toLowerCase(Locale.ROOT));
         System.out.println("Asset: " + manifest.asset().name());
         System.out.println("Checksum: " + describeVerification(manifest.verification()));
         System.out.println("Signature: " + describePinnedSignature(manifest.signature()));
@@ -852,7 +855,11 @@ public class ReleaseManager {
             return "not recorded";
         }
         if (signature.isVerified()) {
-            return "verified (" + signature.mechanism() + ") by " + describe(signature);
+            String value = "verified (" + signature.mechanism() + ") by " + describe(signature);
+            if (signature.notarized() != null) {
+                value += signature.notarized() ? ", notarized" : ", not notarized";
+            }
+            return value;
         }
         return signature.status()
             + (signature.mechanism() == null ? "" : " (" + signature.mechanism() + ")");
@@ -993,9 +1000,14 @@ public class ReleaseManager {
         }
 
         for (AppManifest manifest : manifests) {
-            String installPath = manifest.install().path();
-            if (installPath == null || !Files.exists(Path.of(installPath))) {
-                System.out.println("Missing live app: " + manifest.repo() + " -> " + installPath);
+            PlatformHandler.InstallState state = platformHandler.installState(manifest);
+            if (state == PlatformHandler.InstallState.MISSING) {
+                System.out.println("Missing live app: " + manifest.repo()
+                    + " -> " + manifest.install().path());
+                healthy = false;
+            } else if (state == PlatformHandler.InstallState.UNKNOWN) {
+                System.out.println("Unknown live app state: " + manifest.repo()
+                    + " -> " + manifest.install().path());
                 healthy = false;
             }
         }

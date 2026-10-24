@@ -38,9 +38,12 @@ public final class WindowsSignatureVerifier implements SignatureVerifier {
 
         Process process;
         try {
-            process = startPowerShell(script);
+            process = new ProcessBuilder(
+                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
+                .redirectErrorStream(true)
+                .start();
         } catch (IOException e) {
-            return SignatureResult.unavailable(target.name(), "PowerShell is not available");
+            return SignatureResult.unavailable(target.name(), "pwsh is not available");
         }
 
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -67,20 +70,6 @@ public final class WindowsSignatureVerifier implements SignatureVerifier {
             default -> SignatureResult.invalid(
                 target.name(), "authenticode", "signature status " + authenticode.Status());
         };
-    }
-
-    private static Process startPowerShell(String script) throws IOException {
-        try {
-            return new ProcessBuilder(
-                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
-                .redirectErrorStream(true)
-                .start();
-        } catch (IOException e) {
-            return new ProcessBuilder(
-                "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-                .redirectErrorStream(true)
-                .start();
-        }
     }
 
     private static Authenticode parse(String output) {

@@ -1,5 +1,6 @@
 package cz.cuni.mff.releasemanager.verify;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -36,5 +37,15 @@ class SignatureResultTest {
             .message().contains("Signer"));
         assertTrue(SignatureResult.verified("app", "gpg", "Signer", "FPR")
             .message().contains("FPR"));
+    }
+
+    @Test
+    void verifiedCarriesNotarizationWhenKnown() {
+        SignatureResult result = SignatureResult.verified(
+            "app", "codesign", "Signer", "TEAM", Boolean.TRUE);
+
+        assertEquals(Boolean.TRUE, result.notarized());
+        assertEquals(null, SignatureResult.verified(
+            "app", "codesign", "Signer", "TEAM").notarized());
     }
 }

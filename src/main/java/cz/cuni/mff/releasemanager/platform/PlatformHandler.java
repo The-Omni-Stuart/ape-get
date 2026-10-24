@@ -1,9 +1,11 @@
 package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 
+import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.StateStore;
 
@@ -12,6 +14,13 @@ import cz.cuni.mff.releasemanager.state.StateStore;
  */
 public abstract class PlatformHandler {
     protected static final String APP_DATA_DIR = "github-release-manager";
+
+    /**
+     * Whether a tracked application is still present on the machine.
+     */
+    public enum InstallState {
+        INSTALLED, MISSING, UNKNOWN
+    }
 
     private final StateStore stateStore;
     private Path installRoot;
@@ -71,6 +80,25 @@ public abstract class PlatformHandler {
      */
     public String productCode(Path installed) {
         return null;
+    }
+
+    /**
+     * Reports whether the application tracked by a manifest is still present.
+     * @param manifest installed application manifest
+     * @return install state
+     */
+    public InstallState installState(AppManifest manifest) {
+        if (manifest == null || manifest.install() == null
+            || manifest.install().path() == null) {
+            return InstallState.UNKNOWN;
+        }
+        try {
+            return Files.exists(Path.of(manifest.install().path()))
+                ? InstallState.INSTALLED
+                : InstallState.MISSING;
+        } catch (InvalidPathException e) {
+            return InstallState.UNKNOWN;
+        }
     }
 
     /**

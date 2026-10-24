@@ -93,8 +93,14 @@ public record AppManifest(
         String status,
         String mechanism,
         String signer,
-        String identity
+        String identity,
+        Boolean notarized
     ) {
+        public Signature(
+            String status, String mechanism, String signer, String identity) {
+            this(status, mechanism, signer, identity, null);
+        }
+
         @JsonIgnore
         public boolean isVerified() {
             return "verified".equals(status) && identity != null && !identity.isBlank();

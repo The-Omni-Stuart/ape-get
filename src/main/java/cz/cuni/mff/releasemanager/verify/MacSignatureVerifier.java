@@ -61,11 +61,21 @@ public final class MacSignatureVerifier implements SignatureVerifier {
                 team = null;
             }
             String authority = value(details.output(), "Authority=");
+            Boolean notarized = null;
+            try {
+                ProcessResult assessment = run(
+                    "spctl", "--assess", "--type", "execute", "--verbose=2",
+                    app.get().toString());
+                notarized = assessment.exitCode() == 0;
+            } catch (IOException e) {
+                // spctl is best-effort; codesign already verified the bundle
+            }
             return SignatureResult.verified(
                 target.name(),
                 "codesign",
                 authority == null ? "ad-hoc" : authority,
-                team);
+                team,
+                notarized);
         } catch (IOException e) {
             return SignatureResult.unavailable(
                 target.name(), "codesign or hdiutil is not available");

@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
@@ -255,20 +256,53 @@ public final class WindowsHandler extends PlatformHandler {
         }
     }
 
+    @Override
+    public InstallState installState(AppManifest manifest) {
+        String code = manifest != null && manifest.install() != null
+            && manifest.install().uninstall() != null
+            ? manifest.install().uninstall().productCode()
+            : null;
+        if (code == null || code.isBlank()) {
+            return super.installState(manifest);
+        }
+        return productInstallState(code);
+    }
+
+    InstallState productInstallState(String productCode) {
+        String code = productCode.replace("'", "''");
+        String script = "$code = '" + code + "';"
+            + "$paths = @("
+            + "('HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\' + $code),"
+            + "('HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\' + $code),"
+            + "('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\' + $code)"
+            + ");"
+            + "if ($paths | Where-Object { Test-Path -LiteralPath $_ })"
+            + " { 'installed' } else { 'absent' }";
+        try {
+            String output = runPowerShell(script);
+            if (output.lines().anyMatch(line -> line.strip().equals("installed"))) {
+                return InstallState.INSTALLED;
+            }
+            if (output.lines().anyMatch(line -> line.strip().equals("absent"))) {
+                return InstallState.MISSING;
+            }
+            return InstallState.UNKNOWN;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println(
+                "Warning: could not read the MSI product state: " + e.getMessage());
+            return InstallState.UNKNOWN;
+        }
+    }
+
     private static String runPowerShell(String script)
         throws IOException, InterruptedException {
-        Process process;
-        try {
-            process = new ProcessBuilder(
-                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
-                .redirectErrorStream(true)
-                .start();
-        } catch (IOException e) {
-            process = new ProcessBuilder(
-                "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-                .redirectErrorStream(true)
-                .start();
-        }
+        Process process = new ProcessBuilder(
+            "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
+            .redirectErrorStream(true)
+            .start();
         String output = new String(
             process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         if (!process.waitFor(60, TimeUnit.SECONDS)) {
@@ -288,8 +322,7 @@ public final class WindowsHandler extends PlatformHandler {
      * @throws InterruptedException
      */
     private void uninstallExe(Path asset) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder()
-            .command("cmd.exe", "/c", asset.toString(), "/S")
+        Process process = new ProcessBuilder(asset.toString(), "/S")
             .inheritIO()
             .start();
 

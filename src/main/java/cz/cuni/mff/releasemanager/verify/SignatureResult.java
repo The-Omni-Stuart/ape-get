@@ -9,33 +9,44 @@ public record SignatureResult(
     String mechanism,
     String signer,
     String identity,
+    Boolean notarized,
     String detail
 ) {
     public static SignatureResult verified(
         String assetName, String mechanism, String signer, String identity) {
+        return verified(assetName, mechanism, signer, identity, null);
+    }
+
+    public static SignatureResult verified(
+        String assetName,
+        String mechanism,
+        String signer,
+        String identity,
+        Boolean notarized
+    ) {
         return new SignatureResult(
-            SignatureStatus.VERIFIED, assetName, mechanism, signer, identity, null);
+            SignatureStatus.VERIFIED, assetName, mechanism, signer, identity, notarized, null);
     }
 
     public static SignatureResult missing(String assetName) {
         return new SignatureResult(
-            SignatureStatus.MISSING, assetName, null, null, null, null);
+            SignatureStatus.MISSING, assetName, null, null, null, null, null);
     }
 
     public static SignatureResult unavailable(String assetName, String detail) {
         return new SignatureResult(
-            SignatureStatus.UNAVAILABLE, assetName, null, null, null, detail);
+            SignatureStatus.UNAVAILABLE, assetName, null, null, null, null, detail);
     }
 
     public static SignatureResult invalid(
         String assetName, String mechanism, String detail) {
         return new SignatureResult(
-            SignatureStatus.INVALID, assetName, mechanism, null, null, detail);
+            SignatureStatus.INVALID, assetName, mechanism, null, null, null, detail);
     }
 
     public static SignatureResult error(String assetName, String detail) {
         return new SignatureResult(
-            SignatureStatus.ERROR, assetName, null, null, null, detail);
+            SignatureStatus.ERROR, assetName, null, null, null, null, detail);
     }
 
     /**

@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.platform;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -121,9 +122,11 @@ class WindowsNativeInstallTest {
         assertNotNull(productCode);
         assertTrue(productCode.startsWith("{") && productCode.endsWith("}"),
             productCode);
+        assertEquals(PlatformHandler.InstallState.INSTALLED, handler.productInstallState(productCode));
 
         assertTrue(handler.uninstall(installed, productCode));
         assertFalse(Files.exists(app));
+        assertEquals(PlatformHandler.InstallState.MISSING, handler.productInstallState(productCode));
     }
 
     private void run(Path workingDirectory, String... command) throws Exception {

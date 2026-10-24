@@ -144,16 +144,9 @@ class WindowsSignatureVerifierTest {
     }
 
     private static Process startPowerShell(String script) throws Exception {
-        try {
-            return new ProcessBuilder(
-                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
-                .redirectErrorStream(true)
-                .start();
-        } catch (java.io.IOException e) {
-            return new ProcessBuilder(
-                "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-                .redirectErrorStream(true)
-                .start();
-        }
+        return new ProcessBuilder(
+            "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
+            .redirectErrorStream(true)
+            .start();
     }
 }

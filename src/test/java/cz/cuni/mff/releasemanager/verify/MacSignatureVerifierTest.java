@@ -32,6 +32,7 @@ class MacSignatureVerifierTest {
         assertEquals(SignatureStatus.VERIFIED, result.status());
         assertEquals("ad-hoc", result.signer());
         assertNull(result.identity());
+        assertEquals(Boolean.FALSE, result.notarized());
     }
 
     @Test
