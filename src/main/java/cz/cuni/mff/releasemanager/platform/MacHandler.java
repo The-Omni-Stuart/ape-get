@@ -52,7 +52,7 @@ public final class MacHandler extends PlatformHandler {
             return targetDir.resolve(app.getFileName());
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();
-            System.out.println("Installation error: " + e.getMessage());
+            System.err.println("Installation error: " + e.getMessage());
             return null;
         }
     }
@@ -125,7 +125,7 @@ public final class MacHandler extends PlatformHandler {
     @Override
     public boolean uninstall(Path asset) {
         if (!isAllowedUninstallPath(asset)) {
-            System.out.println("Refusing to uninstall path outside Applications: " + asset);
+            System.err.println("Refusing to uninstall path outside Applications: " + asset);
             return false;
         }
         if (!Files.exists(asset, LinkOption.NOFOLLOW_LINKS)) {
@@ -135,7 +135,7 @@ public final class MacHandler extends PlatformHandler {
             FileUtils.deleteRecursively(asset);
             return true;
         } catch (IOException e) {
-            System.out.println("Uninstallation error: " + e.getMessage());
+            System.err.println("Uninstallation error: " + e.getMessage());
             return false;
         }
     }

@@ -18,40 +18,42 @@ public class CmdParser {
      * @return the parsed Command
      */
     public Command parse(String[] args) {
-        Command defaultCommand = Command.HELP;
-        defaultCommand.argument = null;
-        if (args.length > 1) {
-            defaultCommand.argument =  String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-        }
+        Command.HELP.argument = null;
+        Command.USAGE.argument = null;
         if (args.length == 0) {
-            return defaultCommand;
+            return Command.HELP;
         }
-        Command command = Command.fromName(args[0]).orElseGet(() -> defaultCommand);
+        Command command = Command.fromName(args[0]).orElse(null);
+        if (command == null) {
+            return usage(String.join(" ", args));
+        }
         if (command == Command.SEARCH) {
             if (args.length < 2) {
-                defaultCommand.argument = null;
-                return defaultCommand;
+                return usage(null);
             }
             String query = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
             if (query.isBlank()) {
-                defaultCommand.argument = null;
-                return defaultCommand;
+                return usage(null);
             }
             command.argument = query;
             return command;
         }
-        if (command.argNumber == 0 && command != Command.HELP && args.length != 1) {
-            defaultCommand.argument = null;
-            return defaultCommand;
-        }
         if (command.requiresArgument()) {
             if (args.length != 2) {
-                defaultCommand.argument = null;
-                return defaultCommand;
+                return usage(null);
             }
             command.argument = args[1];
+            return command;
+        }
+        if (args.length != 1) {
+            return usage(null);
         }
         return command;
+    }
+
+    private Command usage(String message) {
+        Command.USAGE.argument = message;
+        return Command.USAGE;
     }
 
     /**
@@ -64,7 +66,7 @@ public class CmdParser {
             String input = scanner.nextLine();
             return Integer.parseInt(input);
         } catch (NumberFormatException e) {
-            System.out.println("Invalid input. Please enter a number.");
+            System.err.println("Invalid input. Please enter a number.");
             return getUserInput();
         }
     }

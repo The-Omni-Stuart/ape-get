@@ -126,7 +126,7 @@ public class FileUtils {
                 }
             }
         } catch (IOException e) {
-            System.out.println("Failed to remove directory: " + e.getMessage());
+            System.err.println("Failed to remove directory: " + e.getMessage());
         }
     }
 

@@ -10,7 +10,13 @@ public class Main {
      * @param args command line arguments
      */
     public static void main(String[] args) {
-        ReleaseManager releaseManager = ReleaseManager.getInstance();
-        releaseManager.execute(args);
+        int exitCode;
+        try {
+            exitCode = ReleaseManager.getInstance().execute(args);
+        } catch (RuntimeException e) {
+            System.err.println("Unexpected error: " + e.getMessage());
+            exitCode = 1;
+        }
+        System.exit(exitCode);
     }
 }

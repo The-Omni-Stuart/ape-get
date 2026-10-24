@@ -71,7 +71,7 @@ public class GithubClient {
             return Optional.ofNullable(searchResult);
 
         } catch (IOException | InterruptedException ex) {
-            System.out.println(ex.getMessage());
+            System.err.println(ex.getMessage());
             return Optional.empty();
         }
     }
@@ -93,17 +93,17 @@ public class GithubClient {
         try {
             var jsonResponse = request(URI.create(url));
             if (jsonResponse.isEmpty()) {
-                System.out.println("No releases found for this repository.");
+                System.err.println("No releases found for this repository.");
                 return List.of();
             }
             String json = jsonResponse.get();
             List<Asset> assets = findAssets(json);
             if (assets.isEmpty()) {
-                System.out.println("No suitable asset found for this repository.");
+                System.err.println("No suitable asset found for this repository.");
             }
             return assets;
         } catch (IOException | InterruptedException ex) {
-            System.out.println(ex.getMessage());
+            System.err.println(ex.getMessage());
             return List.of();
         }
     }
@@ -172,7 +172,7 @@ public class GithubClient {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.out.println("Error downloading asset: " + e.getMessage());
+            System.err.println("Error downloading asset: " + e.getMessage());
             return null;
         }
         return installDownloadedAsset(assetPath, repoFullName);
@@ -255,7 +255,7 @@ public class GithubClient {
         long remaining = headers.firstValueAsLong("X-RateLimit-Remaining").orElse(0);
         long resetTime = headers.firstValueAsLong("X-RateLimit-Reset").orElse(0);
 
-        System.out.printf("Rate limit exceeded: Remaining: %d, Reset: %tT UTC%n",
+        System.err.printf("Rate limit exceeded: Remaining: %d, Reset: %tT UTC%n",
             remaining, new Date(resetTime * 1000));
     }
 

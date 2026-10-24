@@ -18,10 +18,11 @@ class CmdParserTest {
 
     @Test
     void testParseArgument() {
-        String[] args = {"COMMAND_NAME", "argument"};
+        String[] args = {"install", "argument"};
         Command result = cmdParser.parse(args);
 
         assertNotNull(result);
+        assertEquals(Command.INSTALL, result);
         assertEquals("argument", result.argument);
     }
 
@@ -43,7 +44,7 @@ class CmdParserTest {
     void testParseWithInvalidCommand() {
         String[] args = {"INVALID_COMMAND"};
         Command result = cmdParser.parse(args);
-        assertEquals(Command.HELP, result);
+        assertEquals(Command.USAGE, result);
     }
 
     @Test
@@ -57,7 +58,7 @@ class CmdParserTest {
     void testParseWithMissingRequiredArgument() {
         for (String command : new String[] {"search", "install", "uninstall", "update"}) {
             Command result = assertDoesNotThrow(() -> cmdParser.parse(new String[] {command}));
-            assertEquals(Command.HELP, result, command);
+            assertEquals(Command.USAGE, result, command);
         }
     }
 
@@ -81,7 +82,7 @@ class CmdParserTest {
     void testParseInstallRejectsExtraArguments() {
         for (String command : new String[] {"install", "uninstall", "update"}) {
             Command result = cmdParser.parse(new String[] {command, "owner/repo", "extra"});
-            assertEquals(Command.HELP, result, command);
+            assertEquals(Command.USAGE, result, command);
         }
     }
 
@@ -89,14 +90,14 @@ class CmdParserTest {
     void testParseListRejectsExtraArguments() {
         Command result = cmdParser.parse(new String[] {"list", "extra"});
 
-        assertEquals(Command.HELP, result);
+        assertEquals(Command.USAGE, result);
     }
 
     @Test
     void testParseSearchRejectsBlankQuery() {
         for (String query : new String[] {"", "   "}) {
             Command result = cmdParser.parse(new String[] {"search", query});
-            assertEquals(Command.HELP, result, "[" + query + "]");
+            assertEquals(Command.USAGE, result, "[" + query + "]");
         }
     }
 }

@@ -48,7 +48,7 @@ public final class LinuxHandler extends PlatformHandler {
             String installName = FileUtils.getInstallName(repoFullName, assetPath);
             Path target = targetDir.resolve(installName);
             if (Files.exists(target) && isOwnedByAnotherRepo(target, repoFullName)) {
-                System.out.println("Refusing to overwrite " + target + " owned by another release.");
+                System.err.println("Refusing to overwrite " + target + " owned by another release.");
                 return null;
             }
 
@@ -58,7 +58,7 @@ public final class LinuxHandler extends PlatformHandler {
             return target;
 
         } catch (IOException e) {
-            System.out.println("Installation failed");
+            System.err.println("Installation failed");
         }
         return null;
     }
@@ -67,7 +67,7 @@ public final class LinuxHandler extends PlatformHandler {
     public boolean uninstall(Path asset) {
         Path installDir = getInstallDir();
         if (!isUnder(asset, installDir)) {
-            System.out.println("Refusing to uninstall path outside " + installDir + ": " + asset);
+            System.err.println("Refusing to uninstall path outside " + installDir + ": " + asset);
             return false;
         }
         if (!Files.isRegularFile(asset)) {
@@ -77,7 +77,7 @@ public final class LinuxHandler extends PlatformHandler {
             Files.deleteIfExists(asset);
             return !Files.exists(asset);
         } catch (IOException e) {
-            System.out.println("Failed to uninstall: " + e.getMessage());
+            System.err.println("Failed to uninstall: " + e.getMessage());
             return false;
         }
     }

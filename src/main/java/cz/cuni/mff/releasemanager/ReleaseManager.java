@@ -1,6 +1,7 @@
 package cz.cuni.mff.releasemanager;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -58,36 +59,45 @@ public class ReleaseManager {
      * Executes the command based on the provided arguments.
      *
      * @param args command-line arguments specifying the command and parameters
+     * @return process exit code: 0 success, 1 failure, 2 usage error
      */
-    public void execute(String[] args) {
+    public int execute(String[] args) {
         Command command = cmdParser.parse(args);
 
-        switch (command) {
-            case SEARCH -> search(command);
-            case INSTALL -> install(command);
-            case UNINSTALL -> uninstall(command);
-            case UPDATE -> update(command);
-            case LIST -> list();
-            case HELP -> help(command);
-        }
+        return switch (command) {
+            case SEARCH -> search(command) ? 0 : 1;
+            case INSTALL -> install(command) ? 0 : 1;
+            case UNINSTALL -> uninstall(command) ? 0 : 1;
+            case UPDATE -> update(command) ? 0 : 1;
+            case LIST -> list() ? 0 : 1;
+            case HELP -> {
+                help();
+                yield 0;
+            }
+            case USAGE -> usage(command);
+        };
     }
     /**
      * Searches for a GitHub repository by name and prints the results.
      *
      * @param command the command containing the search term
      */
-    private void search(Command command) {
+    private boolean search(Command command) {
         var searchResult = githubClient.searchRepoByName(command.argument);
-        if (searchResult.isEmpty() || searchResult.get().items().isEmpty()) {
-            System.out.println("No results found.");
-            return;
+        if (searchResult.isEmpty()) {
+            return false;
         }
         var items = searchResult.get().items();
+        if (items.isEmpty()) {
+            System.out.println("No results found.");
+            return true;
+        }
         System.out.println("Found " + items.size() + " repositories.");
         for (Repo repo : items) {
             System.out.println(repo.fullName() + ": " + repo.description());
         }
         System.out.println("To install a release, use the 'install' command followed by the repository name.");
+        return true;
     }
     /**
      * Installs the latest release of a specified GitHub repository.
@@ -95,24 +105,27 @@ public class ReleaseManager {
      *
      * @param command the command containing the repository name
      */
-    private void install(Command command) {
-        if (command.argument.split("/").length != 2) {
-            System.out.println("Please specify the correct repository name of format 'owner/repo'.");
-            return;
+    private boolean install(Command command) {
+        if (command.argument == null || command.argument.split("/").length != 2) {
+            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+            return false;
         }
         var result = githubClient.getLatestReleaseAssets(command.argument);
-        if (result == null || result.isEmpty()) {
-            System.out.println("Failed to retrieve the latest release.");
-            return;
+        if (result.isEmpty()) {
+            System.err.println("Failed to retrieve the latest release.");
+            return false;
         }
         Asset asset = getSingleAsset(result);
         Path installedAsset = githubClient.installAsset(asset, command.argument);
-        if (installedAsset != null) {
-            System.out.println("Installation successful.");
-            addReleaseToList(command.argument, installedAsset, asset);
-        } else {
-            System.out.println("Installation failed.");
+        if (installedAsset == null) {
+            System.err.println("Installation failed.");
+            return false;
         }
+        if (!addReleaseToList(command.argument, installedAsset, asset)) {
+            return false;
+        }
+        System.out.println("Installation successful.");
+        return true;
     }
     /**
      * Prompts the user to choose a single asset from a list of assets.
@@ -141,7 +154,7 @@ public class ReleaseManager {
     private int getChoice(int min, int max) {
         int input = cmdParser.getUserInput();
         if (input < min || input > max) {
-            System.out.println("Invalid choice. Valid options are: " + min + " - " + max);
+            System.err.println("Invalid choice. Valid options are: " + min + " - " + max);
             return getChoice(min, max);
         }
         return input;
@@ -152,8 +165,9 @@ public class ReleaseManager {
      * @param repoFullName the full name of the repository (e.g., "owner/repo")
      * @param installedRelease the path to the installed asset
      * @param asset the asset
+     * @return true if the release was recorded
      */
-    private void addReleaseToList(String repoFullName, Path installedRelease, Asset asset) {
+    private boolean addReleaseToList(String repoFullName, Path installedRelease, Asset asset) {
         ReleaseInfo release = new ReleaseInfo(
             repoFullName,
             Instant.now(),
@@ -162,9 +176,11 @@ public class ReleaseManager {
         );
         try {
             platformHandler.addReleaseToList(release);
+            return true;
         }
         catch (IOException e) {
-            System.out.println("Failed to add release to list: " + e.getMessage());
+            System.err.println("Failed to add release to list: " + e.getMessage());
+            return false;
         }
     }
     /**
@@ -172,38 +188,41 @@ public class ReleaseManager {
      *
      * @param command the command containing the repository name
      */
-    private void uninstall(Command command) {
-        if (command.argument.split("/").length != 2) {
-            System.out.println("Please specify the correct repository name of format 'owner/repo'.");
-            return;
+    private boolean uninstall(Command command) {
+        if (command.argument == null || command.argument.split("/").length != 2) {
+            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+            return false;
         }
         ReleasesList releasesList;
         try {
             releasesList = platformHandler.loadReleasesList();
         } catch (IOException e) {
-            System.out.println("Failed to find installed release.");
-            return;
+            System.err.println("Failed to find installed release.");
+            return false;
         }
         if (releasesList == null) {
-            System.out.println("No releases installed.");
-            return;
+            System.err.println("No releases installed.");
+            return false;
         }
-        List<ReleaseInfo> releases = releasesList.releases();
-        releases.stream()
-                .filter(release -> release.repo().equals(command.argument))
-                .findFirst()
-                .ifPresentOrElse(release -> {
-                    if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {
-                        System.out.println("Failed to uninstall " + release.repo() + ".");
-                        return;
-                    }
-                    if (platformHandler.removeReleaseFromList(release)) {
-                        System.out.println("Successfully uninstalled.");
-                    } else {
-                        System.out.println(
-                            "Uninstalled " + release.repo() + ", but failed to update the release list.");
-                    }
-                }, () -> System.out.println("Release " + command.argument + " is not found."));
+        var found = releasesList.releases().stream()
+            .filter(release -> release.repo().equals(command.argument))
+            .findFirst();
+        if (found.isEmpty()) {
+            System.err.println("Release " + command.argument + " is not found.");
+            return false;
+        }
+        ReleaseInfo release = found.get();
+        if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {
+            System.err.println("Failed to uninstall " + release.repo() + ".");
+            return false;
+        }
+        if (!platformHandler.removeReleaseFromList(release)) {
+            System.err.println(
+                "Uninstalled " + release.repo() + ", but failed to update the release list.");
+            return false;
+        }
+        System.out.println("Successfully uninstalled.");
+        return true;
     }
 
     /**
@@ -211,106 +230,123 @@ public class ReleaseManager {
      *
      * @param command the command containing the repository name
      */
-    private void update(Command command) {
+    private boolean update(Command command) {
         ReleasesList releasesList;
         try {
             releasesList = platformHandler.loadReleasesList();
         } catch (IOException e) {
-            System.out.println("Failed to find installed release.");
-            return;
+            System.err.println("Failed to find installed release.");
+            return false;
         }
         if (releasesList == null) {
-            System.out.println("No releases installed.");
-            return;
+            System.err.println("No releases installed.");
+            return false;
         }
-        List<ReleaseInfo> releases = releasesList.releases();
-        releases.stream()
-                .filter(release -> release.repo().equals(command.argument))
-                .findFirst()
-                .ifPresentOrElse(release -> {
-                    List<Asset> assets = githubClient.getLatestReleaseAssets(command.argument);
-                    if (assets.isEmpty()) {
-                        System.out.println("No asset found.");
-                        return;
-                    }
-                    Asset newAsset = null;
-                    for (Asset asset : assets) {
-                        if (asset.name().equals(release.asset().name())) {
-                            newAsset = asset;
-                            break;
-                        }
-                    }
-                    if (newAsset == null) {
-                        newAsset = getSingleAsset(assets);
-                    }
-                    if (release.asset().url().equals(newAsset.url())) {
-                        System.out.println("Already up to date.");
-                    }
-                    else {
-                        Path downloadedAsset;
-                        try {
-                            downloadedAsset = githubClient.downloadAsset(newAsset);
-                        } catch (IOException | InterruptedException e) {
-                            if (e instanceof InterruptedException) {
-                                Thread.currentThread().interrupt();
-                            }
-                            System.out.println("Failed to download update: " + e.getMessage());
-                            return;
-                        }
-                        if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {
-                            System.out.println("Failed to uninstall the old version; update aborted.");
-                            githubClient.discardAsset(downloadedAsset);
-                            return;
-                        }
-                        Path installedAsset = githubClient.installDownloadedAsset(
-                            downloadedAsset, command.argument);
-                        if (installedAsset != null) {
-                            System.out.println("Successfully updated.");
-                            addReleaseToList(command.argument, installedAsset, newAsset);
-                        } else {
-                            System.out.println("Installation failed.");
-                        }
-                    }
-                }, () -> System.out.println("Release " + command.argument + " is not found."));
+        var found = releasesList.releases().stream()
+            .filter(release -> release.repo().equals(command.argument))
+            .findFirst();
+        if (found.isEmpty()) {
+            System.err.println("Release " + command.argument + " is not found.");
+            return false;
+        }
+        ReleaseInfo release = found.get();
+        List<Asset> assets = githubClient.getLatestReleaseAssets(command.argument);
+        if (assets.isEmpty()) {
+            System.err.println("No asset found.");
+            return false;
+        }
+        Asset newAsset = null;
+        for (Asset asset : assets) {
+            if (asset.name().equals(release.asset().name())) {
+                newAsset = asset;
+                break;
+            }
+        }
+        if (newAsset == null) {
+            newAsset = getSingleAsset(assets);
+        }
+        if (release.asset().url().equals(newAsset.url())) {
+            System.out.println("Already up to date.");
+            return true;
+        }
+        Path downloadedAsset;
+        try {
+            downloadedAsset = githubClient.downloadAsset(newAsset);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println("Failed to download update: " + e.getMessage());
+            return false;
+        }
+        if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {
+            System.err.println("Failed to uninstall the old version; update aborted.");
+            githubClient.discardAsset(downloadedAsset);
+            return false;
+        }
+        Path installedAsset = githubClient.installDownloadedAsset(
+            downloadedAsset, command.argument);
+        if (installedAsset == null) {
+            System.err.println("Installation failed.");
+            return false;
+        }
+        if (!addReleaseToList(command.argument, installedAsset, newAsset)) {
+            return false;
+        }
+        System.out.println("Successfully updated.");
+        return true;
     }
 
     /**
      * Lists all installed releases.
      */
-    private void list() {
+    private boolean list() {
         ReleasesList releasesList;
         try {
             releasesList = platformHandler.loadReleasesList();
         } catch (IOException e) {
-            System.out.println("Failed to load releases list.");
-            return;
+            System.err.println("Failed to load releases list.");
+            return false;
         }
         if (releasesList == null) {
             System.out.println("No releases installed.");
-            return;
+            return true;
         }
         List<ReleaseInfo> releases = releasesList.releases();
         for (ReleaseInfo release : releases) {
             System.out.println(release.repo());
         }
+        return true;
     }
 
     /**
-     * Prints usage help text or a message for an unknown command.
-     *
-     * @param command the provided command
+     * Prints usage help text.
      */
-    private void help(Command command) {
-        if (command.argument != null) {
-            System.out.println("Unknown command: " + command.argument);
+    private void help() {
+        printUsage(System.out);
+    }
+
+    /**
+     * Prints an unknown-command message and usage text, and returns the usage exit code.
+     * @param command the invalid command
+     * @return the usage exit code
+     */
+    private int usage(Command command) {
+        if (command.argument != null && !command.argument.isBlank()) {
+            System.err.println("Unknown command: " + command.argument);
         }
-        System.out.println("Usage: java -jar github-releases-manager.jar [command] [options]");
-        System.out.println("Commands:");
-        System.out.println("  search [name] - search for a release by name");
-        System.out.println("  install [name] - install the latest release by name");
-        System.out.println("  uninstall [name] - uninstall the release by name");
-        System.out.println("  update [name] - update the installed release by name");
-        System.out.println("  list - list all installed releases");
-        System.out.println("  help - display this help message");
+        printUsage(System.err);
+        return 2;
+    }
+
+    private void printUsage(PrintStream out) {
+        out.println("Usage: java -jar github-releases-manager.jar [command] [options]");
+        out.println("Commands:");
+        out.println("  search [name] - search for a release by name");
+        out.println("  install [name] - install the latest release by name");
+        out.println("  uninstall [name] - uninstall the release by name");
+        out.println("  update [name] - update the installed release by name");
+        out.println("  list - list all installed releases");
+        out.println("  help - display this help message");
     }
 }

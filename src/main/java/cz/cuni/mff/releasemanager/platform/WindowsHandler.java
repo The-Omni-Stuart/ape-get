@@ -59,14 +59,14 @@ public final class WindowsHandler extends PlatformHandler {
             } else if (fileName.endsWith(".exe")) {
                 return installExe(assetPath, repoFullName);
             } else {
-                System.out.println("Unsupported file format: " + fileName);
+                System.err.println("Unsupported file format: " + fileName);
                 return null;
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.out.println("Installation error: " + e.getMessage());
+            System.err.println("Installation error: " + e.getMessage());
             return null;
         }
     }
@@ -111,7 +111,7 @@ public final class WindowsHandler extends PlatformHandler {
         String installName = FileUtils.getInstallName(repoFullName, assetPath);
         Path targetDir = Paths.get(System.getenv("ProgramFiles"), installName);
         if (Files.exists(targetDir) && isOwnedByAnotherRepo(targetDir, repoFullName)) {
-            System.out.println("Refusing to overwrite " + targetDir + " owned by another release.");
+            System.err.println("Refusing to overwrite " + targetDir + " owned by another release.");
             return null;
         }
         String command = String.format("\"%s\" /S /D=%s", assetPath.toString(), targetDir.toString());
@@ -153,7 +153,7 @@ public final class WindowsHandler extends PlatformHandler {
     @Override
     public boolean uninstall(Path asset) {
         if (!isAllowedUninstallPath(asset)) {
-            System.out.println("Refusing to uninstall path outside install directories: " + asset);
+            System.err.println("Refusing to uninstall path outside install directories: " + asset);
             return false;
         }
         try {
@@ -165,14 +165,14 @@ public final class WindowsHandler extends PlatformHandler {
                 uninstallExe(asset);
                 return true;
             } else {
-                System.out.println("Unsupported file format: " + fileName);
+                System.err.println("Unsupported file format: " + fileName);
                 return false;
             }
         } catch (InterruptedException | IOException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.out.println("Uninstallation error: " + e.getMessage());
+            System.err.println("Uninstallation error: " + e.getMessage());
             return false;
         }
     }

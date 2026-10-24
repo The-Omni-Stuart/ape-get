@@ -155,7 +155,7 @@ public abstract class PlatformHandler {
         if (validReleases.isEmpty()) {
             return quarantine(releasesFile);
         }
-        System.out.println("Warning: ignored "
+        System.err.println("Warning: ignored "
             + (releasesList.releases().size() - validReleases.size())
             + " invalid release entries in " + releasesFile);
         return new ReleasesList(validReleases);
@@ -181,7 +181,7 @@ public abstract class PlatformHandler {
         Path quarantined = releasesFile.resolveSibling(
             RELEASES_LIST_FILE + ".corrupt-" + Instant.now().toEpochMilli());
         Files.move(releasesFile, quarantined, StandardCopyOption.REPLACE_EXISTING);
-        System.out.println("Warning: releases file was corrupt; moved to " + quarantined);
+        System.err.println("Warning: releases file was corrupt; moved to " + quarantined);
         return null;
     }
 
@@ -225,7 +225,7 @@ public abstract class PlatformHandler {
             writeReleasesList(new ReleasesList(currentReleases));
             return true;
         } catch (IOException e) {
-            System.out.println("Failed to remove release from list: " + e.getMessage());
+            System.err.println("Failed to remove release from list: " + e.getMessage());
             return false;
         }
     }

@@ -16,7 +16,8 @@ public enum Command {
     UNINSTALL("uninstall", 1),
     UPDATE("update", 1),
     LIST("list", 0),
-    HELP("help", 0);
+    HELP("help", 0),
+    USAGE("", 0);
 
     /**
      * Constructor for the Command enum.
@@ -37,6 +38,7 @@ public enum Command {
      * This is used for quick lookup of commands by name.
      */
     private static final Map<String, Command> COMMAND_MAP = Arrays.stream(values())
+        .filter(command -> command != USAGE)
         .collect(Collectors.toMap(c -> c.commandName, Function.identity()));
 
     /**

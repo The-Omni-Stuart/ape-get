@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -67,7 +68,7 @@ class ReleaseManagerTest {
 
         when(mockGithubClient.searchRepoByName("example")).thenReturn(searchResult);
 
-        releaseManager.execute(new String[] {"search", "example"});
+        assertEquals(0, releaseManager.execute(new String[] {"search", "example"}));
 
         verify(mockGithubClient).searchRepoByName("example");
     }
@@ -83,7 +84,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.installAsset(asset, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
-        releaseManager.execute(new String[]{"install", "user/example"});
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).installAsset(asset, "user/example");
     }
@@ -102,7 +103,7 @@ class ReleaseManagerTest {
         when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(true);
         when(mockPlatformHandler.removeReleaseFromList(info)).thenReturn(true);
 
-        releaseManager.execute(new String[]{"uninstall", "user/example"});
+        assertEquals(0, releaseManager.execute(new String[]{"uninstall", "user/example"}));
 
         verify(mockPlatformHandler).uninstall(uninstallPath);
         verify(mockPlatformHandler).removeReleaseFromList(info);
@@ -120,7 +121,7 @@ class ReleaseManagerTest {
         when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
         when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(false);
 
-        releaseManager.execute(new String[]{"uninstall", "user/example"});
+        assertEquals(1, releaseManager.execute(new String[]{"uninstall", "user/example"}));
 
         verify(mockPlatformHandler).uninstall(uninstallPath);
         verify(mockPlatformHandler, never()).removeReleaseFromList(any());
@@ -145,7 +146,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
-        releaseManager.execute(new String[]{"update", "user/example"});
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockGithubClient).downloadAsset(newAsset);
         verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
@@ -169,7 +170,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
-        releaseManager.execute(new String[]{"update", "user/example"});
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
 
         InOrder inOrder = inOrder(mockGithubClient, mockPlatformHandler);
         inOrder.verify(mockGithubClient).downloadAsset(newAsset);
@@ -193,7 +194,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockPlatformHandler.uninstall(Path.of("/ProgramFiles/uninstall.exe"))).thenReturn(false);
 
-        releaseManager.execute(new String[]{"update", "user/example"});
+        assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
@@ -213,10 +214,41 @@ class ReleaseManagerTest {
         when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
         when(mockGithubClient.downloadAsset(newAsset)).thenThrow(new IOException("boom"));
 
-        releaseManager.execute(new String[]{"update", "user/example"});
+        assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+    }
+
+    @Test
+    void testExecuteUsageReturnsUsageCode() {
+        Command cmd = Command.USAGE;
+        cmd.argument = null;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        assertEquals(2, releaseManager.execute(new String[]{"bad"}));
+    }
+
+    @Test
+    void testExecuteSearchFailureReturnsErrorCode() {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockGithubClient.searchRepoByName("example")).thenReturn(Optional.empty());
+
+        assertEquals(1, releaseManager.execute(new String[]{"search", "example"}));
+    }
+
+    @Test
+    void testExecuteInstallFailureReturnsErrorCode() {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        Asset asset = new Asset("http://url", "example.exe");
+        when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(asset));
+        when(mockGithubClient.installAsset(asset, "user/example")).thenReturn(null);
+
+        assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
     }
 
     @Test
@@ -228,7 +260,7 @@ class ReleaseManagerTest {
         ReleasesList releases = new ReleasesList(List.of(info));
         when(mockPlatformHandler.loadReleasesList()).thenReturn(releases);
 
-        releaseManager.execute(new String[]{"list"});
+        assertEquals(0, releaseManager.execute(new String[]{"list"}));
         verify(mockPlatformHandler).loadReleasesList();
     }
 
@@ -237,7 +269,7 @@ class ReleaseManagerTest {
         Command cmd = Command.HELP;
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
-        releaseManager.execute(new String[]{"help"});
+        assertEquals(0, releaseManager.execute(new String[]{"help"}));
         verify(mockCmdParser).parse(any());
     }
 }
