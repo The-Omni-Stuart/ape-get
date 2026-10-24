@@ -103,12 +103,19 @@ public abstract class PlatformHandler {
         if (releasesList == null || releasesList.releases() == null) {
             return null;
         }
-        boolean invalidEntry = releasesList.releases().stream()
-            .anyMatch(release -> !isValid(release));
-        if (invalidEntry) {
+        List<ReleaseInfo> validReleases = releasesList.releases().stream()
+            .filter(PlatformHandler::isValid)
+            .toList();
+        if (validReleases.size() == releasesList.releases().size()) {
+            return releasesList;
+        }
+        if (validReleases.isEmpty()) {
             return quarantine(releasesFile);
         }
-        return releasesList;
+        System.out.println("Warning: ignored "
+            + (releasesList.releases().size() - validReleases.size())
+            + " invalid release entries in " + releasesFile);
+        return new ReleasesList(validReleases);
     }
 
     private static boolean isValid(ReleaseInfo release) {

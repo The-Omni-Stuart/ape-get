@@ -199,4 +199,21 @@ class PlatformHandlerTest {
             assertEquals(1, files.count());
         }
     }
+
+    @Test
+    void testLoadReleasesList_keepsValidEntriesWhenSomeAreInvalid() throws IOException {
+        Files.createDirectories(handler.getReleasesListDirLocation());
+        Files.writeString(handler.getReleasesListFileLocation(), """
+            {"releases":[
+              {"repo":"repo1","uninstall_path":"/tmp/repo1","asset":{"url":"url","name":"name"}},
+              {}
+            ]}
+            """);
+
+        ReleasesList list = handler.loadReleasesList();
+
+        assertNotNull(list);
+        assertEquals(1, list.releases().size());
+        assertEquals("repo1", list.releases().get(0).repo());
+    }
 }
