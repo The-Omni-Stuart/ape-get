@@ -28,6 +28,7 @@ class CmdParserTest {
         assertEquals("argument", result.argument);
     }
 
+
     @Test
     void testParseWithValidCommand() {
         String[] args = {"list"};

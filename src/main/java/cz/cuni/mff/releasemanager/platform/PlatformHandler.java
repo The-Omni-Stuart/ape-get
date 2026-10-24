@@ -56,6 +56,24 @@ public abstract class PlatformHandler {
     public abstract boolean uninstall(Path asset);
 
     /**
+     * Uninstalls an asset using platform metadata when available.
+     * @param asset path to the asset or cached installer
+     * @param productCode platform product code, or null
+     * @return true if the asset is gone, false otherwise
+     */
+    public boolean uninstall(Path asset, String productCode) {
+        return uninstall(asset);
+    }
+
+    /**
+     * @param installed path to an installed asset or cached installer
+     * @return a platform product code when the platform exposes one, otherwise null
+     */
+    public String productCode(Path installed) {
+        return null;
+    }
+
+    /**
      * @return Supported file formats for installation.
      */
     public abstract String[] getFormats();

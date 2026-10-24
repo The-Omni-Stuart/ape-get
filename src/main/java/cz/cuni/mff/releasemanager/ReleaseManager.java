@@ -531,7 +531,8 @@ public class ReleaseManager {
                 installKind(asset),
                 installed.toString(),
                 stateStore.paths().appDir("github", repo).toString(),
-                new AppManifest.Uninstall(installed.toString(), List.of(), null)),
+                new AppManifest.Uninstall(
+                    installed.toString(), List.of(), platformHandler.productCode(installed))),
             new AppManifest.Verification(
                 verification.status().name().toLowerCase(Locale.ROOT),
                 "sha256",
@@ -636,11 +637,15 @@ public class ReleaseManager {
             return false;
         }
 
-        String uninstallPath = manifest.install().uninstall() != null
-            && manifest.install().uninstall().path() != null
-            ? manifest.install().uninstall().path()
+        AppManifest.Uninstall uninstall = manifest.install().uninstall();
+        String uninstallPath = uninstall != null && uninstall.path() != null
+            ? uninstall.path()
             : manifest.install().path();
-        if (!platformHandler.uninstall(Path.of(uninstallPath))) {
+        String productCode = uninstall == null ? null : uninstall.productCode();
+        boolean removed = productCode == null || productCode.isBlank()
+            ? platformHandler.uninstall(Path.of(uninstallPath))
+            : platformHandler.uninstall(Path.of(uninstallPath), productCode);
+        if (!removed) {
             System.err.println("Failed to uninstall " + manifest.repo() + ".");
             return false;
         }
@@ -779,6 +784,7 @@ public class ReleaseManager {
         }
         return true;
     }
+
 
     private boolean rollback(Command command) {
         if (os == Platform.OS.WINDOWS) {

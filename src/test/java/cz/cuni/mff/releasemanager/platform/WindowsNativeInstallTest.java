@@ -117,7 +117,12 @@ class WindowsNativeInstallTest {
         assertTrue(Files.isRegularFile(app),
             "app.exe not found under " + app64 + " or " + app32);
 
-        assertTrue(handler.uninstall(installed));
+        String productCode = handler.productCode(installed);
+        assertNotNull(productCode);
+        assertTrue(productCode.startsWith("{") && productCode.endsWith("}"),
+            productCode);
+
+        assertTrue(handler.uninstall(installed, productCode));
         assertFalse(Files.exists(app));
     }
 

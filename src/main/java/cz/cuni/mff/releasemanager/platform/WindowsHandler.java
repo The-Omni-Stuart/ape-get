@@ -1,11 +1,16 @@
 package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
@@ -13,6 +18,9 @@ import cz.cuni.mff.releasemanager.utils.FileUtils;
  * WindowsHandler is responsible for handling the installation and uninstallation of applications on Windows systems.
  */
 public final class WindowsHandler extends PlatformHandler {
+
+    private static final Pattern MSI_PRODUCT_CODE = Pattern.compile(
+        "\\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\}?");
 
     private static WindowsHandler instance;
 
@@ -181,6 +189,96 @@ public final class WindowsHandler extends PlatformHandler {
             System.err.println("Uninstallation error: " + e.getMessage());
             return false;
         }
+    }
+
+    @Override
+    public boolean uninstall(Path asset, String productCode) {
+        if (productCode == null || productCode.isBlank()) {
+            return uninstall(asset);
+        }
+        try {
+            if (asset != null && !isAllowedUninstallPath(asset)) {
+                System.err.println("Refusing to uninstall path outside install directories: " + asset);
+                return false;
+            }
+            Process process = new ProcessBuilder(
+                "msiexec", "/x", productCode, "/qn", "/norestart")
+                .inheritIO()
+                .start();
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                throw new IOException("Uninstallation failed with exit code: " + exitCode);
+            }
+            if (asset != null) {
+                Files.deleteIfExists(asset);
+                FileUtils.removeTempDir(asset);
+            }
+            return true;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println("Uninstallation error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public String productCode(Path installed) {
+        if (installed == null || installed.getFileName() == null
+            || !installed.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".msi")) {
+            return null;
+        }
+
+        String script = "$installer = New-Object -ComObject WindowsInstaller.Installer;"
+            + "$db = $installer.GetType().InvokeMember('OpenDatabase','InvokeMethod',$null,"
+            + "$installer,@('" + installed.toString().replace("'", "''") + "',0));"
+            + "$view = $db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$db,"
+            + "@('SELECT Value FROM Property WHERE Property=''ProductCode'''));"
+            + "$view.GetType().InvokeMember('Execute','InvokeMethod',$null,$view,$null);"
+            + "$rec = $view.GetType().InvokeMember('Fetch','InvokeMethod',$null,$view,$null);"
+            + "$rec.GetType().InvokeMember('StringData','GetProperty',$null,$rec,1)";
+        try {
+            String output = runPowerShell(script);
+            Matcher matcher = MSI_PRODUCT_CODE.matcher(output);
+            if (!matcher.find()) {
+                return null;
+            }
+            String code = matcher.group();
+            return code.startsWith("{") ? code : "{" + code + "}";
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println("Warning: could not read the MSI product code: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static String runPowerShell(String script)
+        throws IOException, InterruptedException {
+        Process process;
+        try {
+            process = new ProcessBuilder(
+                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
+                .redirectErrorStream(true)
+                .start();
+        } catch (IOException e) {
+            process = new ProcessBuilder(
+                "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+                .redirectErrorStream(true)
+                .start();
+        }
+        String output = new String(
+            process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        if (!process.waitFor(60, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            throw new IOException("PowerShell timed out");
+        }
+        if (process.exitValue() != 0) {
+            throw new IOException(output.strip());
+        }
+        return output;
     }
 
     /**

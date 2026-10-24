@@ -166,6 +166,26 @@ class ReleaseManagerTest {
             new AppManifest.Signature("verified", "gpg", "Old Signer", identity));
     }
 
+    private static AppManifest withProductCode(AppManifest base, String productCode) {
+        AppManifest.Install install = base.install();
+        AppManifest.Uninstall uninstall = new AppManifest.Uninstall(
+            install.uninstall().path(), install.uninstall().args(), productCode);
+        return new AppManifest(
+            base.kind(),
+            base.schemaVersion(),
+            base.provider(),
+            base.repo(),
+            base.version(),
+            base.releaseId(),
+            base.asset(),
+            new AppManifest.Install(install.kind(), install.path(), install.root(), uninstall),
+            base.verification(),
+            base.backups(),
+            base.installedAt(),
+            base.updatedAt(),
+            base.signature());
+    }
+
     @Test
     void testExecuteSearch() {
         Command cmd = Command.SEARCH;
@@ -371,6 +391,57 @@ class ReleaseManagerTest {
         verify(mockPlatformHandler).uninstall(uninstallPath);
         verify(mockStateStore, never()).removeManifest(any());
     }
+
+    @Test
+    void testExecuteUninstallUsesProductCode() throws Exception {
+        Command cmd = Command.UNINSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        String productCode = "{11111111-2222-3333-4444-555555555555}";
+        AppManifest manifest = withProductCode(
+            manifest("user/example", "http://url", "example.exe",
+                "/ProgramFiles/uninstall.exe"),
+            productCode);
+        Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
+        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(manifest));
+        when(mockPlatformHandler.uninstall(uninstallPath, productCode)).thenReturn(true);
+        when(mockStateStore.removeManifest("user/example")).thenReturn(true);
+
+        assertEquals(0, releaseManager.execute(new String[]{"uninstall", "user/example"}));
+
+        verify(mockPlatformHandler).uninstall(uninstallPath, productCode);
+        verify(mockPlatformHandler, never()).uninstall(uninstallPath);
+        verify(mockStateStore).removeManifest("user/example");
+    }
+
+    @Test
+    void testExecuteInstallStoresProductCode() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        Path installed = Path.of("/ProgramFiles/installer.msi");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+            .thenReturn(installed);
+        String productCode = "{11111111-2222-3333-4444-555555555555}";
+        when(mockPlatformHandler.productCode(installed)).thenReturn(productCode);
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals(productCode, captor.getValue().install().uninstall().productCode());
+    }
+
+
 
     @Test
     void testExecuteUpdate() throws Exception {
