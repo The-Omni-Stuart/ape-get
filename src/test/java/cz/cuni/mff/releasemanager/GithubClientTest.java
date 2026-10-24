@@ -1,29 +1,31 @@
 package cz.cuni.mff.releasemanager;
 
-import java.io.ByteArrayInputStream;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
@@ -112,6 +114,32 @@ class GithubClientTest {
     }
 
     @Test
+    void getLatestRelease_exposesAllAndInstallableAssets() throws Exception {
+        String json = """
+            {
+              "assets": [
+                { "name": "Example-1.0.AppImage", "url": "http://example.com/Example-1.0.AppImage" },
+                { "name": "Example-1.0.AppImage.DIGEST", "url": "http://example.com/digest" },
+                { "name": "Example-1.0.AppImage.sig", "url": "http://example.com/sig" },
+                { "name": "Example-1.0.AppImage.zsync", "url": "http://example.com/zsync" }
+              ]
+            }
+            """;
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn(json);
+        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".appimage"});
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+            .thenReturn(mockResponse);
+
+        GithubClient.ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
+
+        assertEquals(4, release.all().size());
+        assertEquals(1, release.installable().size());
+        assertEquals("Example-1.0.AppImage", release.installable().get(0).name());
+    }
+
+    @Test
     void getLatestReleaseAssets_ignoresChecksumAndSignatureFiles() throws Exception {
         String json = """
             {
@@ -152,41 +180,61 @@ class GithubClientTest {
     }
 
     @Test
-    void installAsset_doesNotInstallEmptyDownload() throws Exception {
-        HttpResponse<InputStream> mockResponse = mock(HttpResponse.class);
-        when(mockResponse.statusCode()).thenReturn(200);
-        when(mockResponse.body()).thenReturn(InputStream.nullInputStream());
-        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofInputStream())))
-                .thenReturn(mockResponse);
+    @Timeout(10)
+    void downloadAsset_rejectsEmptyResponse() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/empty", exchange -> {
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            GithubClient client = new GithubClient(Duration.ofSeconds(5));
+            Asset asset = new Asset(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/empty",
+                "empty.bin");
 
-        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"), "owner/repo");
-
-        assertNull(result);
-        verifyNoInteractions(mockPlatformHandler);
+            assertThrows(IOException.class, () -> client.downloadAsset(asset));
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
-    void installAsset_closesDownloadStream() throws Exception {
-        boolean[] closed = {false};
-        InputStream stream = new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8)) {
-            @Override
-            public void close() throws IOException {
-                closed[0] = true;
-                super.close();
+    @Timeout(10)
+    void downloadAsset_timesOutInsteadOfHanging() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setDaemon(true);
+            return thread;
+        });
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.setExecutor(executor);
+        server.createContext("/slow", exchange -> {
+            exchange.sendResponseHeaders(200, 100);
+            exchange.getResponseBody().write(new byte[] {1});
+            exchange.getResponseBody().flush();
+            try {
+                release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                // test shutdown
             }
-        };
-        HttpResponse<InputStream> mockResponse = mock(HttpResponse.class);
-        when(mockResponse.statusCode()).thenReturn(200);
-        when(mockResponse.body()).thenReturn(stream);
-        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofInputStream())))
-                .thenReturn(mockResponse);
-        when(mockPlatformHandler.install(any(Path.class), any())).thenReturn(Path.of("/tmp/installed"));
+            exchange.close();
+        });
+        server.start();
+        try {
+            GithubClient client = new GithubClient(Duration.ofMillis(500));
+            Asset asset = new Asset(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/slow",
+                "slow.bin");
 
-        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"), "owner/repo");
-
-        assertNotNull(result);
-        assertTrue(closed[0]);
-        verify(mockPlatformHandler).install(any(Path.class), any());
+            assertThrows(IOException.class, () -> client.downloadAsset(asset));
+        } finally {
+            release.countDown();
+            server.stop(0);
+            executor.shutdownNow();
+        }
     }
 
 }

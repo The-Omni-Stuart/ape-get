@@ -1,7 +1,6 @@
 package cz.cuni.mff.releasemanager;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.ConnectException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -12,10 +11,15 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -37,18 +41,26 @@ public class GithubClient {
     private static final String ACCEPT_JSON_HEADER = "application/vnd.github.v3+json";
     private static final String ACCEPT_STREAM_HEADER = "application/octet-stream";
     private static final String RESULT_COUNT = "5";
+    private static final Duration API_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration DEFAULT_DOWNLOAD_TIMEOUT = Duration.ofMinutes(5);
     private final HttpClient client;
     private final PlatformHandler platformHandler;
+    private final Duration downloadTimeout;
 
     /**
      * Constructor for GithubClient.
      * Initializes the HttpClient and PlatformHandler.
      */
     public GithubClient() {
+        this(DEFAULT_DOWNLOAD_TIMEOUT);
+    }
+
+    GithubClient(Duration downloadTimeout) {
+        this.downloadTimeout = downloadTimeout;
         client = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.ALWAYS)
             .version(HttpClient.Version.HTTP_2)
-            .connectTimeout(java.time.Duration.ofSeconds(30))
+            .connectTimeout(Duration.ofSeconds(30))
             .build();
         platformHandler = Platform.getPlatformHandler();
     }
@@ -77,14 +89,28 @@ public class GithubClient {
     }
 
     /**
-     * Retrieves the list of latest release assets for a given repository.
+     * All assets in a release, plus the subset that can be installed on this platform.
+     */
+    public record ReleaseAssets(List<Asset> all, List<Asset> installable) {}
+
+    /**
+     * Retrieves the latest release assets for a given repository.
      * @param repoFullName The full name of the repository (owner/repo).
-     * @return A list of Asset objects.
+     * @return A list of installable Asset objects.
      */
     public List<Asset> getLatestReleaseAssets(String repoFullName) {
+        return getLatestRelease(repoFullName).installable();
+    }
+
+    /**
+     * Retrieves all latest release assets, including checksums and signatures.
+     * @param repoFullName The full name of the repository (owner/repo).
+     * @return all assets and the installable subset
+     */
+    public ReleaseAssets getLatestRelease(String repoFullName) {
         String[] parts = repoFullName.split("/");
         if (parts.length != 2) {
-            return List.of();
+            return new ReleaseAssets(List.of(), List.of());
         }
         String owner = parts[0];
         String repo = parts[1];
@@ -94,17 +120,19 @@ public class GithubClient {
             var jsonResponse = request(URI.create(url));
             if (jsonResponse.isEmpty()) {
                 System.err.println("No releases found for this repository.");
-                return List.of();
+                return new ReleaseAssets(List.of(), List.of());
             }
-            String json = jsonResponse.get();
-            List<Asset> assets = findAssets(json);
-            if (assets.isEmpty()) {
+            ObjectMapper mapper = new ObjectMapper();
+            Release release = mapper.readValue(jsonResponse.get(), Release.class);
+            List<Asset> all = release.assets() == null ? List.of() : release.assets();
+            List<Asset> installable = filterInstallable(all);
+            if (installable.isEmpty()) {
                 System.err.println("No suitable asset found for this repository.");
             }
-            return assets;
+            return new ReleaseAssets(all, installable);
         } catch (IOException | InterruptedException ex) {
             System.err.println(ex.getMessage());
-            return List.of();
+            return new ReleaseAssets(List.of(), List.of());
         }
     }
 
@@ -116,8 +144,54 @@ public class GithubClient {
      * @throws InterruptedException if the download is interrupted.
      */
     public Path downloadAsset(Asset asset) throws IOException, InterruptedException {
-        try (InputStream assetStream = getAsset(asset.url())) {
-            return FileUtils.saveInputStreamToFile(assetStream, asset.name());
+        Path destination = FileUtils.createTempFilePath(asset.name());
+        try {
+            downloadToFile(asset.url(), destination);
+            if (Files.size(destination) == 0) {
+                throw new IOException("Downloaded file is empty: " + asset.name());
+            }
+            return destination;
+        } catch (IOException | InterruptedException | RuntimeException e) {
+            try {
+                Files.deleteIfExists(destination);
+            } catch (IOException ignored) {
+                // best-effort cleanup
+            }
+            FileUtils.removeTempDir(destination);
+            throw e;
+        }
+    }
+
+    private void downloadToFile(String url, Path destination) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .header("Accept", ACCEPT_STREAM_HEADER)
+            .timeout(downloadTimeout)
+            .build();
+        CompletableFuture<HttpResponse<Path>> future =
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofFile(destination));
+        try {
+            HttpResponse<Path> response = future.get(
+                downloadTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            handleResponseCode(response);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            try {
+                Files.deleteIfExists(destination);
+            } catch (IOException ignored) {
+                // best-effort cleanup
+            }
+            throw new IOException(
+                "Download timed out after " + downloadTimeout.toMillis() + " ms", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException io) {
+                throw io;
+            }
+            if (cause instanceof InterruptedException interrupted) {
+                throw interrupted;
+            }
+            throw new IOException("Download failed: " + cause, cause);
         }
     }
 
@@ -189,6 +263,7 @@ public class GithubClient {
         HttpRequest request = HttpRequest.newBuilder()
             .uri(uri)
             .header("Accept", ACCEPT_JSON_HEADER)
+            .timeout(API_TIMEOUT)
             .build();
         HttpResponse<String> response;
         try {
@@ -204,31 +279,6 @@ public class GithubClient {
     }
 
     /**
-     * Retrieves the asset from the given URL and returns it as an InputStream.
-     * @param url The URL of the asset.
-     * @return InputStream of the asset.
-     * @throws IOException
-     * @throws InterruptedException
-     */
-    private InputStream getAsset(String url) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .header("Accept", ACCEPT_STREAM_HEADER)
-            .build();
-        HttpResponse<InputStream> response;
-        try {
-            response = client.send(
-                request,
-                HttpResponse.BodyHandlers.ofInputStream()
-            );
-        } catch (ConnectException e) {
-            throw new IOException("Connection error.", e);
-        }
-        handleResponseCode(response);
-        return response.body();
-    }
-
-    /**
      * Handles the response code from the HTTP request. Used for logging.
      * @param response The HTTP response.
      * @throws IOException
@@ -236,15 +286,31 @@ public class GithubClient {
     private void handleResponseCode(HttpResponse<?> response) throws IOException {
         int statusCode = response.statusCode();
         if (statusCode >= 400) {
+            String body = errorBody(response);
             switch (statusCode) {
                 case 403 -> {
                     handleRateLimit(response.headers());
                     throw new IOException("Rate limit exceeded. Try again later.");
                 }
-                case 404 -> throw new IOException("Resource not found: " + response.body());
-                default -> throw new IOException("HTTP Error " + statusCode + ": " + response.body());
+                case 404 -> throw new IOException("Resource not found: " + body);
+                default -> throw new IOException("HTTP Error " + statusCode + ": " + body);
             }
         }
+    }
+
+    private static String errorBody(HttpResponse<?> response) {
+        Object body = response.body();
+        if (body instanceof Path path) {
+            try {
+                if (Files.size(path) < 8192) {
+                    return Files.readString(path, StandardCharsets.UTF_8);
+                }
+            } catch (IOException ignored) {
+                // no error body available
+            }
+            return "";
+        }
+        return body == null ? "" : body.toString();
     }
 
     /**
@@ -265,11 +331,10 @@ public class GithubClient {
      * @return A list of Asset objects.
      * @throws IOException
      */
-    private List<Asset> findAssets(String json) throws IOException {
-        ObjectMapper mapper = new ObjectMapper();
-        Release release = mapper.readValue(json, Release.class);
+    private List<Asset> filterInstallable(List<Asset> assets) {
         String[] formats = platformHandler.getFormats();
-        return release.assets().stream()
+        return assets.stream()
+            .filter(asset -> asset != null && asset.name() != null)
             .filter(asset -> {
                 String name = asset.name().toLowerCase(Locale.ROOT);
                 for (String format : formats) {

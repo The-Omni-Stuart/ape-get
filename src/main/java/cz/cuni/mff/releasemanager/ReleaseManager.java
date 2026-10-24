@@ -115,17 +115,17 @@ public class ReleaseManager {
             System.err.println("Please specify the correct repository name of format 'owner/repo'.");
             return false;
         }
-        var result = githubClient.getLatestReleaseAssets(command.argument);
-        if (result.isEmpty()) {
+        var release = githubClient.getLatestRelease(command.argument);
+        if (release.installable().isEmpty()) {
             System.err.println("Failed to retrieve the latest release.");
             return false;
         }
-        Asset asset = getSingleAsset(result);
+        Asset asset = getSingleAsset(release.installable());
         Path downloadedAsset = download(asset);
         if (downloadedAsset == null) {
             return false;
         }
-        if (!isAllowed(verify(asset, result, downloadedAsset), downloadedAsset)) {
+        if (!isAllowed(verify(asset, release.all(), downloadedAsset), downloadedAsset)) {
             return false;
         }
         Path installedAsset = githubClient.installDownloadedAsset(
@@ -307,7 +307,8 @@ public class ReleaseManager {
             return false;
         }
         ReleaseInfo release = found.get();
-        List<Asset> assets = githubClient.getLatestReleaseAssets(command.argument);
+        var latest = githubClient.getLatestRelease(command.argument);
+        List<Asset> assets = latest.installable();
         if (assets.isEmpty()) {
             System.err.println("No asset found.");
             return false;
@@ -330,7 +331,7 @@ public class ReleaseManager {
         if (downloadedAsset == null) {
             return false;
         }
-        if (!isAllowed(verify(newAsset, assets, downloadedAsset), downloadedAsset)) {
+        if (!isAllowed(verify(newAsset, latest.all(), downloadedAsset), downloadedAsset)) {
             return false;
         }
         if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {

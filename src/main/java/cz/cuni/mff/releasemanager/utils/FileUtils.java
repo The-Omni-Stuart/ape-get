@@ -25,9 +25,8 @@ public class FileUtils {
      * @throws IOException if the filename is invalid, the copy fails, or the file is empty
     */
     public static Path saveInputStreamToFile(InputStream stream, String filename) throws IOException {
-        validateFilename(filename);
-        Path dir = Files.createTempDirectory("github-release-manager-");
-        Path destination = dir.resolve(filename);
+        Path destination = createTempFilePath(filename);
+        Path dir = destination.getParent();
         try {
             Files.copy(stream, destination, StandardCopyOption.REPLACE_EXISTING);
             if (Files.size(destination) == 0) {
@@ -47,6 +46,19 @@ public class FileUtils {
             }
             throw e;
         }
+    }
+
+    /**
+     * Creates a temporary directory and a validated destination path inside it.
+     * The file itself is not created.
+     * @param filename asset filename
+     * @return destination path
+     * @throws IOException if the filename is invalid
+     */
+    public static Path createTempFilePath(String filename) throws IOException {
+        validateFilename(filename);
+        Path dir = Files.createTempDirectory("github-release-manager-");
+        return dir.resolve(filename);
     }
 
     private static void validateFilename(String filename) throws IOException {
