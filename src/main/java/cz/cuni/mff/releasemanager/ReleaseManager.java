@@ -193,9 +193,16 @@ public class ReleaseManager {
                 .filter(release -> release.repo().equals(command.argument))
                 .findFirst()
                 .ifPresentOrElse(release -> {
-                    platformHandler.uninstall(Path.of(release.uninstallPath()));
-                    platformHandler.removeReleaseFromList(release);
-                    System.out.println("Successfully uninstalled.");
+                    if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {
+                        System.out.println("Failed to uninstall " + release.repo() + ".");
+                        return;
+                    }
+                    if (platformHandler.removeReleaseFromList(release)) {
+                        System.out.println("Successfully uninstalled.");
+                    } else {
+                        System.out.println(
+                            "Uninstalled " + release.repo() + ", but failed to update the release list.");
+                    }
                 }, () -> System.out.println("Release " + command.argument + " is not found."));
     }
 
@@ -250,7 +257,11 @@ public class ReleaseManager {
                             System.out.println("Failed to download update: " + e.getMessage());
                             return;
                         }
-                        platformHandler.uninstall(Path.of(release.uninstallPath()));
+                        if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {
+                            System.out.println("Failed to uninstall the old version; update aborted.");
+                            githubClient.discardAsset(downloadedAsset);
+                            return;
+                        }
                         Path installedAsset = githubClient.installDownloadedAsset(downloadedAsset);
                         if (installedAsset != null) {
                             System.out.println("Successfully updated.");

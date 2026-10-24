@@ -15,11 +15,6 @@ public final class WindowsHandler extends PlatformHandler {
 
     private static WindowsHandler instance;
 
-    private static final Path INSTALLER_STORAGE = Paths.get(
-        System.getenv("ProgramData"),
-        APP_DATA_DIR
-    );
-
     private WindowsHandler() {}
 
     /**
@@ -30,6 +25,29 @@ public final class WindowsHandler extends PlatformHandler {
             instance = new WindowsHandler();
         }
         return instance;
+    }
+
+    private static Path getInstallerStorage() {
+        String programData = System.getenv("ProgramData");
+        if (programData == null) {
+            throw new IllegalStateException("ProgramData is not set");
+        }
+        return Paths.get(programData, APP_DATA_DIR);
+    }
+
+    private static boolean isAllowedUninstallPath(Path asset) {
+        return isUnder(asset, envPath("ProgramFiles", null))
+            || isUnder(asset, envPath("ProgramFiles(x86)", null))
+            || isUnder(asset, envPath("ProgramData", APP_DATA_DIR))
+            || isUnder(asset, envPath("LOCALAPPDATA", "Programs"));
+    }
+
+    private static Path envPath(String name, String child) {
+        String value = System.getenv(name);
+        if (value == null) {
+            return null;
+        }
+        return child == null ? Paths.get(value) : Paths.get(value, child);
     }
 
     @Override
@@ -69,7 +87,7 @@ public final class WindowsHandler extends PlatformHandler {
             throw new IOException("Installation failed with exit code: " + exitCode);
         }
 
-        Path targetDir = INSTALLER_STORAGE;
+        Path targetDir = getInstallerStorage();
         Files.createDirectories(targetDir);
         Path target = targetDir.resolve(assetPath.getFileName());
         Files.move(assetPath, target, StandardCopyOption.REPLACE_EXISTING);
@@ -127,20 +145,29 @@ public final class WindowsHandler extends PlatformHandler {
     }
 
     @Override
-    public void uninstall(Path asset) {
-
+    public boolean uninstall(Path asset) {
+        if (!isAllowedUninstallPath(asset)) {
+            System.out.println("Refusing to uninstall path outside install directories: " + asset);
+            return false;
+        }
         try {
             String fileName = asset.getFileName().toString();
             if (fileName.endsWith(".msi")) {
                 uninstallMsi(asset);
+                return true;
             } else if (fileName.endsWith(".exe")) {
                 uninstallExe(asset);
+                return true;
             } else {
                 System.out.println("Unsupported file format: " + fileName);
+                return false;
             }
         } catch (InterruptedException | IOException e) {
-            Thread.currentThread().interrupt();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             System.out.println("Uninstallation error: " + e.getMessage());
+            return false;
         }
     }
 

@@ -2,6 +2,7 @@ package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
@@ -122,20 +123,26 @@ public final class MacHandler extends PlatformHandler {
     }
 
     @Override
-    public void uninstall(Path asset) {
-        try {
-            Process process = new ProcessBuilder()
-                .command("rm", "-rf", asset.toString())
-                .start();
-
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                throw new IOException("Uninstallation failed with exit code: " + exitCode);
-            }
-        } catch (IOException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            System.out.println("Uninstallation error: " + e.getMessage());
+    public boolean uninstall(Path asset) {
+        if (!isAllowedUninstallPath(asset)) {
+            System.out.println("Refusing to uninstall path outside Applications: " + asset);
+            return false;
         }
+        if (!Files.exists(asset, LinkOption.NOFOLLOW_LINKS)) {
+            return true;
+        }
+        try {
+            FileUtils.deleteRecursively(asset);
+            return true;
+        } catch (IOException e) {
+            System.out.println("Uninstallation error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean isAllowedUninstallPath(Path asset) {
+        return isUnder(asset, Paths.get("/Applications"))
+            || isUnder(asset, Paths.get(System.getProperty("user.home"), "Applications"));
     }
 
     @Override

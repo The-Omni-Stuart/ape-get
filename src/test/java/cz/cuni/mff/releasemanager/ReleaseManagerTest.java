@@ -89,19 +89,40 @@ class ReleaseManagerTest {
 
     @Test
     void testExecuteUninstall() throws IOException {
-        Command cmd = Command.UNINSTALL; 
+        Command cmd = Command.UNINSTALL;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
         Asset asset = new Asset("http://url", "example.exe");
         ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", asset);
         ReleasesList releases = new ReleasesList(List.of(info));
+        Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
         when(mockPlatformHandler.loadReleasesList()).thenReturn(releases);
+        when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(true);
+        when(mockPlatformHandler.removeReleaseFromList(info)).thenReturn(true);
 
         releaseManager.execute(new String[]{"uninstall", "user/example"});
 
-        verify(mockPlatformHandler).uninstall(Path.of("/ProgramFiles/uninstall.exe"));
+        verify(mockPlatformHandler).uninstall(uninstallPath);
         verify(mockPlatformHandler).removeReleaseFromList(info);
+    }
+
+    @Test
+    void testExecuteUninstallDoesNotRemoveRecordWhenUninstallFails() throws IOException {
+        Command cmd = Command.UNINSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", asset);
+        Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
+        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(false);
+
+        releaseManager.execute(new String[]{"uninstall", "user/example"});
+
+        verify(mockPlatformHandler).uninstall(uninstallPath);
+        verify(mockPlatformHandler, never()).removeReleaseFromList(any());
     }
 
     @Test
@@ -117,6 +138,7 @@ class ReleaseManagerTest {
         Path downloaded = Path.of("/tmp/downloaded.exe");
 
         when(mockPlatformHandler.loadReleasesList()).thenReturn(releases);
+        when(mockPlatformHandler.uninstall(Path.of("/ProgramFiles/uninstall.exe"))).thenReturn(true);
         when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockGithubClient.installDownloadedAsset(downloaded))
@@ -140,6 +162,7 @@ class ReleaseManagerTest {
         Path downloaded = Path.of("/tmp/downloaded.exe");
 
         when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockPlatformHandler.uninstall(Path.of("/ProgramFiles/uninstall.exe"))).thenReturn(true);
         when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockGithubClient.installDownloadedAsset(downloaded))
@@ -151,6 +174,28 @@ class ReleaseManagerTest {
         inOrder.verify(mockGithubClient).downloadAsset(newAsset);
         inOrder.verify(mockPlatformHandler).uninstall(Path.of("/ProgramFiles/uninstall.exe"));
         inOrder.verify(mockGithubClient).installDownloadedAsset(downloaded);
+    }
+
+    @Test
+    void testExecuteUpdateAbortsWhenUninstallFails() throws IOException, InterruptedException {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+
+        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockPlatformHandler.uninstall(Path.of("/ProgramFiles/uninstall.exe"))).thenReturn(false);
+
+        releaseManager.execute(new String[]{"update", "user/example"});
+
+        verify(mockGithubClient).discardAsset(downloaded);
+        verify(mockGithubClient, never()).installDownloadedAsset(any());
     }
 
     @Test

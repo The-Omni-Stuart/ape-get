@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.ReleaseInfo;
 import cz.cuni.mff.releasemanager.types.ReleasesList;
+import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 class PlatformHandlerTest {
 
@@ -28,7 +29,7 @@ class PlatformHandlerTest {
         public Path install(Path asset) { return null; }
 
         @Override
-        public void uninstall(Path asset) {}
+        public boolean uninstall(Path asset) { return true; }
 
         @Override
         public String[] getFormats() { return new String[] { "zip" }; }
@@ -215,5 +216,48 @@ class PlatformHandlerTest {
         assertNotNull(list);
         assertEquals(1, list.releases().size());
         assertEquals("repo1", list.releases().get(0).repo());
+    }
+
+    @Test
+    void testIsUnder() {
+        Path root = tempDir.resolve("root");
+
+        assertTrue(PlatformHandler.isUnder(root.resolve("app"), root));
+        assertFalse(PlatformHandler.isUnder(root, root));
+        assertFalse(PlatformHandler.isUnder(tempDir.resolve("other"), root));
+        assertFalse(PlatformHandler.isUnder(root.resolve("..").resolve("other"), root));
+    }
+
+    @Test
+    void testLinuxUninstallRefusesPathOutsideInstallRoot() throws IOException {
+        Path file = Files.createTempFile("outside", ".AppImage");
+        try {
+            assertFalse(LinuxHandler.getInstance().uninstall(file));
+            assertTrue(Files.exists(file));
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void testMacUninstallRefusesPathOutsideApplications() throws IOException {
+        Path dir = Files.createTempDirectory("outside");
+        try {
+            assertFalse(MacHandler.getInstance().uninstall(dir));
+            assertTrue(Files.exists(dir));
+        } finally {
+            FileUtils.deleteRecursively(dir);
+        }
+    }
+
+    @Test
+    void testWindowsUninstallRefusesPathOutsideInstallRoots() throws IOException {
+        Path file = Files.createTempFile("outside", ".exe");
+        try {
+            assertFalse(WindowsHandler.getInstance().uninstall(file));
+            assertTrue(Files.exists(file));
+        } finally {
+            Files.deleteIfExists(file);
+        }
     }
 }

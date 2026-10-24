@@ -37,8 +37,9 @@ public abstract class PlatformHandler {
     /**
      * Uninstalls the asset.
      * @param asset Path to the asset to uninstall.
+     * @return true if the asset is gone, false if it could not be removed.
      */
-    public abstract void uninstall(Path asset);
+    public abstract boolean uninstall(Path asset);
     /**
      * @return Supported file formats for installation.
      */
@@ -54,6 +55,21 @@ public abstract class PlatformHandler {
      */
     protected Path getReleasesListFileLocation() {
         return getReleasesListDirLocation().resolve(RELEASES_LIST_FILE);
+    }
+
+    /**
+     * Checks whether a path is strictly inside a root directory.
+     * @param path path to check
+     * @param root allowed root directory
+     * @return true if path is under root and is not root itself
+     */
+    protected static boolean isUnder(Path path, Path root) {
+        if (path == null || root == null) {
+            return false;
+        }
+        Path normalizedPath = path.toAbsolutePath().normalize();
+        Path normalizedRoot = root.toAbsolutePath().normalize();
+        return normalizedPath.startsWith(normalizedRoot) && !normalizedPath.equals(normalizedRoot);
     }
 
     /**
@@ -164,23 +180,26 @@ public abstract class PlatformHandler {
      * Removes a release from the list of installed releases.
      * @param release ReleaseInfo object containing the information about the release to remove.
      * If the list is empty after removal, the file is deleted.
+     * @return true if the release list was updated, false otherwise.
      */
-    public void removeReleaseFromList(ReleaseInfo release) {
+    public boolean removeReleaseFromList(ReleaseInfo release) {
         try {
             ReleasesList releasesList = loadReleasesList();
             if (releasesList == null) {
-                return;
+                return false;
             }
             List<ReleaseInfo> currentReleases = new ArrayList<>(releasesList.releases());
             currentReleases.removeIf(r -> r.repo().equals(release.repo()));
             if (currentReleases.isEmpty()) {
                 Files.deleteIfExists(getReleasesListFileLocation());
                 FileUtils.removeTempDir(getReleasesListFileLocation());
-                return;
+                return true;
             }
             writeReleasesList(new ReleasesList(currentReleases));
+            return true;
         } catch (IOException e) {
             System.out.println("Failed to remove release from list: " + e.getMessage());
+            return false;
         }
     }
 }

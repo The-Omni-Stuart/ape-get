@@ -65,6 +65,17 @@ public class FileUtilsTest {
     }
 
     @Test
+    public void testDeleteRecursively() throws IOException {
+        Path dir = Files.createTempDirectory(TEST_DIR);
+        Path nested = Files.createDirectories(dir.resolve("a/b"));
+        Files.writeString(nested.resolve("file.txt"), "data");
+
+        FileUtils.deleteRecursively(dir);
+
+        assertFalse(Files.exists(dir));
+    }
+
+    @Test
     public void testGetShortCut_withAlphaPrefix() {
         Path file = Paths.get("Release_v1.0.txt");
         String shortcut = FileUtils.getShortCut(file);

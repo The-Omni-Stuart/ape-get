@@ -136,14 +136,25 @@ public class GithubClient {
             return installed;
         } finally {
             if (!assetPath.equals(installed)) {
-                try {
-                    Files.deleteIfExists(assetPath);
-                } catch (IOException ignored) {
-                    // best-effort cleanup of the staged download
-                }
-                FileUtils.removeTempDir(assetPath);
+                discardAsset(assetPath);
             }
         }
+    }
+
+    /**
+     * Removes a staged download that will not be installed.
+     * @param assetPath The downloaded asset.
+     */
+    public void discardAsset(Path assetPath) {
+        if (assetPath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(assetPath);
+        } catch (IOException ignored) {
+            // best-effort cleanup of the staged download
+        }
+        FileUtils.removeTempDir(assetPath);
     }
 
     /**

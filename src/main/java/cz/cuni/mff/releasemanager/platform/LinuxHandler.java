@@ -42,7 +42,7 @@ public final class LinuxHandler extends PlatformHandler {
                 PosixFilePermission.OTHERS_EXECUTE
             ));
 
-            Path targetDir = Paths.get(System.getProperty("user.home"), ".local/bin");
+            Path targetDir = getInstallDir();
             Files.createDirectories(targetDir);
 
             String shortCut = FileUtils.getShortCut(assetPath);
@@ -60,14 +60,26 @@ public final class LinuxHandler extends PlatformHandler {
     }
 
     @Override
-    public void uninstall(Path asset) {
-        if (Files.isRegularFile(asset)) {
-            try {
-                Files.deleteIfExists(asset);
-            } catch (IOException e) {
-                System.out.println("Failed to uninstall: " + e.getMessage());
-            }
+    public boolean uninstall(Path asset) {
+        Path installDir = getInstallDir();
+        if (!isUnder(asset, installDir)) {
+            System.out.println("Refusing to uninstall path outside " + installDir + ": " + asset);
+            return false;
         }
+        if (!Files.isRegularFile(asset)) {
+            return !Files.exists(asset);
+        }
+        try {
+            Files.deleteIfExists(asset);
+            return !Files.exists(asset);
+        } catch (IOException e) {
+            System.out.println("Failed to uninstall: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static Path getInstallDir() {
+        return Paths.get(System.getProperty("user.home"), ".local/bin");
     }
 
     @Override
