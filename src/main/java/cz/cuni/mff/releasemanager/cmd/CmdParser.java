@@ -28,6 +28,9 @@ public class CmdParser {
         }
         Command command = Command.fromName(args[0]).orElseGet(() -> defaultCommand);
         if (command.requiresArgument()) {
+            if (args.length < 2) {
+                return defaultCommand;
+            }
             command.argument = args[1];
         }
         return command;

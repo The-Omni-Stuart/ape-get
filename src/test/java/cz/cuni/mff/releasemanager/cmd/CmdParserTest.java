@@ -1,5 +1,6 @@
 package cz.cuni.mff.releasemanager.cmd;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,5 +51,13 @@ class CmdParserTest {
         String[] args = {};
         Command result = cmdParser.parse(args);
         assertEquals(Command.HELP, result);
+    }
+
+    @Test
+    void testParseWithMissingRequiredArgument() {
+        for (String command : new String[] {"search", "install", "uninstall", "update"}) {
+            Command result = assertDoesNotThrow(() -> cmdParser.parse(new String[] {command}));
+            assertEquals(Command.HELP, result, command);
+        }
     }
 }
