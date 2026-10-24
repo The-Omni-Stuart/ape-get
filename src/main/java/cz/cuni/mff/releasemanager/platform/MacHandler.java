@@ -33,27 +33,59 @@ public final class MacHandler extends PlatformHandler {
 
     @Override
     public Path install(Path asset, String repoFullName) {
+        boolean mounted = false;
+        Path stagingDir = null;
         try {
             mount(asset);
+            mounted = true;
 
             Path targetDir = Paths.get("/Applications");
             Files.createDirectories(targetDir);
 
             String appName = FileUtils.getShortCut(asset);
             Path app = findAppInMountDir(appName);
+            Path target = targetDir.resolve(app.getFileName());
+            if (Files.exists(target) && isOwnedByAnotherRepo(target, repoFullName)) {
+                System.err.println("Refusing to overwrite " + target + " owned by another release.");
+                return null;
+            }
 
+            stagingDir = Files.createTempDirectory(targetDir, ".ape-get-staging-");
+            Path stagedApp = stagingDir.resolve(app.getFileName());
             Process copyProcess = new ProcessBuilder()
-                .command("cp", "-rf", app.toString(), targetDir.toString())
+                .command("ditto", app.toString(), stagedApp.toString())
+                .inheritIO()
                 .start();
             if (copyProcess.waitFor() != 0) {
                 throw new IOException("Failed to copy application.");
             }
-            detach();
-            return targetDir.resolve(app.getFileName());
+
+            FileUtils.replaceDirectory(stagedApp, target);
+            return target;
         } catch (IOException | InterruptedException e) {
-            Thread.currentThread().interrupt();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             System.err.println("Installation error: " + e.getMessage());
             return null;
+        } finally {
+            if (mounted) {
+                try {
+                    detach();
+                } catch (IOException | InterruptedException e) {
+                    if (e instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    System.err.println("Failed to detach " + MOUNT_DIR + ": " + e.getMessage());
+                }
+            }
+            if (stagingDir != null) {
+                try {
+                    FileUtils.deleteRecursively(stagingDir);
+                } catch (IOException e) {
+                    System.err.println("Failed to remove staging directory: " + e.getMessage());
+                }
+            }
         }
     }
 

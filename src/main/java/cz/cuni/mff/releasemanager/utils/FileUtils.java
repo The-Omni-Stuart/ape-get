@@ -2,14 +2,17 @@ package cz.cuni.mff.releasemanager.utils;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -139,6 +142,91 @@ public class FileUtils {
             }
         } catch (IOException e) {
             System.err.println("Failed to remove directory: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Replaces a target file with a staged file, keeping a temporary backup for rollback.
+     * @param source staged file
+     * @param target live file
+     * @throws IOException if the replace or restore fails
+     */
+    public static void replaceFile(Path source, Path target) throws IOException {
+        Path parent = target.toAbsolutePath().getParent();
+        Path backup = null;
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+            backup = Files.createTempFile(parent, ".ape-get-backup-", ".tmp");
+            try {
+                Files.copy(target, backup,
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+            } catch (IOException e) {
+                Files.deleteIfExists(backup);
+                throw e;
+            }
+        }
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            if (backup != null) {
+                try {
+                    Files.deleteIfExists(backup);
+                } catch (IOException e) {
+                    System.err.println(
+                        "Warning: could not remove backup " + backup + ": " + e.getMessage());
+                }
+            }
+        } catch (IOException e) {
+            if (backup != null) {
+                try {
+                    Files.move(backup, target, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException restore) {
+                    e.addSuppressed(restore);
+                }
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Replaces a target directory with a staged directory, keeping a temporary backup for rollback.
+     * @param source staged directory
+     * @param target live directory
+     * @throws IOException if the swap or restore fails
+     */
+    public static void replaceDirectory(Path source, Path target) throws IOException {
+        Path parent = target.toAbsolutePath().getParent();
+        Path backup = parent.resolve(
+            "." + target.getFileName() + ".ape-get-backup-" + UUID.randomUUID());
+        boolean movedOld = false;
+        try {
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                move(target, backup);
+                movedOld = true;
+            }
+            move(source, target);
+        } catch (IOException e) {
+            if (movedOld && !Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                try {
+                    move(backup, target);
+                } catch (IOException restore) {
+                    e.addSuppressed(restore);
+                }
+            }
+            throw e;
+        }
+        if (movedOld) {
+            try {
+                deleteRecursively(backup);
+            } catch (IOException e) {
+                System.err.println("Warning: could not remove backup " + backup + ": " + e.getMessage());
+            }
+        }
+    }
+
+    private static void move(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(source, target);
         }
     }
 

@@ -334,11 +334,6 @@ public class ReleaseManager {
         if (!isAllowed(verify(newAsset, latest.all(), downloadedAsset), downloadedAsset)) {
             return false;
         }
-        if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {
-            System.err.println("Failed to uninstall the old version; update aborted.");
-            githubClient.discardAsset(downloadedAsset);
-            return false;
-        }
         Path installedAsset = githubClient.installDownloadedAsset(
             downloadedAsset, command.argument);
         if (installedAsset == null) {

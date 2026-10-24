@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Set;
 
@@ -52,7 +52,7 @@ public final class LinuxHandler extends PlatformHandler {
                 return null;
             }
 
-            Files.move(assetPath, target, StandardCopyOption.REPLACE_EXISTING);
+            FileUtils.replaceFile(assetPath, target);
             System.out.println("Installed to: " + target);
             FileUtils.removeTempDir(assetPath);
             return target;

@@ -76,6 +76,98 @@ public class FileUtilsTest {
     }
 
     @Test
+    public void testReplaceFileReplacesExistingTarget() throws IOException {
+        Path dir = Files.createTempDirectory(TEST_DIR);
+        Path source = Files.writeString(dir.resolve("new.txt"), "new");
+        Path target = Files.writeString(dir.resolve("target.txt"), "old");
+
+        FileUtils.replaceFile(source, target);
+
+        assertFalse(Files.exists(source));
+        assertEquals("new", Files.readString(target));
+        try (var files = Files.list(dir)) {
+            assertEquals(1, files.count());
+        }
+
+        FileUtils.deleteRecursively(dir);
+    }
+
+    @Test
+    public void testReplaceFileMovesWhenTargetMissing() throws IOException {
+        Path dir = Files.createTempDirectory(TEST_DIR);
+        Path source = Files.writeString(dir.resolve("new.txt"), "new");
+        Path target = dir.resolve("target.txt");
+
+        FileUtils.replaceFile(source, target);
+
+        assertEquals("new", Files.readString(target));
+
+        FileUtils.deleteRecursively(dir);
+    }
+
+    @Test
+    public void testReplaceFileRestoresTargetWhenSourceMissing() throws IOException {
+        Path dir = Files.createTempDirectory(TEST_DIR);
+        Path source = dir.resolve("missing.txt");
+        Path target = Files.writeString(dir.resolve("target.txt"), "old");
+
+        assertThrows(IOException.class, () -> FileUtils.replaceFile(source, target));
+
+        assertEquals("old", Files.readString(target));
+        try (var files = Files.list(dir)) {
+            assertEquals(1, files.count());
+        }
+
+        FileUtils.deleteRecursively(dir);
+    }
+
+    @Test
+    public void testReplaceDirectoryReplacesExistingTarget() throws IOException {
+        Path source = Files.createTempDirectory(TEST_DIR);
+        Path target = Files.createTempDirectory(TEST_DIR);
+        Files.writeString(source.resolve("new.txt"), "new");
+        Files.writeString(target.resolve("old.txt"), "old");
+
+        FileUtils.replaceDirectory(source, target);
+
+        assertFalse(Files.exists(source));
+        assertFalse(Files.exists(target.resolve("old.txt")));
+        assertEquals("new", Files.readString(target.resolve("new.txt")));
+
+        FileUtils.deleteRecursively(target);
+    }
+
+    @Test
+    public void testReplaceDirectoryMovesWhenTargetMissing() throws IOException {
+        Path source = Files.createTempDirectory(TEST_DIR);
+        Path target = source.resolveSibling("target-" + System.nanoTime());
+        Files.writeString(source.resolve("new.txt"), "new");
+
+        FileUtils.replaceDirectory(source, target);
+
+        assertTrue(Files.exists(target.resolve("new.txt")));
+
+        FileUtils.deleteRecursively(target);
+    }
+
+    @Test
+    public void testReplaceDirectoryRestoresTargetWhenSourceMissing() throws IOException {
+        Path parent = Files.createTempDirectory(TEST_DIR);
+        Path source = parent.resolve("missing");
+        Path target = Files.createDirectories(parent.resolve("target"));
+        Files.writeString(target.resolve("old.txt"), "old");
+
+        assertThrows(IOException.class, () -> FileUtils.replaceDirectory(source, target));
+
+        assertTrue(Files.exists(target.resolve("old.txt")));
+        try (var files = Files.list(parent)) {
+            assertEquals(1, files.count());
+        }
+
+        FileUtils.deleteRecursively(parent);
+    }
+
+    @Test
     public void testGetInstallName_usesRepoAndIsNeverEmpty() {
         assertEquals("ip7z__7zip",
             FileUtils.getInstallName("ip7z/7zip", Path.of("7z2408-x64.exe")));
