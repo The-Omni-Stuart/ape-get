@@ -703,6 +703,24 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteDoctorAppliesConfiguredInstallRoot() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        when(mockStateStore.loadConfig()).thenReturn(new ConfigStore.LoadResult(
+            new GrmConfig(GrmConfig.KIND, GrmConfig.SCHEMA_VERSION, false, 1,
+                tempDir.toString()),
+            false,
+            null));
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+
+        assertEquals(0, releaseManager.execute(new String[]{"doctor"}));
+
+        verify(mockPlatformHandler).setInstallRoot(tempDir);
+    }
+
+    @Test
     void testExecuteDoctorHealthy() throws Exception {
         Command cmd = Command.DOCTOR;
         when(mockCmdParser.parse(any())).thenReturn(cmd);

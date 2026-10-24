@@ -725,6 +725,14 @@ public class ReleaseManager {
         if (!Files.exists(stateStore.paths().configFile())) {
             System.out.println("Config: missing");
             healthy = false;
+        } else {
+            try {
+                toolConfig = stateStore.loadConfig().config();
+                applyInstallRoot();
+            } catch (IOException e) {
+                System.err.println("Failed to read config: " + e.getMessage());
+                healthy = false;
+            }
         }
 
         List<AppManifest> manifests;
