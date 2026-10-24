@@ -761,6 +761,21 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteAppliesConfiguredInstallRoot() throws Exception {
+        Command cmd = Command.LIST;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.loadConfig()).thenReturn(new ConfigStore.LoadResult(
+            new GrmConfig(GrmConfig.KIND, GrmConfig.SCHEMA_VERSION, false, 1,
+                tempDir.toString()),
+            false,
+            null));
+
+        assertEquals(0, releaseManager.execute(new String[]{"list"}));
+
+        verify(mockPlatformHandler).setInstallRoot(tempDir);
+    }
+
+    @Test
     void testExecuteHelp() {
         Command cmd = Command.HELP;
         when(mockCmdParser.parse(any())).thenReturn(cmd);

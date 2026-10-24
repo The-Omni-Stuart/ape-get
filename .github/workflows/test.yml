@@ -47,6 +47,31 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Install Windows test tooling
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+
+          $nsisDir = 'C:\Program Files (x86)\NSIS'
+          if (!(Test-Path (Join-Path $nsisDir 'makensis.exe'))) {
+            throw "makensis.exe not found in $nsisDir"
+          }
+
+          $wixDir = 'C:\Program Files (x86)\WiX Toolset v3.14\bin'
+          if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
+            $candle = Get-ChildItem 'C:\Program Files (x86)' -Filter candle.exe -Recurse `
+              -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($candle) { $wixDir = $candle.DirectoryName }
+          }
+          if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
+            throw "WiX candle.exe not found"
+          }
+
+          $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $wixDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          Write-Host "nsis=$nsisDir wix=$wixDir"
+
       - name: Build and test
         run: mvn -B package
 

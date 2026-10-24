@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.HashSet;
@@ -140,6 +141,7 @@ public class ReleaseManager {
             return false;
         }
         toolConfig = config.config();
+        applyInstallRoot();
 
         List<AppManifest> manifests;
         try {
@@ -700,6 +702,18 @@ public class ReleaseManager {
         System.out.println("Rolled back " + command.argument + " to "
             + (backup.version() == null ? "unknown" : backup.version()) + ".");
         return true;
+    }
+
+    private void applyInstallRoot() {
+        String root = toolConfig.installRoot();
+        if (root == null || root.isBlank()) {
+            return;
+        }
+        try {
+            platformHandler.setInstallRoot(Path.of(root));
+        } catch (InvalidPathException e) {
+            System.err.println("Ignoring invalid install_root: " + root);
+        }
     }
 
     private boolean doctor() {

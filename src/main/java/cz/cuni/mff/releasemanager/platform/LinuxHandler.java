@@ -82,8 +82,8 @@ public final class LinuxHandler extends PlatformHandler {
         }
     }
 
-    private static Path getInstallDir() {
-        return Paths.get(System.getProperty("user.home"), ".local/bin");
+    private Path getInstallDir() {
+        return configuredRoot(Paths.get(System.getProperty("user.home"), ".local/bin"));
     }
 
     @Override

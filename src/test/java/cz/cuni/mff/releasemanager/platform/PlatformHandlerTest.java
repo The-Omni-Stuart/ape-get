@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
@@ -112,6 +113,19 @@ class PlatformHandlerTest {
 
         assertTrue(handler.isOwnedByAnotherRepo(target, "owner/repo2"));
         assertFalse(handler.isOwnedByAnotherRepo(target, "owner/repo1"));
+    }
+
+    @Test
+    void installRootOverrideReplacesPlatformDefault() {
+        Path root = tempDir.resolve("custom-bin");
+        LinuxHandler linux = LinuxHandler.getInstance();
+        try {
+            linux.setInstallRoot(root);
+
+            assertEquals(root.toAbsolutePath().normalize(), linux.getInstallRoot());
+        } finally {
+            linux.setInstallRoot(null);
+        }
     }
 
     @Test

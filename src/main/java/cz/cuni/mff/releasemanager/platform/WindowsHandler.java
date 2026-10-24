@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
@@ -35,8 +36,9 @@ public final class WindowsHandler extends PlatformHandler {
         return Paths.get(programData, APP_DATA_DIR);
     }
 
-    private static boolean isAllowedUninstallPath(Path asset) {
-        return isUnder(asset, envPath("ProgramFiles", null))
+    private boolean isAllowedUninstallPath(Path asset) {
+        return isUnder(asset, getInstallRoot())
+            || isUnder(asset, envPath("ProgramFiles", null))
             || isUnder(asset, envPath("ProgramFiles(x86)", null))
             || isUnder(asset, envPath("ProgramData", APP_DATA_DIR))
             || isUnder(asset, envPath("LOCALAPPDATA", "Programs"));
@@ -80,7 +82,7 @@ public final class WindowsHandler extends PlatformHandler {
      */
     private Path installMsi(Path assetPath) throws IOException, InterruptedException {
         Process process = new ProcessBuilder()
-            .command("msiexec", "/i", assetPath.toString())
+            .command("msiexec", "/i", assetPath.toString(), "/qn", "/norestart")
             .inheritIO()
             .start();
 
@@ -109,7 +111,11 @@ public final class WindowsHandler extends PlatformHandler {
      */
     private Path installExe(Path assetPath, String repoFullName) throws IOException, InterruptedException {
         String installName = FileUtils.getInstallName(repoFullName, assetPath);
-        Path targetDir = Paths.get(System.getenv("ProgramFiles"), installName);
+        Path installRoot = getInstallRoot();
+        if (installRoot == null) {
+            throw new IOException("Cannot determine the Windows install root.");
+        }
+        Path targetDir = installRoot.resolve(installName);
         if (Files.exists(targetDir) && isOwnedByAnotherRepo(targetDir, repoFullName)) {
             System.err.println("Refusing to overwrite " + targetDir + " owned by another release.");
             return null;
@@ -193,6 +199,16 @@ public final class WindowsHandler extends PlatformHandler {
         if (exitCode != 0) {
             throw new IOException("Uninstallation failed with exit code: " + exitCode);
         }
+
+        // NSIS copies the uninstaller to a temp directory and may return before
+        // the original process has finished removing itself and the install tree.
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (Files.exists(asset) && System.nanoTime() < deadline) {
+            Thread.sleep(200);
+        }
+        if (Files.exists(asset)) {
+            throw new IOException("Uninstaller did not remove " + asset);
+        }
     }
 
     /**
@@ -203,7 +219,7 @@ public final class WindowsHandler extends PlatformHandler {
      */
     private void uninstallMsi(Path asset) throws IOException, InterruptedException {
         Process process = new ProcessBuilder()
-            .command("msiexec", "/x", asset.toString())
+            .command("msiexec", "/x", asset.toString(), "/qn", "/norestart")
             .inheritIO()
             .start();
         int exitCode = process.waitFor();
@@ -221,8 +237,7 @@ public final class WindowsHandler extends PlatformHandler {
 
     @Override
     public Path getInstallRoot() {
-        String programFiles = System.getenv("ProgramFiles");
-        return programFiles == null ? null : Paths.get(programFiles);
+        return configuredRoot(envPath("ProgramFiles", null));
     }
 
 }

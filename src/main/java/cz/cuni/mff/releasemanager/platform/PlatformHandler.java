@@ -14,6 +14,7 @@ public abstract class PlatformHandler {
     protected static final String APP_DATA_DIR = "github-release-manager";
 
     private final StateStore stateStore;
+    private Path installRoot;
 
     protected PlatformHandler() {
         this(new StateStore(AppPaths.forCurrentPlatform()));
@@ -21,6 +22,22 @@ public abstract class PlatformHandler {
 
     protected PlatformHandler(StateStore stateStore) {
         this.stateStore = stateStore;
+    }
+
+    /**
+     * Overrides the directory applications are installed into.
+     * @param root new install root, or null to restore the platform default
+     */
+    public void setInstallRoot(Path root) {
+        this.installRoot = root == null ? null : root.toAbsolutePath().normalize();
+    }
+
+    /**
+     * @param platformDefault platform-specific fallback root
+     * @return the configured root when set, otherwise the platform default
+     */
+    protected Path configuredRoot(Path platformDefault) {
+        return installRoot != null ? installRoot : platformDefault;
     }
 
     /**

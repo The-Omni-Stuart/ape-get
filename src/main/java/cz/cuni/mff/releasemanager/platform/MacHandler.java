@@ -39,7 +39,7 @@ public final class MacHandler extends PlatformHandler {
             mount(asset);
             mounted = true;
 
-            Path targetDir = Paths.get("/Applications");
+            Path targetDir = getInstallRoot();
             Files.createDirectories(targetDir);
 
             String appName = FileUtils.getShortCut(asset);
@@ -172,8 +172,8 @@ public final class MacHandler extends PlatformHandler {
         }
     }
 
-    private static boolean isAllowedUninstallPath(Path asset) {
-        return isUnder(asset, Paths.get("/Applications"))
+    private boolean isAllowedUninstallPath(Path asset) {
+        return isUnder(asset, getInstallRoot())
             || isUnder(asset, Paths.get(System.getProperty("user.home"), "Applications"));
     }
 
@@ -184,7 +184,7 @@ public final class MacHandler extends PlatformHandler {
 
     @Override
     public Path getInstallRoot() {
-        return Paths.get("/Applications");
+        return configuredRoot(Paths.get("/Applications"));
     }
 
 }
