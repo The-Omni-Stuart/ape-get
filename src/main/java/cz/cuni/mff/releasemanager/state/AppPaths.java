@@ -21,14 +21,22 @@ public record AppPaths(Path root) {
      * @return paths for the current platform
      */
     public static AppPaths forCurrentPlatform() {
-        return switch (Platform.detectPlatform().getOS()) {
+        return forPlatform(
+            Platform.detectPlatform().getOS(),
+            System.getProperty("user.home"),
+            System.getenv("LOCALAPPDATA"));
+    }
+
+    static AppPaths forPlatform(Platform.OS os, String userHome, String localAppData) {
+        return switch (os) {
             case LINUX -> new AppPaths(
-                Paths.get(System.getProperty("user.home"), ".local", "share", APP_DIR));
+                Paths.get(userHome, ".local", "share", APP_DIR));
             case MAC -> new AppPaths(
-                Paths.get(System.getProperty("user.home"),
-                    "Library", "Application Support", APP_DIR));
+                Paths.get(userHome, "Library", "Application Support", APP_DIR));
             case WINDOWS -> new AppPaths(
-                Paths.get(System.getenv("APPDATA"), APP_DIR));
+                Paths.get(
+                    Objects.requireNonNull(localAppData, "LOCALAPPDATA is not set"),
+                    APP_DIR));
         };
     }
 
@@ -38,6 +46,10 @@ public record AppPaths(Path root) {
 
     public Path indexFile() {
         return root.resolve("grm_index.json");
+    }
+
+    public Path lockFile() {
+        return root.resolve("grm_lock");
     }
 
     public Path applicationsDir() {

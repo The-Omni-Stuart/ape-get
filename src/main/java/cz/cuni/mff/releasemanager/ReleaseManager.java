@@ -19,7 +19,9 @@ import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.ConfigStore;
+import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.GrmIndex;
+import cz.cuni.mff.releasemanager.state.StateLock;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
@@ -55,6 +57,7 @@ public class ReleaseManager {
     private final AssetVerifier verifier;
     private final StateStore stateStore;
     private final Prompt prompt;
+    private GrmConfig toolConfig = GrmConfig.defaults();
 
     private ReleaseManager() {
         cmdParser = new CmdParser();
@@ -86,10 +89,23 @@ public class ReleaseManager {
             || command == Command.UPDATE
             || command == Command.UNINSTALL
             || command == Command.LIST;
-        if (stateful && !ensureState()) {
-            return 1;
+        if (!stateful) {
+            return runCommand(command);
         }
 
+        try (StateLock ignored = StateLock.acquire(stateStore.paths().lockFile())) {
+            if (!ensureState()) {
+                return 1;
+            }
+            return runCommand(command);
+        } catch (IOException e) {
+            System.err.println("Cannot acquire state lock at "
+                + stateStore.paths().lockFile() + ": " + e.getMessage());
+            return 1;
+        }
+    }
+
+    private int runCommand(Command command) {
         return switch (command) {
             case SEARCH -> search(command) ? 0 : 1;
             case INSTALL -> install(command) ? 0 : 1;
@@ -113,6 +129,7 @@ public class ReleaseManager {
                 + stateStore.paths().root() + ": " + e.getMessage());
             return false;
         }
+        toolConfig = config.config();
 
         List<AppManifest> manifests;
         try {
@@ -320,7 +337,7 @@ public class ReleaseManager {
             githubClient.discardAsset(downloaded);
             return false;
         }
-        boolean strict = cmdParser.isStrict();
+        boolean strict = cmdParser.isStrict() || toolConfig.strictVerification();
         if (!verification.allowsInstall(strict)) {
             String action = verification.status() == VerificationStatus.MISMATCH
                 ? " Refusing to install."

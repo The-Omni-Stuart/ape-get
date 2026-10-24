@@ -457,6 +457,29 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteInstallStrictFromConfigWhenChecksumMissing() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.loadConfig()).thenReturn(new ConfigStore.LoadResult(
+            new GrmConfig(GrmConfig.KIND, GrmConfig.SCHEMA_VERSION, true, 1, null),
+            false,
+            null));
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.missing(asset.name()));
+
+        assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient).discardAsset(downloaded);
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+    }
+
+    @Test
     void testExecuteListRestoresMissingManifestWhenConfirmed() throws Exception {
         Command cmd = Command.LIST;
         when(mockCmdParser.parse(any())).thenReturn(cmd);
