@@ -14,6 +14,9 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.ReleaseInfo;
 import cz.cuni.mff.releasemanager.types.ReleasesList;
 import cz.cuni.mff.releasemanager.types.Repo;
+import cz.cuni.mff.releasemanager.verify.AssetVerifier;
+import cz.cuni.mff.releasemanager.verify.VerificationResult;
+import cz.cuni.mff.releasemanager.verify.VerificationStatus;
 
 /**
  * ReleaseManager class manages GitHub release installation, uninstallation,
@@ -40,11 +43,13 @@ public class ReleaseManager {
     private final CmdParser cmdParser;
     private final GithubClient githubClient;
     private final PlatformHandler platformHandler;
+    private final AssetVerifier verifier;
 
     private ReleaseManager() {
         cmdParser = new CmdParser();
         githubClient = new GithubClient();
         platformHandler = Platform.getPlatformHandler();
+        verifier = new AssetVerifier(githubClient);
     }
     /**
      * @return the singleton {@code ReleaseManager} instance
@@ -116,7 +121,15 @@ public class ReleaseManager {
             return false;
         }
         Asset asset = getSingleAsset(result);
-        Path installedAsset = githubClient.installAsset(asset, command.argument);
+        Path downloadedAsset = download(asset);
+        if (downloadedAsset == null) {
+            return false;
+        }
+        if (!isAllowed(verify(asset, result, downloadedAsset), downloadedAsset)) {
+            return false;
+        }
+        Path installedAsset = githubClient.installDownloadedAsset(
+            downloadedAsset, command.argument);
         if (installedAsset == null) {
             System.err.println("Installation failed.");
             return false;
@@ -127,6 +140,50 @@ public class ReleaseManager {
         System.out.println("Installation successful.");
         return true;
     }
+    private Path download(Asset asset) {
+        try {
+            return githubClient.downloadAsset(asset);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println("Failed to download " + asset.name() + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    private VerificationResult verify(Asset asset, List<Asset> releaseAssets, Path downloaded) {
+        try {
+            return verifier.verify(asset, releaseAssets, downloaded);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println("Checksum verification failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean isAllowed(VerificationResult verification, Path downloaded) {
+        if (verification == null) {
+            githubClient.discardAsset(downloaded);
+            return false;
+        }
+        boolean strict = cmdParser.isStrict();
+        if (!verification.allowsInstall(strict)) {
+            String action = verification.status() == VerificationStatus.MISMATCH
+                ? " Refusing to install."
+                : " Refusing to install (strict mode).";
+            System.err.println(verification.message() + action);
+            githubClient.discardAsset(downloaded);
+            return false;
+        }
+        if (verification.status() != VerificationStatus.VERIFIED) {
+            System.err.println(verification.message() + " Continuing without verification.");
+        }
+        return true;
+    }
+
     /**
      * Prompts the user to choose a single asset from a list of assets.
      *
@@ -269,14 +326,11 @@ public class ReleaseManager {
             System.out.println("Already up to date.");
             return true;
         }
-        Path downloadedAsset;
-        try {
-            downloadedAsset = githubClient.downloadAsset(newAsset);
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            System.err.println("Failed to download update: " + e.getMessage());
+        Path downloadedAsset = download(newAsset);
+        if (downloadedAsset == null) {
+            return false;
+        }
+        if (!isAllowed(verify(newAsset, assets, downloadedAsset), downloadedAsset)) {
             return false;
         }
         if (!platformHandler.uninstall(Path.of(release.uninstallPath()))) {

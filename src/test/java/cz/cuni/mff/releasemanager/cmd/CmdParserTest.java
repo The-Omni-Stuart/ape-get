@@ -2,7 +2,9 @@ package cz.cuni.mff.releasemanager.cmd;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -99,5 +101,30 @@ class CmdParserTest {
             Command result = cmdParser.parse(new String[] {"search", query});
             assertEquals(Command.USAGE, result, "[" + query + "]");
         }
+    }
+
+    @Test
+    void testParseStrictFlagBeforeCommand() {
+        Command result = cmdParser.parse(new String[] {"--strict", "install", "owner/repo"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isStrict());
+    }
+
+    @Test
+    void testParseStrictFlagAfterArgument() {
+        Command result = cmdParser.parse(new String[] {"install", "owner/repo", "--strict"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isStrict());
+    }
+
+    @Test
+    void testParseWithoutStrictFlag() {
+        cmdParser.parse(new String[] {"list"});
+
+        assertFalse(cmdParser.isStrict());
     }
 }

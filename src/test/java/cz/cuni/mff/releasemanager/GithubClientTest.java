@@ -112,6 +112,31 @@ class GithubClientTest {
     }
 
     @Test
+    void getLatestReleaseAssets_ignoresChecksumAndSignatureFiles() throws Exception {
+        String json = """
+            {
+              "assets": [
+                { "name": "Example-1.0.AppImage", "url": "http://example.com/Example-1.0.AppImage" },
+                { "name": "Example-1.0.AppImage.DIGEST", "url": "http://example.com/digest" },
+                { "name": "Example-1.0.AppImage.sig", "url": "http://example.com/sig" },
+                { "name": "Example-1.0.AppImage.zsync", "url": "http://example.com/zsync" }
+              ]
+            }
+            """;
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn(json);
+        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".appimage"});
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+            .thenReturn(mockResponse);
+
+        List<Asset> assets = githubClient.getLatestReleaseAssets("owner/repo");
+
+        assertEquals(1, assets.size());
+        assertEquals("Example-1.0.AppImage", assets.get(0).name());
+    }
+
+    @Test
     void searchRepoByName_urlEncodesQuery() throws Exception {
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
         when(mockResponse.statusCode()).thenReturn(200);

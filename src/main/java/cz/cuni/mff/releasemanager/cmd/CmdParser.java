@@ -1,6 +1,8 @@
 package cz.cuni.mff.releasemanager.cmd;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Scanner;
 
 /**
@@ -10,6 +12,7 @@ import java.util.Scanner;
 public class CmdParser {
 
     private final Scanner scanner = new Scanner(System.in);
+    private boolean strict;
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -18,6 +21,17 @@ public class CmdParser {
      * @return the parsed Command
      */
     public Command parse(String[] args) {
+        strict = false;
+        List<String> filtered = new ArrayList<>(args.length);
+        for (String arg : args) {
+            if ("--strict".equals(arg)) {
+                strict = true;
+            } else {
+                filtered.add(arg);
+            }
+        }
+        args = filtered.toArray(String[]::new);
+
         Command.HELP.argument = null;
         Command.USAGE.argument = null;
         if (args.length == 0) {
@@ -54,6 +68,13 @@ public class CmdParser {
     private Command usage(String message) {
         Command.USAGE.argument = message;
         return Command.USAGE;
+    }
+
+    /**
+     * @return true if the last parse saw --strict
+     */
+    public boolean isStrict() {
+        return strict;
     }
 
     /**

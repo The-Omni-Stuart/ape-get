@@ -12,9 +12,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -269,15 +269,17 @@ public class GithubClient {
         ObjectMapper mapper = new ObjectMapper();
         Release release = mapper.readValue(json, Release.class);
         String[] formats = platformHandler.getFormats();
-        // add platform check
-        List<Asset> assets = new ArrayList<>();
-        for (String format : formats) {
-            assets.addAll(release.assets().stream()
-                .filter(a -> a.name().toLowerCase().contains(format))
-                .toList()
-            );
-        }
-        return assets;
+        return release.assets().stream()
+            .filter(asset -> {
+                String name = asset.name().toLowerCase(Locale.ROOT);
+                for (String format : formats) {
+                    if (name.endsWith(format)) {
+                        return true;
+                    }
+                }
+                return false;
+            })
+            .toList();
     }
 
     /**
