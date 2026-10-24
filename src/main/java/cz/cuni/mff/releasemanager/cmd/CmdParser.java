@@ -32,8 +32,17 @@ public class CmdParser {
                 defaultCommand.argument = null;
                 return defaultCommand;
             }
-            command.argument = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+            String query = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+            if (query.isBlank()) {
+                defaultCommand.argument = null;
+                return defaultCommand;
+            }
+            command.argument = query;
             return command;
+        }
+        if (command.argNumber == 0 && command != Command.HELP && args.length != 1) {
+            defaultCommand.argument = null;
+            return defaultCommand;
         }
         if (command.requiresArgument()) {
             if (args.length != 2) {

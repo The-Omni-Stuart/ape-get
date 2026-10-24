@@ -84,4 +84,19 @@ class CmdParserTest {
             assertEquals(Command.HELP, result, command);
         }
     }
+
+    @Test
+    void testParseListRejectsExtraArguments() {
+        Command result = cmdParser.parse(new String[] {"list", "extra"});
+
+        assertEquals(Command.HELP, result);
+    }
+
+    @Test
+    void testParseSearchRejectsBlankQuery() {
+        for (String query : new String[] {"", "   "}) {
+            Command result = cmdParser.parse(new String[] {"search", query});
+            assertEquals(Command.HELP, result, "[" + query + "]");
+        }
+    }
 }
