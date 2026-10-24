@@ -1,0 +1,36 @@
+package cz.cuni.mff.releasemanager.provider;
+
+import java.io.IOException;
+import java.nio.file.Path;
+
+import cz.cuni.mff.releasemanager.types.Asset;
+
+/**
+ * A configured provider instance that can resolve releases and download assets.
+ */
+public interface ReleaseProvider {
+
+    ProviderConfig config();
+
+    /**
+     * @param path repository path on this provider
+     * @return latest release and its assets
+     * @throws IOException if the provider request fails
+     * @throws InterruptedException if the request is interrupted
+     */
+    ReleaseAssets latest(String path) throws IOException, InterruptedException;
+
+    /**
+     * @param asset asset to download
+     * @return local temporary file
+     * @throws IOException if the download fails
+     * @throws InterruptedException if the download is interrupted
+     */
+    Path download(Asset asset) throws IOException, InterruptedException;
+
+    /**
+     * Removes a staged download.
+     * @param assetPath local path
+     */
+    void discardAsset(Path assetPath);
+}

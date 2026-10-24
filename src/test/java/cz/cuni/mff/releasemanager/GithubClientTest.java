@@ -30,6 +30,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.platform.Platform;
+import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
@@ -145,7 +146,7 @@ class GithubClientTest {
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
             .thenReturn(mockResponse);
 
-        GithubClient.ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
+        ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
 
         assertEquals(4, release.all().size());
         assertEquals(1, release.installable().size());
@@ -173,7 +174,7 @@ class GithubClientTest {
         assumeTrue(architecture == Platform.Architecture.ARM_64
             || architecture == Platform.Architecture.X86_64);
 
-        GithubClient.ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
+        ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
 
         assertEquals(1, release.installable().size());
         assertEquals(architecture == Platform.Architecture.ARM_64

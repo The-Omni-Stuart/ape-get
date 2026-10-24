@@ -15,6 +15,8 @@ import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import cz.cuni.mff.releasemanager.types.RepoRef;
+
 /**
  * Reads and writes grm_manifest.json files and rebuilds grm_index.json.
  */
@@ -63,10 +65,21 @@ public final class StateStore {
         return manifests;
     }
 
-    public Optional<AppManifest> findManifest(String repo) throws IOException {
+    public Optional<AppManifest> findManifest(RepoRef ref) throws IOException {
         return scanManifests().stream()
-            .filter(manifest -> manifest.repo().equals(repo))
+            .filter(manifest -> ref.provider().equals(manifest.provider())
+                && ref.path().equals(manifest.repo()))
             .findFirst();
+    }
+
+    /**
+     * Bare repository lookup, defaulting to GitHub.
+     * @param repo owner/repo path
+     * @return manifest when present
+     * @throws IOException if manifests cannot be read
+     */
+    public Optional<AppManifest> findManifest(String repo) throws IOException {
+        return findManifest(new RepoRef(RepoRef.DEFAULT_PROVIDER, repo));
     }
 
     /**
@@ -83,7 +96,7 @@ public final class StateStore {
         Set<String> repos = new HashSet<>();
         for (AppManifest manifest : manifests) {
             if (manifest.repo() != null) {
-                repos.add(manifest.repo());
+                repos.add(manifestKey(manifest.provider(), manifest.repo()));
             }
         }
 
@@ -95,7 +108,11 @@ public final class StateStore {
                 }
                 continue;
             }
-            if (repos.contains(entry.repo())) {
+            String provider = entry.provider();
+            if (provider == null && entry.snapshot() != null) {
+                provider = entry.snapshot().provider();
+            }
+            if (repos.contains(manifestKey(provider, entry.repo()))) {
                 continue;
             }
 
@@ -118,6 +135,10 @@ public final class StateStore {
         return issues;
     }
 
+    private static String manifestKey(String provider, String repo) {
+        return (provider == null ? RepoRef.DEFAULT_PROVIDER : provider) + "\u0000" + repo;
+    }
+
     public void saveManifest(AppManifest manifest) throws IOException {
         if (manifest == null || !manifest.isValid()) {
             throw new IllegalArgumentException("Invalid application manifest");
@@ -125,14 +146,18 @@ public final class StateStore {
         StateJson.write(paths.manifestFile(manifest.provider(), manifest.repo()), manifest);
     }
 
-    public boolean removeManifest(String repo) throws IOException {
-        Optional<AppManifest> found = findManifest(repo);
+    public boolean removeManifest(RepoRef ref) throws IOException {
+        Optional<AppManifest> found = findManifest(ref);
         if (found.isEmpty()) {
             return false;
         }
         AppManifest manifest = found.get();
         return Files.deleteIfExists(
             paths.manifestFile(manifest.provider(), manifest.repo()));
+    }
+
+    public boolean removeManifest(String repo) throws IOException {
+        return removeManifest(new RepoRef(RepoRef.DEFAULT_PROVIDER, repo));
     }
 
     /**
@@ -155,7 +180,8 @@ public final class StateStore {
                 manifest.installedAt(),
                 manifest.install().path(),
                 relative,
-                manifest));
+                manifest,
+                manifest.provider()));
         }
         GrmIndex index = new GrmIndex(
             GrmIndex.KIND,

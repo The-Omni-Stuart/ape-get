@@ -12,6 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import cz.cuni.mff.releasemanager.types.RepoRef;
+
 class StateStoreTest {
 
     @TempDir
@@ -22,10 +24,14 @@ class StateStoreTest {
     }
 
     private static AppManifest manifest(String repo) {
+        return manifest("github", repo);
+    }
+
+    private static AppManifest manifest(String provider, String repo) {
         return new AppManifest(
             AppManifest.KIND,
             AppManifest.SCHEMA_VERSION,
-            "github",
+            provider,
             repo,
             "1.0.0",
             1L,
@@ -94,6 +100,22 @@ class StateStoreTest {
     }
 
     @Test
+    void findsManifestByProviderAndPath() throws Exception {
+        StateStore store = store();
+        store.saveManifest(manifest("github", "owner/repo"));
+        store.saveManifest(manifest("work", "owner/repo"));
+
+        assertEquals("github", store.findManifest(
+            new RepoRef("github", "owner/repo")).orElseThrow().provider());
+        assertEquals("work", store.findManifest(
+            new RepoRef("work", "owner/repo")).orElseThrow().provider());
+
+        assertTrue(store.removeManifest(new RepoRef("work", "owner/repo")));
+        assertTrue(store.findManifest(new RepoRef("work", "owner/repo")).isEmpty());
+        assertTrue(store.findManifest(new RepoRef("github", "owner/repo")).isPresent());
+    }
+
+    @Test
     void ignoresForeignManifestKind() throws Exception {
         AppPaths paths = new AppPaths(tempDir);
         Path file = paths.manifestFile("github", "owner/repo");
@@ -150,6 +172,7 @@ class StateStoreTest {
         assertEquals(1, index.apps().size());
         GrmIndex.Entry entry = index.apps().get(0);
         assertEquals("owner/repo", entry.repo());
+        assertEquals("github", entry.provider());
         assertEquals("applications/github/owner__repo/grm_manifest.json", entry.manifest());
         assertEquals("owner/repo", entry.snapshot().repo());
         assertTrue(Files.exists(paths.indexFile()));

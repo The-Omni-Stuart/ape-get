@@ -79,14 +79,21 @@ public record AppPaths(Path root) {
         if (repoFullName == null) {
             throw new IllegalArgumentException("Repository name is required");
         }
-        int slash = repoFullName.indexOf('/');
-        if (slash <= 0 || slash == repoFullName.length() - 1
-            || repoFullName.indexOf('/', slash + 1) >= 0) {
+        String[] segments = repoFullName.split("/", -1);
+        if (segments.length < 2 || repoFullName.contains("\\")) {
             throw new IllegalArgumentException("Expected owner/repo: " + repoFullName);
         }
-        return sanitize(repoFullName.substring(0, slash))
-            + "__"
-            + sanitize(repoFullName.substring(slash + 1));
+        StringBuilder name = new StringBuilder();
+        for (String segment : segments) {
+            if (segment.isBlank()) {
+                throw new IllegalArgumentException("Expected owner/repo: " + repoFullName);
+            }
+            if (name.length() > 0) {
+                name.append("__");
+            }
+            name.append(sanitize(segment));
+        }
+        return name.toString();
     }
 
     private static String sanitize(String value) {

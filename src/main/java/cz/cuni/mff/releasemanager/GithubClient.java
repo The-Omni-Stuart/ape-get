@@ -26,6 +26,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cuni.mff.releasemanager.platform.AssetSelector;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Release;
 import cz.cuni.mff.releasemanager.types.SearchResult;
@@ -38,7 +39,7 @@ import cz.cuni.mff.releasemanager.utils.FileUtils;
  */
 public class GithubClient {
 
-    private static final String API_URL = "https://api.github.com";
+    private static final String DEFAULT_API_URL = "https://api.github.com";
     private static final String ACCEPT_JSON_HEADER = "application/vnd.github.v3+json";
     private static final String ACCEPT_STREAM_HEADER = "application/octet-stream";
     private static final String RESULT_COUNT = "5";
@@ -47,16 +48,28 @@ public class GithubClient {
     private final HttpClient client;
     private final PlatformHandler platformHandler;
     private final Duration downloadTimeout;
+    private final String apiBase;
 
     /**
      * Constructor for GithubClient.
      * Initializes the HttpClient and PlatformHandler.
      */
     public GithubClient() {
-        this(DEFAULT_DOWNLOAD_TIMEOUT);
+        this(DEFAULT_API_URL, DEFAULT_DOWNLOAD_TIMEOUT);
+    }
+
+    public GithubClient(String apiBase) {
+        this(apiBase, DEFAULT_DOWNLOAD_TIMEOUT);
     }
 
     GithubClient(Duration downloadTimeout) {
+        this(DEFAULT_API_URL, downloadTimeout);
+    }
+
+    GithubClient(String apiBase, Duration downloadTimeout) {
+        this.apiBase = apiBase.endsWith("/")
+            ? apiBase.substring(0, apiBase.length() - 1)
+            : apiBase;
         this.downloadTimeout = downloadTimeout;
         client = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -73,7 +86,7 @@ public class GithubClient {
      */
     public Optional<SearchResult> searchRepoByName(String name) {
         String query = URLEncoder.encode(name, StandardCharsets.UTF_8);
-        String url = API_URL + "/search/repositories?q=" + query + "&per_page=" + RESULT_COUNT;
+        String url = apiBase + "/search/repositories?q=" + query + "&per_page=" + RESULT_COUNT;
         try {
             var jsonResponse = request(URI.create(url));
             if (!jsonResponse.isPresent()) {
@@ -86,20 +99,6 @@ public class GithubClient {
         } catch (IOException | InterruptedException ex) {
             System.err.println(ex.getMessage());
             return Optional.empty();
-        }
-    }
-
-    /**
-     * Release identity and assets. The overloaded constructor keeps tests concise.
-     */
-    public record ReleaseAssets(
-        String version,
-        Long releaseId,
-        List<Asset> all,
-        List<Asset> installable
-    ) {
-        public ReleaseAssets(List<Asset> all, List<Asset> installable) {
-            this(null, null, all, installable);
         }
     }
 
@@ -125,7 +124,7 @@ public class GithubClient {
         String owner = parts[0];
         String repo = parts[1];
 
-        String url = API_URL + "/repos/" + owner + "/" + repo + "/releases/latest";
+        String url = apiBase + "/repos/" + owner + "/" + repo + "/releases/latest";
         try {
             var jsonResponse = request(URI.create(url));
             if (jsonResponse.isEmpty()) {
@@ -206,27 +205,6 @@ public class GithubClient {
     }
 
     /**
-     * Installs an already downloaded asset and removes the staged file afterwards.
-     * @param assetPath The downloaded asset.
-     * @param repoFullName Repository in owner/name form.
-     * @return The path to the file for uninstall.
-     */
-    public Path installDownloadedAsset(Path assetPath, String repoFullName) {
-        if (assetPath == null) {
-            return null;
-        }
-        Path installed = null;
-        try {
-            installed = platformHandler.install(assetPath, repoFullName);
-            return installed;
-        } finally {
-            if (!assetPath.equals(installed)) {
-                discardAsset(assetPath);
-            }
-        }
-    }
-
-    /**
      * Removes a staged download that will not be installed.
      * @param assetPath The downloaded asset.
      */
@@ -240,26 +218,6 @@ public class GithubClient {
             // best-effort cleanup of the staged download
         }
         FileUtils.removeTempDir(assetPath);
-    }
-
-    /**
-     * Installs the asset by downloading it and passing it to the platform handler for installation.
-     * @param asset The asset to install.
-     * @param repoFullName Repository in owner/name form.
-     * @return The path to the file for uninstall.
-     */
-    public Path installAsset(Asset asset, String repoFullName) {
-        Path assetPath;
-        try {
-            assetPath = downloadAsset(asset);
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            System.err.println("Error downloading asset: " + e.getMessage());
-            return null;
-        }
-        return installDownloadedAsset(assetPath, repoFullName);
     }
 
     /**

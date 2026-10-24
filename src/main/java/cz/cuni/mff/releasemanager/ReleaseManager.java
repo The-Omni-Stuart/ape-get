@@ -18,6 +18,11 @@ import cz.cuni.mff.releasemanager.cmd.ConsolePrompt;
 import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.provider.GithubProvider;
+import cz.cuni.mff.releasemanager.provider.ProviderConfig;
+import cz.cuni.mff.releasemanager.provider.ProviderRegistry;
+import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.BackupManager;
@@ -28,6 +33,7 @@ import cz.cuni.mff.releasemanager.state.StateLock;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
+import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;
 import cz.cuni.mff.releasemanager.verify.SignatureStatus;
@@ -68,6 +74,7 @@ public class ReleaseManager {
     private final Prompt prompt;
     private Platform.OS os = Platform.detectPlatform().getOS();
     private GrmConfig toolConfig = GrmConfig.defaults();
+    private ProviderRegistry providers = new ProviderRegistry();
 
     private ReleaseManager() {
         cmdParser = new CmdParser();
@@ -148,6 +155,7 @@ public class ReleaseManager {
             return false;
         }
         toolConfig = config.config();
+        providers = new ProviderRegistry(toolConfig.providers());
         applyInstallRoot();
 
         List<AppManifest> manifests;
@@ -265,6 +273,65 @@ public class ReleaseManager {
     private boolean confirm(String message) {
         return prompt.confirm(message, cmdParser.isAssumeYes());
     }
+
+    private RepoRef parseRepo(String value) {
+        try {
+            return RepoRef.parse(value);
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return null;
+        }
+    }
+
+    private ReleaseProvider resolveProvider(String name) {
+        ProviderConfig config = providers.get(name).orElse(null);
+        if (config == null) {
+            System.err.println("Provider '" + name + "' is not configured.");
+            return null;
+        }
+        var type = config.providerType().orElse(null);
+        if (type == null) {
+            System.err.println("Provider '" + name + "' has an unsupported type.");
+            return null;
+        }
+        return switch (type) {
+            case GITHUB -> new GithubProvider(
+                "github".equals(config.name())
+                    ? githubClient
+                    : new GithubClient(config.resolvedApi()),
+                config);
+            case GITEA, GITLAB -> {
+                System.err.println(
+                    "Provider type '" + config.type() + "' is not implemented yet.");
+                yield null;
+            }
+        };
+    }
+
+    private ReleaseAssets latest(ReleaseProvider provider, String path) {
+        try {
+            return provider.latest(path);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println("Failed to read the latest release: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private Path installDownloaded(
+        ReleaseProvider provider, Path downloaded, String repoPath) {
+        Path installed = null;
+        try {
+            installed = platformHandler.install(downloaded, repoPath);
+        } finally {
+            if (!downloaded.equals(installed)) {
+                provider.discardAsset(downloaded);
+            }
+        }
+        return installed;
+    }
     /**
      * Searches for a GitHub repository by name and prints the results.
      *
@@ -294,24 +361,28 @@ public class ReleaseManager {
      * @param command the command containing the repository name
      */
     private boolean install(Command command) {
-        if (command.argument == null || command.argument.split("/").length != 2) {
-            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+        RepoRef ref = parseRepo(command.argument);
+        if (ref == null) {
+            return false;
+        }
+        ReleaseProvider provider = resolveProvider(ref.provider());
+        if (provider == null) {
             return false;
         }
         AppManifest previous;
         try {
-            previous = stateStore.findManifest(command.argument).orElse(null);
+            previous = stateStore.findManifest(ref).orElse(null);
         } catch (IOException e) {
             System.err.println("Failed to load application state: " + e.getMessage());
             return false;
         }
-        var release = githubClient.getLatestRelease(command.argument);
-        if (release.installable().isEmpty()) {
+        ReleaseAssets release = latest(provider, ref.path());
+        if (release == null || release.installable().isEmpty()) {
             System.err.println("Failed to retrieve the latest release.");
             return false;
         }
         Asset asset = getSingleAsset(release.installable());
-        Path downloadedAsset = download(asset);
+        Path downloadedAsset = download(provider, asset);
         if (downloadedAsset == null) {
             return false;
         }
@@ -327,14 +398,13 @@ public class ReleaseManager {
         if (!isSignerAllowed(previous, signature, downloadedAsset, "install")) {
             return false;
         }
-        Path installedAsset = githubClient.installDownloadedAsset(
-            downloadedAsset, command.argument);
+        Path installedAsset = installDownloaded(provider, downloadedAsset, ref.path());
         if (installedAsset == null) {
             System.err.println("Installation failed.");
             return false;
         }
         AppManifest manifest = createManifest(
-            command.argument, release, asset, installedAsset, verification,
+            ref, release, asset, installedAsset, verification,
             signature, Instant.now(), List.of());
         if (!recordManifest(manifest)) {
             return false;
@@ -342,9 +412,9 @@ public class ReleaseManager {
         System.out.println("Installation successful.");
         return true;
     }
-    private Path download(Asset asset) {
+    private Path download(ReleaseProvider provider, Asset asset) {
         try {
-            return githubClient.downloadAsset(asset);
+            return provider.download(asset);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -506,8 +576,8 @@ public class ReleaseManager {
     }
 
     private AppManifest createManifest(
-        String repo,
-        GithubClient.ReleaseAssets release,
+        RepoRef ref,
+        ReleaseAssets release,
         Asset asset,
         Path installed,
         VerificationResult verification,
@@ -518,8 +588,8 @@ public class ReleaseManager {
         return new AppManifest(
             AppManifest.KIND,
             AppManifest.SCHEMA_VERSION,
-            "github",
-            repo,
+            ref.provider(),
+            ref.path(),
             release.version(),
             release.releaseId(),
             new AppManifest.Asset(
@@ -532,7 +602,7 @@ public class ReleaseManager {
             new AppManifest.Install(
                 installKind(asset),
                 installed.toString(),
-                stateStore.paths().appDir("github", repo).toString(),
+                stateStore.paths().appDir(ref.provider(), ref.path()).toString(),
                 new AppManifest.Uninstall(
                     installed.toString(), List.of(), platformHandler.productCode(installed))),
             new AppManifest.Verification(
@@ -621,16 +691,16 @@ public class ReleaseManager {
      * @param command the command containing the repository name
      */
     private boolean uninstall(Command command) {
-        if (command.argument == null || command.argument.split("/").length != 2) {
-            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+        RepoRef ref = parseRepo(command.argument);
+        if (ref == null) {
             return false;
         }
 
         AppManifest manifest;
         try {
-            var found = stateStore.findManifest(command.argument);
+            var found = stateStore.findManifest(ref);
             if (found.isEmpty()) {
-                System.err.println("Release " + command.argument + " is not found.");
+                System.err.println("Release " + ref.display() + " is not found.");
                 return false;
             }
             manifest = found.get();
@@ -653,7 +723,7 @@ public class ReleaseManager {
         }
 
         try {
-            if (!stateStore.removeManifest(manifest.repo())) {
+            if (!stateStore.removeManifest(ref)) {
                 System.err.println(
                     "Uninstalled " + manifest.repo() + ", but failed to remove its manifest.");
                 return false;
@@ -676,11 +746,15 @@ public class ReleaseManager {
      * @param command the command containing the repository name
      */
     private boolean update(Command command) {
+        RepoRef ref = parseRepo(command.argument);
+        if (ref == null) {
+            return false;
+        }
         AppManifest previous;
         try {
-            var found = stateStore.findManifest(command.argument);
+            var found = stateStore.findManifest(ref);
             if (found.isEmpty()) {
-                System.err.println("Release " + command.argument + " is not found.");
+                System.err.println("Release " + ref.display() + " is not found.");
                 return false;
             }
             previous = found.get();
@@ -688,8 +762,15 @@ public class ReleaseManager {
             System.err.println("Failed to load application state: " + e.getMessage());
             return false;
         }
+        ReleaseProvider provider = resolveProvider(previous.provider());
+        if (provider == null) {
+            return false;
+        }
 
-        var latest = githubClient.getLatestRelease(command.argument);
+        ReleaseAssets latest = latest(provider, previous.repo());
+        if (latest == null) {
+            return false;
+        }
         List<Asset> assets = latest.installable();
         if (assets.isEmpty()) {
             System.err.println("No asset found.");
@@ -710,7 +791,7 @@ public class ReleaseManager {
             return true;
         }
 
-        Path downloadedAsset = download(newAsset);
+        Path downloadedAsset = download(provider, newAsset);
         if (downloadedAsset == null) {
             return false;
         }
@@ -737,20 +818,19 @@ public class ReleaseManager {
                     previous, toolConfig.backupCount());
             } catch (IOException e) {
                 System.err.println("Failed to create backup; update aborted: " + e.getMessage());
-                githubClient.discardAsset(downloadedAsset);
+                provider.discardAsset(downloadedAsset);
                 return false;
             }
         }
 
-        Path installedAsset = githubClient.installDownloadedAsset(
-            downloadedAsset, command.argument);
+        Path installedAsset = installDownloaded(provider, downloadedAsset, ref.path());
         if (installedAsset == null) {
             System.err.println("Installation failed.");
             return false;
         }
 
         AppManifest updated = createManifest(
-            command.argument,
+            ref,
             latest,
             newAsset,
             installedAsset,
@@ -782,21 +862,24 @@ public class ReleaseManager {
         }
         for (AppManifest manifest : manifests) {
             String version = manifest.version() == null ? "unknown" : manifest.version();
-            System.out.println(manifest.repo() + " " + version);
+            String name = RepoRef.DEFAULT_PROVIDER.equals(manifest.provider())
+                ? manifest.repo()
+                : manifest.provider() + ":" + manifest.repo();
+            System.out.println(name + " " + version);
         }
         return true;
     }
 
     private boolean info(Command command) {
-        if (command.argument == null || command.argument.split("/").length != 2) {
-            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+        RepoRef ref = parseRepo(command.argument);
+        if (ref == null) {
             return false;
         }
         AppManifest manifest;
         try {
-            var found = stateStore.findManifest(command.argument);
+            var found = stateStore.findManifest(ref);
             if (found.isEmpty()) {
-                System.err.println("Release " + command.argument + " is not found.");
+                System.err.println("Release " + ref.display() + " is not found.");
                 return false;
             }
             manifest = found.get();
@@ -870,16 +953,16 @@ public class ReleaseManager {
             System.err.println("rollback is not supported for Windows installers yet.");
             return false;
         }
-        if (command.argument == null || command.argument.split("/").length != 2) {
-            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+        RepoRef ref = parseRepo(command.argument);
+        if (ref == null) {
             return false;
         }
 
         AppManifest current;
         try {
-            var found = stateStore.findManifest(command.argument);
+            var found = stateStore.findManifest(ref);
             if (found.isEmpty()) {
-                System.err.println("Release " + command.argument + " is not found.");
+                System.err.println("Release " + ref.display() + " is not found.");
                 return false;
             }
             current = found.get();
@@ -890,12 +973,12 @@ public class ReleaseManager {
 
         var latestBackup = backupManager.latest(current);
         if (latestBackup.isEmpty()) {
-            System.err.println("No backups are available for " + command.argument + ".");
+            System.err.println("No backups are available for " + ref.display() + ".");
             return false;
         }
         AppManifest.Backup backup = latestBackup.get();
 
-        String message = "Roll back " + current.repo() + " from "
+        String message = "Roll back " + ref.display() + " from "
             + (current.version() == null ? "unknown" : current.version())
             + " to " + (backup.version() == null ? "unknown" : backup.version())
             + "?\nThis will replace:\n  " + current.install().path()
@@ -935,7 +1018,7 @@ public class ReleaseManager {
         if (!recordManifest(rolledBack)) {
             return false;
         }
-        System.out.println("Rolled back " + command.argument + " to "
+        System.out.println("Rolled back " + ref.display() + " to "
             + (backup.version() == null ? "unknown" : backup.version()) + ".");
         return true;
     }
@@ -1054,8 +1137,8 @@ public class ReleaseManager {
             System.err.println("adopt is currently supported on Linux only.");
             return false;
         }
-        if (command.argument == null || command.argument.split("/").length != 2) {
-            System.err.println("Please specify the correct repository name of format 'owner/repo'.");
+        RepoRef ref = parseRepo(command.argument);
+        if (ref == null) {
             return false;
         }
         Path liveRoot = platformHandler.getInstallRoot();
@@ -1063,14 +1146,14 @@ public class ReleaseManager {
             System.err.println("Cannot determine the install root.");
             return false;
         }
-        Path live = liveRoot.resolve(AppPaths.repoDirectoryName(command.argument));
+        Path live = liveRoot.resolve(AppPaths.repoDirectoryName(ref.path()));
         if (!Files.isRegularFile(live)) {
             System.err.println("No installed file found at " + live + ".");
             return false;
         }
         try {
-            if (stateStore.findManifest(command.argument).isPresent()) {
-                System.err.println("Release " + command.argument + " is already tracked.");
+            if (stateStore.findManifest(ref).isPresent()) {
+                System.err.println("Release " + ref.display() + " is already tracked.");
                 return false;
             }
         } catch (IOException e) {
@@ -1078,7 +1161,7 @@ public class ReleaseManager {
             return false;
         }
 
-        String message = "Adopt " + live + " as " + command.argument
+        String message = "Adopt " + live + " as " + ref.display()
             + "?\nVersion and checksum are unknown.";
         if (!confirm(message)) {
             System.err.println("Adoption declined.");
@@ -1090,8 +1173,8 @@ public class ReleaseManager {
             AppManifest manifest = new AppManifest(
                 AppManifest.KIND,
                 AppManifest.SCHEMA_VERSION,
-                "github",
-                command.argument,
+                ref.provider(),
+                ref.path(),
                 null,
                 null,
                 new AppManifest.Asset(
@@ -1099,7 +1182,7 @@ public class ReleaseManager {
                 new AppManifest.Install(
                     installKind(name),
                     live.toString(),
-                    stateStore.paths().appDir("github", command.argument).toString(),
+                    stateStore.paths().appDir(ref.provider(), ref.path()).toString(),
                     new AppManifest.Uninstall(live.toString(), List.of(), null)),
                 new AppManifest.Verification("unknown", "none", null, null, null),
                 List.of(),
@@ -1108,10 +1191,10 @@ public class ReleaseManager {
             if (!recordManifest(manifest)) {
                 return false;
             }
-            System.out.println("Adopted " + command.argument + " at " + live + ".");
+            System.out.println("Adopted " + ref.display() + " at " + live + ".");
             return true;
         } catch (IOException e) {
-            System.err.println("Failed to adopt " + command.argument + ": " + e.getMessage());
+            System.err.println("Failed to adopt " + ref.display() + ": " + e.getMessage());
             return false;
         }
     }

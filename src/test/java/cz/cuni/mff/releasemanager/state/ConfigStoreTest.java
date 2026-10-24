@@ -11,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import cz.cuni.mff.releasemanager.provider.ProviderConfig;
+
 class ConfigStoreTest {
 
     @TempDir
@@ -94,6 +96,27 @@ class ConfigStoreTest {
         ConfigStore.LoadResult result = store().load();
 
         assertTrue(result.config().requireSignature());
+    }
+
+    @Test
+    void readsProviderConfig() throws Exception {
+        AppPaths paths = new AppPaths(tempDir);
+        Files.createDirectories(paths.root());
+        Files.writeString(paths.configFile(), """
+            { "kind": "grm.config", "schema_version": 1,
+              "strict_verification": false, "backup_count": 1,
+              "providers": {
+                "work": { "type": "gitea", "url": "https://git.example.com",
+                          "token_env": "GRM_WORK_TOKEN" }
+              } }
+            """);
+
+        ConfigStore.LoadResult result = store().load();
+
+        ProviderConfig work = result.config().providers().get("work");
+        assertEquals("gitea", work.type());
+        assertEquals("GRM_WORK_TOKEN", work.tokenEnv());
+        assertEquals("https://git.example.com/api/v1", work.resolvedApi());
     }
 
     @Test

@@ -41,6 +41,14 @@ class AppPathsTest {
     void rejectsInvalidRepositoryNames() {
         assertThrows(IllegalArgumentException.class,
             () -> AppPaths.repoDirectoryName("owner"));
+        assertThrows(IllegalArgumentException.class,
+            () -> AppPaths.repoDirectoryName("owner//repo"));
+    }
+
+    @Test
+    void buildsNestedRepositoryDirectoryNames() {
+        assertEquals("group__sub__project",
+            AppPaths.repoDirectoryName("group/sub/project"));
     }
 
     @Test

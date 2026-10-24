@@ -40,6 +40,19 @@ public record GrmIndex(
         @JsonProperty("installed_at") Instant installedAt,
         @JsonProperty("install_path") String installPath,
         String manifest,
-        AppManifest snapshot
-    ) {}
+        AppManifest snapshot,
+        String provider
+    ) {
+        public Entry(
+            String repo,
+            String version,
+            Instant installedAt,
+            String installPath,
+            String manifest,
+            AppManifest snapshot
+        ) {
+            this(repo, version, installedAt, installPath, manifest, snapshot,
+                snapshot == null ? null : snapshot.provider());
+        }
+    }
 }

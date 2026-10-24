@@ -29,6 +29,7 @@ import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.BackupManager;
@@ -38,6 +39,7 @@ import cz.cuni.mff.releasemanager.state.GrmIndex;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
+import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;
@@ -213,18 +215,18 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).downloadAsset(asset);
         verify(mockVerifier).verify(asset, List.of(asset), downloaded);
-        verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+        verify(mockPlatformHandler).install(downloaded, "user/example");
 
         ArgumentCaptor<AppManifest> manifestCaptor = ArgumentCaptor.forClass(AppManifest.class);
         verify(mockStateStore).saveManifest(manifestCaptor.capture());
@@ -247,12 +249,12 @@ class ReleaseManagerTest {
         Asset checksum = new Asset("http://url", "example.exe.sha256");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(
+            .thenReturn(new ReleaseAssets(
                 List.of(asset, checksum), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset, checksum), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), checksum.name()));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
@@ -271,7 +273,7 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -281,7 +283,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -297,7 +299,7 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -307,7 +309,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
     }
 
     @Test
@@ -319,18 +321,18 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
         when(mockSignatureVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(SignatureResult.missing("example.exe"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
 
-        verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+        verify(mockPlatformHandler).install(downloaded, "user/example");
     }
 
     @Test
@@ -342,11 +344,11 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
@@ -354,6 +356,79 @@ class ReleaseManagerTest {
         InOrder order = inOrder(mockVerifier, mockSignatureVerifier);
         order.verify(mockVerifier).verify(asset, List.of(asset), downloaded);
         order.verify(mockSignatureVerifier).verify(asset, List.of(asset), downloaded);
+    }
+
+    @Test
+    void testExecuteInstallAcceptsGitHubProviderPrefix() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "github:user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockPlatformHandler.install(downloaded, "user/example"))
+            .thenReturn(Path.of("/ProgramFiles/example.exe"));
+
+        assertEquals(0, releaseManager.execute(
+            new String[]{"install", "github:user/example"}));
+
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals("github", captor.getValue().provider());
+        assertEquals("user/example", captor.getValue().repo());
+    }
+
+    @Test
+    void testExecuteInstallUnknownProviderFails() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "work:user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        assertEquals(1, releaseManager.execute(
+            new String[]{"install", "work:user/example"}));
+
+        verify(mockGithubClient, never()).getLatestRelease(any());
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteInfoAcceptsGitHubProviderPrefix() throws Exception {
+        Command cmd = Command.INFO;
+        cmd.argument = "github:user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(manifest(
+                "user/example", "http://url", "example.exe", "/tmp/live")));
+
+        assertEquals(0, releaseManager.execute(
+            new String[]{"info", "github:user/example"}));
+    }
+
+    @Test
+    void testExecuteAdoptStoresProvider() throws Exception {
+        Command cmd = Command.ADOPT;
+        cmd.argument = "work:owner/repo";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        Files.writeString(bin.resolve("owner__repo"), "data");
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+        when(mockStateStore.findManifest(new RepoRef("work", "owner/repo")))
+            .thenReturn(Optional.empty());
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        assertEquals(0, releaseManager.execute(
+            new String[]{"adopt", "work:owner/repo"}));
+
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals("work", captor.getValue().provider());
+        assertEquals("owner/repo", captor.getValue().repo());
     }
 
     @Test
@@ -365,14 +440,14 @@ class ReleaseManagerTest {
         AppManifest manifest = manifest(
             "user/example", "http://url", "example.exe", "/ProgramFiles/uninstall.exe");
         Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
-        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(manifest));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example"))).thenReturn(Optional.of(manifest));
         when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(true);
-        when(mockStateStore.removeManifest("user/example")).thenReturn(true);
+        when(mockStateStore.removeManifest(new RepoRef("github", "user/example"))).thenReturn(true);
 
         assertEquals(0, releaseManager.execute(new String[]{"uninstall", "user/example"}));
 
         verify(mockPlatformHandler).uninstall(uninstallPath);
-        verify(mockStateStore).removeManifest("user/example");
+        verify(mockStateStore).removeManifest(new RepoRef("github", "user/example"));
         verify(mockStateStore).rebuildIndex();
     }
 
@@ -385,13 +460,13 @@ class ReleaseManagerTest {
         AppManifest manifest = manifest(
             "user/example", "http://url", "example.exe", "/ProgramFiles/uninstall.exe");
         Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
-        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(manifest));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example"))).thenReturn(Optional.of(manifest));
         when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(false);
 
         assertEquals(1, releaseManager.execute(new String[]{"uninstall", "user/example"}));
 
         verify(mockPlatformHandler).uninstall(uninstallPath);
-        verify(mockStateStore, never()).removeManifest(any());
+        verify(mockStateStore, never()).removeManifest(any(RepoRef.class));
     }
 
     @Test
@@ -406,15 +481,15 @@ class ReleaseManagerTest {
                 "/ProgramFiles/uninstall.exe"),
             productCode);
         Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
-        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(manifest));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example"))).thenReturn(Optional.of(manifest));
         when(mockPlatformHandler.uninstall(uninstallPath, productCode)).thenReturn(true);
-        when(mockStateStore.removeManifest("user/example")).thenReturn(true);
+        when(mockStateStore.removeManifest(new RepoRef("github", "user/example"))).thenReturn(true);
 
         assertEquals(0, releaseManager.execute(new String[]{"uninstall", "user/example"}));
 
         verify(mockPlatformHandler).uninstall(uninstallPath, productCode);
         verify(mockPlatformHandler, never()).uninstall(uninstallPath);
-        verify(mockStateStore).removeManifest("user/example");
+        verify(mockStateStore).removeManifest(new RepoRef("github", "user/example"));
     }
 
     @Test
@@ -427,11 +502,11 @@ class ReleaseManagerTest {
         Path downloaded = Path.of("/tmp/downloaded.exe");
         Path installed = Path.of("/ProgramFiles/installer.msi");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(installed);
         String productCode = "{11111111-2222-3333-4444-555555555555}";
         when(mockPlatformHandler.productCode(installed)).thenReturn(productCode);
@@ -448,13 +523,13 @@ class ReleaseManagerTest {
         Command cmd = Command.INFO;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(manifest(
                 "user/example", "http://url", "example.exe", "/tmp/live")));
 
         assertEquals(0, releaseManager.execute(new String[]{"info", "user/example"}));
 
-        verify(mockStateStore).findManifest("user/example");
+        verify(mockStateStore).findManifest(new RepoRef("github", "user/example"));
     }
 
     @Test
@@ -462,7 +537,7 @@ class ReleaseManagerTest {
         Command cmd = Command.INFO;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
-        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.empty());
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example"))).thenReturn(Optional.empty());
 
         assertEquals(1, releaseManager.execute(new String[]{"info", "user/example"}));
     }
@@ -476,21 +551,21 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockGithubClient).downloadAsset(newAsset);
-        verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+        verify(mockPlatformHandler).install(downloaded, "user/example");
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockBackupManager).createAndPrune(any(), anyInt());
         ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
@@ -510,13 +585,13 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(withSignature(
                 manifest("user/example", oldAsset.url(), oldAsset.name(),
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -525,7 +600,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockBackupManager, never()).createAndPrune(any(), anyInt());
         verify(mockStateStore, never()).saveManifest(any());
@@ -540,19 +615,19 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(withSignature(
                 manifest("user/example", oldAsset.url(), oldAsset.name(),
                     "/ProgramFiles/uninstall.exe"),
                 "FPR")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
         when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(SignatureResult.verified("example.exe", "gpg", "Test Signer", "FPR"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
@@ -571,13 +646,13 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(withSignature(
                 manifest("user/example", oldAsset.url(), oldAsset.name(),
                     "/ProgramFiles/uninstall.exe"),
                 "FPR")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -586,7 +661,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
         verify(mockGithubClient).discardAsset(downloaded);
     }
 
@@ -601,19 +676,19 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(withSignature(
                 manifest("user/example", oldAsset.url(), oldAsset.name(),
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
         when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(SignatureResult.verified("example.exe", "gpg", "New Signer", "NEW"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
@@ -635,13 +710,13 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(withSignature(
                 manifest("user/example", oldAsset.url(), oldAsset.name(),
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -650,7 +725,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockStateStore, never()).saveManifest(any());
     }
@@ -666,19 +741,19 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(withSignature(
                 manifest("user/example", oldAsset.url(), oldAsset.name(),
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
         when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(SignatureResult.missing("example.exe"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
@@ -697,13 +772,13 @@ class ReleaseManagerTest {
 
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(withSignature(
                 manifest("user/example", "http://oldurl", "example.exe",
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -712,7 +787,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
         verify(mockGithubClient).discardAsset(downloaded);
     }
 
@@ -725,23 +800,23 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+        when(mockPlatformHandler.install(downloaded, "user/example"))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
 
-        InOrder inOrder = inOrder(mockGithubClient, mockVerifier);
+        InOrder inOrder = inOrder(mockGithubClient, mockVerifier, mockPlatformHandler);
         inOrder.verify(mockGithubClient).downloadAsset(newAsset);
         inOrder.verify(mockVerifier).verify(newAsset, List.of(newAsset), downloaded);
-        inOrder.verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+        inOrder.verify(mockPlatformHandler).install(downloaded, "user/example");
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockStateStore).saveManifest(any());
     }
@@ -755,20 +830,20 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example")).thenReturn(null);
+        when(mockPlatformHandler.install(downloaded, "user/example")).thenReturn(null);
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockPlatformHandler, never()).uninstall(any());
-        verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+        verify(mockPlatformHandler).install(downloaded, "user/example");
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -781,11 +856,11 @@ class ReleaseManagerTest {
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
             .thenReturn(VerificationResult.mismatch(
@@ -795,7 +870,7 @@ class ReleaseManagerTest {
 
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).uninstall(any());
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -807,17 +882,17 @@ class ReleaseManagerTest {
 
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenThrow(new IOException("boom"));
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockPlatformHandler, never()).uninstall(any());
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -828,11 +903,11 @@ class ReleaseManagerTest {
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
         Asset asset = new Asset("http://url", "example.exe");
-        when(mockStateStore.findManifest("user/example"))
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
             .thenReturn(Optional.of(manifest(
                 "user/example", asset.url(), asset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
 
@@ -867,11 +942,11 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example")).thenReturn(null);
+        when(mockPlatformHandler.install(downloaded, "user/example")).thenReturn(null);
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
     }
@@ -884,7 +959,7 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.mismatch(
@@ -893,7 +968,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
     }
 
     @Test
@@ -905,7 +980,7 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.missing(asset.name()));
@@ -913,7 +988,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
     }
 
     @Test
@@ -928,7 +1003,7 @@ class ReleaseManagerTest {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(asset, List.of(asset), downloaded))
             .thenReturn(VerificationResult.missing(asset.name()));
@@ -936,7 +1011,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockPlatformHandler, never()).install(any(), any());
     }
 
     @Test
@@ -1051,7 +1126,7 @@ class ReleaseManagerTest {
         AppManifest restored = manifest(
             "user/example", "http://old", "example.exe", "/tmp/live");
         AppManifest.Backup backup = backup("0.9.0");
-        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(current));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example"))).thenReturn(Optional.of(current));
         when(mockBackupManager.latest(current)).thenReturn(Optional.of(backup));
         when(mockBackupManager.readManifest(backup)).thenReturn(restored);
         when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
@@ -1070,7 +1145,7 @@ class ReleaseManagerTest {
         when(mockCmdParser.parse(any())).thenReturn(cmd);
         AppManifest current = manifest(
             "user/example", "http://new", "example.exe", "/tmp/live");
-        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(current));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example"))).thenReturn(Optional.of(current));
         when(mockBackupManager.latest(current)).thenReturn(Optional.empty());
 
         assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
@@ -1086,7 +1161,7 @@ class ReleaseManagerTest {
         AppManifest current = manifest(
             "user/example", "http://new", "example.exe", "/tmp/live");
         AppManifest.Backup backup = backup("0.9.0");
-        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(current));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example"))).thenReturn(Optional.of(current));
         when(mockBackupManager.latest(current)).thenReturn(Optional.of(backup));
         when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
 
@@ -1105,7 +1180,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
 
-        verify(mockStateStore, never()).findManifest(any());
+        verify(mockStateStore, never()).findManifest(any(RepoRef.class));
         verify(mockBackupManager, never()).latest(any());
     }
 
@@ -1133,7 +1208,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"adopt", "owner/repo"}));
 
-        verify(mockStateStore, never()).findManifest(any());
+        verify(mockStateStore, never()).findManifest(any(RepoRef.class));
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -1200,7 +1275,7 @@ class ReleaseManagerTest {
         Path bin = Files.createDirectories(paths.root().resolve("bin"));
         Files.writeString(bin.resolve("owner__repo"), "data");
         when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
-        when(mockStateStore.findManifest("owner/repo")).thenReturn(Optional.empty());
+        when(mockStateStore.findManifest(new RepoRef("github", "owner/repo"))).thenReturn(Optional.empty());
         when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
 
         assertEquals(0, releaseManager.execute(new String[]{"adopt", "owner/repo"}));
@@ -1218,7 +1293,7 @@ class ReleaseManagerTest {
         Path bin = Files.createDirectories(paths.root().resolve("bin"));
         Files.writeString(bin.resolve("owner__repo"), "data");
         when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
-        when(mockStateStore.findManifest("owner/repo")).thenReturn(Optional.empty());
+        when(mockStateStore.findManifest(new RepoRef("github", "owner/repo"))).thenReturn(Optional.empty());
         when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
 
         assertEquals(1, releaseManager.execute(new String[]{"adopt", "owner/repo"}));
