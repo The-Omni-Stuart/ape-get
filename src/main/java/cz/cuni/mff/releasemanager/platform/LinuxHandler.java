@@ -77,26 +77,6 @@ public final class LinuxHandler extends PlatformHandler {
 
 
     @Override
-    protected void createReleasesListFile() {
-        Path releasesFile = getReleasesListFileLocation();
-        Path releasesDir = getReleasesListDirLocation();
-        if (Files.exists(releasesFile)) {
-            return;
-        }
-        try {
-            Files.createDirectories(releasesDir);
-            Files.createFile(releasesFile);
-            Files.setPosixFilePermissions(releasesFile, Set.of(
-                PosixFilePermission.OWNER_READ,
-                PosixFilePermission.OWNER_WRITE
-            ));
-        } catch (IOException e) {
-            System.out.println("Failed to create : " + e.getMessage());
-        }
-    }
-
-
-    @Override
     protected Path getReleasesListDirLocation() {
         return Paths.get(System.getProperty("user.home"), ".local", "share", APP_DATA_DIR);
     }

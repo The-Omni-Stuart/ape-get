@@ -4,12 +4,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Comparator;
 
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,19 +31,6 @@ class PlatformHandlerTest {
         public void uninstall(Path asset) {}
 
         @Override
-        protected void createReleasesListFile() {
-            try {
-                Files.createDirectories(getReleasesListDirLocation());
-                Path releasesListFile = getReleasesListFileLocation();
-                if (!Files.exists(releasesListFile)) {
-                    Files.createFile(releasesListFile);
-                }
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        @Override
         public String[] getFormats() { return new String[] { "zip" }; }
 
         @Override
@@ -59,14 +48,18 @@ class PlatformHandlerTest {
 
     @AfterEach
     void tearDown() throws IOException {
-        if (Files.exists(tempDir)) {
-            Files.walk(tempDir)
-                .sorted((a, b) -> b.compareTo(a)) // files before directories
-                .forEach(p -> {
-                    try { Files.deleteIfExists(p); } catch (IOException e) {}
-                });
-            }
-        Files.deleteIfExists(tempDir);
+        if (!Files.exists(tempDir)) {
+            return;
+        }
+        try (var paths = Files.walk(tempDir)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException ignored) {
+                    // best-effort test cleanup
+                }
+            });
+        }
     }
 
     private ReleaseInfo createRelease(String repo) {
@@ -127,5 +120,83 @@ class PlatformHandlerTest {
     @Test
     void testLoadReleasesList_returnsNullIfFileDoesNotExist() throws IOException {
         assertNull(handler.loadReleasesList());
+    }
+
+    @Test
+    void testLoadReleasesList_returnsNullForEmptyFile() throws IOException {
+        Files.createDirectories(handler.getReleasesListDirLocation());
+        Files.createFile(handler.getReleasesListFileLocation());
+
+        assertNull(handler.loadReleasesList());
+    }
+
+    @Test
+    void testAddReleaseToList_recoversFromEmptyFile() throws IOException {
+        Files.createDirectories(handler.getReleasesListDirLocation());
+        Files.createFile(handler.getReleasesListFileLocation());
+
+        handler.addReleaseToList(createRelease("repo1"));
+
+        ReleasesList list = handler.loadReleasesList();
+        assertNotNull(list);
+        assertEquals(1, list.releases().size());
+        assertEquals("repo1", list.releases().get(0).repo());
+    }
+
+    @Test
+    void testLoadReleasesList_quarantinesCorruptFile() throws IOException {
+        Files.createDirectories(handler.getReleasesListDirLocation());
+        Files.writeString(handler.getReleasesListFileLocation(), "garbage");
+
+        assertNull(handler.loadReleasesList());
+        assertFalse(Files.exists(handler.getReleasesListFileLocation()));
+        try (var files = Files.list(handler.getReleasesListDirLocation())) {
+            assertTrue(files.anyMatch(
+                path -> path.getFileName().toString().startsWith("releases.json.corrupt-")));
+        }
+    }
+
+    @Test
+    void testLoadReleasesList_returnsNullForMissingReleasesField() throws IOException {
+        Files.createDirectories(handler.getReleasesListDirLocation());
+        Files.writeString(handler.getReleasesListFileLocation(), "{}");
+
+        assertNull(handler.loadReleasesList());
+    }
+
+    @Test
+    void testLoadReleasesList_quarantinesEntriesWithoutRepo() throws IOException {
+        Files.createDirectories(handler.getReleasesListDirLocation());
+        Files.writeString(handler.getReleasesListFileLocation(), "{\"releases\":[{}]}");
+
+        assertNull(handler.loadReleasesList());
+        assertFalse(Files.exists(handler.getReleasesListFileLocation()));
+        try (var files = Files.list(handler.getReleasesListDirLocation())) {
+            assertTrue(files.anyMatch(
+                path -> path.getFileName().toString().startsWith("releases.json.corrupt-")));
+        }
+    }
+
+    @Test
+    void testLoadReleasesList_quarantinesEntriesMissingRequiredFields() throws IOException {
+        Files.createDirectories(handler.getReleasesListDirLocation());
+        Files.writeString(handler.getReleasesListFileLocation(),
+            "{\"releases\":[{\"repo\":\"repo1\"}]}");
+
+        assertNull(handler.loadReleasesList());
+        assertFalse(Files.exists(handler.getReleasesListFileLocation()));
+        try (var files = Files.list(handler.getReleasesListDirLocation())) {
+            assertTrue(files.anyMatch(
+                path -> path.getFileName().toString().startsWith("releases.json.corrupt-")));
+        }
+    }
+
+    @Test
+    void testAddReleaseToList_writesOnlyFinalFile() throws IOException {
+        handler.addReleaseToList(createRelease("repo1"));
+
+        try (var files = Files.list(handler.getReleasesListDirLocation())) {
+            assertEquals(1, files.count());
+        }
     }
 }

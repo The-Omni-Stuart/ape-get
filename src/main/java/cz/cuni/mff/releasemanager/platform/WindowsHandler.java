@@ -187,21 +187,6 @@ public final class WindowsHandler extends PlatformHandler {
     }
 
     @Override
-    protected void createReleasesListFile() {
-        Path releasesFile = getReleasesListFileLocation();
-        Path releasesDir = getReleasesListDirLocation();
-        if (Files.exists(releasesFile)) {
-            return;
-        }
-        try {
-            Files.createDirectories(releasesDir);
-            Files.createFile(releasesFile);
-        } catch (IOException e) {
-            System.out.println("Failed to create : " + e.getMessage());
-        }
-    }
-
-    @Override
     protected Path getReleasesListDirLocation() {
         return Paths.get(
             System.getenv("APPDATA"),

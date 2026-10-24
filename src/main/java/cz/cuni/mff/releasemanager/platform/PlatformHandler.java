@@ -1,11 +1,15 @@
 package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -36,10 +40,6 @@ public abstract class PlatformHandler {
      */
     public abstract void uninstall(Path asset);
     /**
-     * Creates the config file with information about installed releases.
-     */
-    protected abstract void createReleasesListFile();
-    /**
      * @return Supported file formats for installation.
      */
     public abstract String[] getFormats();
@@ -64,11 +64,9 @@ public abstract class PlatformHandler {
      */
     public void addReleaseToList(ReleaseInfo release) throws IOException {
         ReleasesList releasesList = loadReleasesList();
-        if (releasesList == null) {
-            createReleasesListFile();
-            releasesList = new ReleasesList(new ArrayList<>());
-        }
-        List<ReleaseInfo> currentReleases = new ArrayList<>(releasesList.releases());
+        List<ReleaseInfo> currentReleases = releasesList == null
+            ? new ArrayList<>()
+            : new ArrayList<>(releasesList.releases());
         boolean found = false;
         for (int i = 0; i < currentReleases.size(); i++) {
             if (currentReleases.get(i).repo().equals(release.repo())) {
@@ -78,24 +76,81 @@ public abstract class PlatformHandler {
             }
         }
         if (!found) {
-            currentReleases.add(release); 
+            currentReleases.add(release);
         }
 
-        Path releasesFile = getReleasesListFileLocation();
-        mapper.writeValue(releasesFile.toFile(), new ReleasesList(currentReleases));
+        writeReleasesList(new ReleasesList(currentReleases));
     }
 
     /**
      * Loads the list of installed releases from the config file.
+     * An empty file is treated as an empty list. A corrupt file is moved aside so it can be
+     * inspected later and the application does not stay permanently broken.
      * @return ReleasesList object containing the list of installed releases.
      * @throws IOException
      */
     public ReleasesList loadReleasesList() throws IOException {
         Path releasesFile = getReleasesListFileLocation();
-        if (!Files.exists(releasesFile)) {
+        if (!Files.exists(releasesFile) || Files.size(releasesFile) == 0) {
             return null;
         }
-        return mapper.readValue(releasesFile.toFile(), ReleasesList.class);
+        ReleasesList releasesList;
+        try {
+            releasesList = mapper.readValue(releasesFile.toFile(), ReleasesList.class);
+        } catch (JsonProcessingException e) {
+            return quarantine(releasesFile);
+        }
+        if (releasesList == null || releasesList.releases() == null) {
+            return null;
+        }
+        boolean invalidEntry = releasesList.releases().stream()
+            .anyMatch(release -> !isValid(release));
+        if (invalidEntry) {
+            return quarantine(releasesFile);
+        }
+        return releasesList;
+    }
+
+    private static boolean isValid(ReleaseInfo release) {
+        if (release == null
+            || release.repo() == null
+            || release.repo().isBlank()
+            || release.uninstallPath() == null
+            || release.uninstallPath().isBlank()
+            || release.asset() == null) {
+            return false;
+        }
+        var asset = release.asset();
+        return asset.url() != null
+            && !asset.url().isBlank()
+            && asset.name() != null
+            && !asset.name().isBlank();
+    }
+
+    private ReleasesList quarantine(Path releasesFile) throws IOException {
+        Path quarantined = releasesFile.resolveSibling(
+            RELEASES_LIST_FILE + ".corrupt-" + Instant.now().toEpochMilli());
+        Files.move(releasesFile, quarantined, StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("Warning: releases file was corrupt; moved to " + quarantined);
+        return null;
+    }
+
+    private void writeReleasesList(ReleasesList releasesList) throws IOException {
+        Path releasesFile = getReleasesListFileLocation();
+        Path dir = releasesFile.getParent();
+        Files.createDirectories(dir);
+        Path tmp = Files.createTempFile(dir, RELEASES_LIST_FILE + ".", ".tmp");
+        try {
+            mapper.writeValue(tmp.toFile(), releasesList);
+            try {
+                Files.move(tmp, releasesFile,
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException | UnsupportedOperationException e) {
+                Files.move(tmp, releasesFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
     }
 
     /**
@@ -116,8 +171,7 @@ public abstract class PlatformHandler {
                 FileUtils.removeTempDir(getReleasesListFileLocation());
                 return;
             }
-            Path releasesFile = getReleasesListFileLocation();
-            mapper.writeValue(releasesFile.toFile(), new ReleasesList(currentReleases));
+            writeReleasesList(new ReleasesList(currentReleases));
         } catch (IOException e) {
             System.out.println("Failed to remove release from list: " + e.getMessage());
         }
