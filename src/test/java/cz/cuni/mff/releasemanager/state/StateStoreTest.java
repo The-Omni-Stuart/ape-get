@@ -50,8 +50,9 @@ class StateStoreTest {
 
         assertEquals(1, manifests.size());
         assertEquals("owner/repo", manifests.get(0).repo());
-        assertTrue(Files.exists(
-            new AppPaths(tempDir).manifestFile("github", "owner/repo")));
+        Path manifestFile = new AppPaths(tempDir).manifestFile("github", "owner/repo");
+        assertTrue(Files.exists(manifestFile));
+        assertFalse(Files.readString(manifestFile).contains("\"valid\""));
     }
 
     @Test
@@ -128,6 +129,88 @@ class StateStoreTest {
         String json = Files.readString(paths.indexFile());
         assertTrue(json.contains("\"kind\" : \"grm.index\""));
         assertTrue(json.contains("2026-01-01T00:00:00Z"));
+        assertFalse(json.contains("\"valid\""));
+    }
+
+    @Test
+    void recoveryRestoresMissingManifestWhenLiveAppExists() throws Exception {
+        StateStore store = store();
+        AppManifest snapshot = manifest("owner/repo");
+        Path live = Files.createFile(tempDir.resolve("live.AppImage"));
+        GrmIndex.Entry entry = new GrmIndex.Entry(
+            "owner/repo",
+            snapshot.version(),
+            snapshot.installedAt(),
+            live.toString(),
+            "applications/github/owner__repo/grm_manifest.json",
+            snapshot);
+
+        List<StateStore.RecoveryIssue> issues = store.findRecoveryIssues(
+            new GrmIndex(GrmIndex.KIND, GrmIndex.SCHEMA_VERSION, Instant.now(), List.of(entry)),
+            List.of());
+
+        assertEquals(1, issues.size());
+        assertEquals(StateStore.RecoveryKind.RESTORE_MANIFEST, issues.get(0).kind());
+        assertEquals(entry, issues.get(0).entry());
+    }
+
+    @Test
+    void recoveryDropsMissingManifestWhenLiveAppIsGone() throws Exception {
+        StateStore store = store();
+        AppManifest snapshot = manifest("owner/repo");
+        GrmIndex.Entry entry = new GrmIndex.Entry(
+            "owner/repo",
+            snapshot.version(),
+            snapshot.installedAt(),
+            tempDir.resolve("missing.AppImage").toString(),
+            "applications/github/owner__repo/grm_manifest.json",
+            snapshot);
+
+        List<StateStore.RecoveryIssue> issues = store.findRecoveryIssues(
+            new GrmIndex(GrmIndex.KIND, GrmIndex.SCHEMA_VERSION, Instant.now(), List.of(entry)),
+            List.of());
+
+        assertEquals(1, issues.size());
+        assertEquals(StateStore.RecoveryKind.DROP_INDEX_ENTRY, issues.get(0).kind());
+    }
+
+    @Test
+    void recoveryIgnoresEntriesWithManifest() throws Exception {
+        StateStore store = store();
+        store.saveManifest(manifest("owner/repo"));
+        AppManifest snapshot = manifest("owner/repo");
+        GrmIndex.Entry entry = new GrmIndex.Entry(
+            "owner/repo",
+            snapshot.version(),
+            snapshot.installedAt(),
+            tempDir.resolve("live.AppImage").toString(),
+            "applications/github/owner__repo/grm_manifest.json",
+            snapshot);
+
+        List<StateStore.RecoveryIssue> issues = store.findRecoveryIssues(
+            new GrmIndex(GrmIndex.KIND, GrmIndex.SCHEMA_VERSION, Instant.now(), List.of(entry)),
+            store.scanManifests());
+
+        assertTrue(issues.isEmpty());
+    }
+
+    @Test
+    void recoveryDropsEntryWithoutSnapshot() throws Exception {
+        StateStore store = store();
+        Path live = Files.createFile(tempDir.resolve("live.AppImage"));
+        GrmIndex.Entry entry = new GrmIndex.Entry(
+            "owner/repo",
+            "1.0.0",
+            Instant.now(),
+            live.toString(),
+            "applications/github/owner__repo/grm_manifest.json",
+            null);
+
+        List<StateStore.RecoveryIssue> issues = store.findRecoveryIssues(
+            new GrmIndex(GrmIndex.KIND, GrmIndex.SCHEMA_VERSION, Instant.now(), List.of(entry)),
+            List.of());
+
+        assertEquals(StateStore.RecoveryKind.DROP_INDEX_ENTRY, issues.get(0).kind());
     }
 
     @Test

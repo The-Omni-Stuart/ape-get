@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.state;
 import java.time.Instant;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -27,7 +28,13 @@ public record AppManifest(
     public static final String KIND = "grm.manifest";
     public static final int SCHEMA_VERSION = 1;
 
+    @JsonIgnore
     public boolean isValid() {
+        try {
+            AppPaths.repoDirectoryName(repo);
+        } catch (RuntimeException e) {
+            return false;
+        }
         return KIND.equals(kind)
             && schemaVersion == SCHEMA_VERSION
             && provider != null && !provider.isBlank()

@@ -89,9 +89,18 @@ public class GithubClient {
     }
 
     /**
-     * All assets in a release, plus the subset that can be installed on this platform.
+     * Release identity and assets. The overloaded constructor keeps tests concise.
      */
-    public record ReleaseAssets(List<Asset> all, List<Asset> installable) {}
+    public record ReleaseAssets(
+        String version,
+        Long releaseId,
+        List<Asset> all,
+        List<Asset> installable
+    ) {
+        public ReleaseAssets(List<Asset> all, List<Asset> installable) {
+            this(null, null, all, installable);
+        }
+    }
 
     /**
      * Retrieves the latest release assets for a given repository.
@@ -129,7 +138,7 @@ public class GithubClient {
             if (installable.isEmpty()) {
                 System.err.println("No suitable asset found for this repository.");
             }
-            return new ReleaseAssets(all, installable);
+            return new ReleaseAssets(release.tagName(), release.id(), all, installable);
         } catch (IOException | InterruptedException ex) {
             System.err.println(ex.getMessage());
             return new ReleaseAssets(List.of(), List.of());

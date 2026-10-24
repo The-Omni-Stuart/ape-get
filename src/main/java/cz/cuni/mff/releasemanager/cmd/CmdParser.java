@@ -13,6 +13,7 @@ public class CmdParser {
 
     private final Scanner scanner = new Scanner(System.in);
     private boolean strict;
+    private boolean assumeYes;
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -22,10 +23,13 @@ public class CmdParser {
      */
     public Command parse(String[] args) {
         strict = false;
+        assumeYes = false;
         List<String> filtered = new ArrayList<>(args.length);
         for (String arg : args) {
             if ("--strict".equals(arg)) {
                 strict = true;
+            } else if ("--yes".equals(arg)) {
+                assumeYes = true;
             } else {
                 filtered.add(arg);
             }
@@ -75,6 +79,13 @@ public class CmdParser {
      */
     public boolean isStrict() {
         return strict;
+    }
+
+    /**
+     * @return true if the last parse saw --yes
+     */
+    public boolean isAssumeYes() {
+        return assumeYes;
     }
 
     /**

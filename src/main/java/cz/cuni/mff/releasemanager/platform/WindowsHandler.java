@@ -219,12 +219,4 @@ public final class WindowsHandler extends PlatformHandler {
         return new String[] {".msi", ".exe"};
     }
 
-    @Override
-    protected Path getReleasesListDirLocation() {
-        return Paths.get(
-            System.getenv("APPDATA"),
-            APP_DATA_DIR
-        );
-    }
-
 }

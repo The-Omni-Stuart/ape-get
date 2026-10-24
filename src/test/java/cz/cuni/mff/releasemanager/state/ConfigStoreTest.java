@@ -32,6 +32,8 @@ class ConfigStoreTest {
         assertEquals(GrmConfig.SCHEMA_VERSION, result.config().schemaVersion());
         assertEquals(1, result.config().backupCount());
         assertTrue(Files.exists(new AppPaths(tempDir).configFile()));
+        String json = Files.readString(new AppPaths(tempDir).configFile());
+        assertFalse(json.contains("\"valid\""));
     }
 
     @Test

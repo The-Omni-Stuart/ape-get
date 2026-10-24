@@ -1,5 +1,6 @@
 package cz.cuni.mff.releasemanager.state;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -21,6 +22,7 @@ public record GrmConfig(
         return new GrmConfig(KIND, SCHEMA_VERSION, false, 1, null);
     }
 
+    @JsonIgnore
     public boolean isValid() {
         return KIND.equals(kind)
             && schemaVersion == SCHEMA_VERSION

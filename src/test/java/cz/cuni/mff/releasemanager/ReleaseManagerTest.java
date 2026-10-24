@@ -9,9 +9,12 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -20,10 +23,15 @@ import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
+import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.state.AppManifest;
+import cz.cuni.mff.releasemanager.state.AppPaths;
+import cz.cuni.mff.releasemanager.state.ConfigStore;
+import cz.cuni.mff.releasemanager.state.GrmConfig;
+import cz.cuni.mff.releasemanager.state.GrmIndex;
+import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.Asset;
-import cz.cuni.mff.releasemanager.types.ReleaseInfo;
-import cz.cuni.mff.releasemanager.types.ReleasesList;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
@@ -37,6 +45,9 @@ class ReleaseManagerTest {
     private GithubClient mockGithubClient;
     private PlatformHandler mockPlatformHandler;
     private AssetVerifier mockVerifier;
+    private StateStore mockStateStore;
+    private AppPaths mockPaths;
+    private Prompt mockPrompt;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -46,6 +57,10 @@ class ReleaseManagerTest {
         mockGithubClient = mock(GithubClient.class);
         mockPlatformHandler = mock(PlatformHandler.class);
         mockVerifier = mock(AssetVerifier.class);
+        mockStateStore = mock(StateStore.class);
+        mockPrompt = mock(Prompt.class);
+        mockPaths = new AppPaths(
+            Path.of(System.getProperty("java.io.tmpdir"), "grm-test-state"));
 
          // use reflection to set the private fields - replace with dependency injection framework
         Field parserField = ReleaseManager.class.getDeclaredField("cmdParser");
@@ -63,6 +78,42 @@ class ReleaseManagerTest {
         Field verifierField = ReleaseManager.class.getDeclaredField("verifier");
         verifierField.setAccessible(true);
         verifierField.set(releaseManager, mockVerifier);
+
+        Field stateField = ReleaseManager.class.getDeclaredField("stateStore");
+        stateField.setAccessible(true);
+        stateField.set(releaseManager, mockStateStore);
+
+        Field promptField = ReleaseManager.class.getDeclaredField("prompt");
+        promptField.setAccessible(true);
+        promptField.set(releaseManager, mockPrompt);
+
+        when(mockStateStore.paths()).thenReturn(mockPaths);
+        when(mockStateStore.loadConfig()).thenReturn(
+            new ConfigStore.LoadResult(GrmConfig.defaults(), false, null));
+        when(mockStateStore.scanManifests()).thenReturn(List.of());
+        when(mockStateStore.loadIndex()).thenReturn(Optional.of(GrmIndex.empty()));
+        when(mockStateStore.findRecoveryIssues(any(), any())).thenReturn(List.of());
+    }
+
+    private static AppManifest manifest(
+        String repo, String assetUrl, String assetName, String uninstallPath) {
+        return new AppManifest(
+            AppManifest.KIND,
+            AppManifest.SCHEMA_VERSION,
+            "github",
+            repo,
+            "1.0.0",
+            1L,
+            new AppManifest.Asset(assetName, assetUrl, null, null),
+            new AppManifest.Install(
+                "exe",
+                uninstallPath,
+                "/tmp/root",
+                new AppManifest.Uninstall(uninstallPath, List.of(), null)),
+            new AppManifest.Verification("missing", "sha256", null, null, null),
+            List.of(),
+            Instant.parse("2026-01-01T00:00:00Z"),
+            Instant.parse("2026-01-01T00:00:00Z"));
     }
 
     @Test
@@ -102,6 +153,14 @@ class ReleaseManagerTest {
         verify(mockGithubClient).downloadAsset(asset);
         verify(mockVerifier).verify(asset, List.of(asset), downloaded);
         verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+
+        ArgumentCaptor<AppManifest> manifestCaptor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(manifestCaptor.capture());
+        verify(mockStateStore).rebuildIndex();
+        AppManifest saved = manifestCaptor.getValue();
+        assertEquals("user/example", saved.repo());
+        assertEquals("example.exe", saved.asset().name());
+        assertEquals("/ProgramFiles/example.exe", saved.install().path());
     }
 
     @Test
@@ -133,18 +192,18 @@ class ReleaseManagerTest {
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
-        Asset asset = new Asset("http://url", "example.exe");
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", asset);
-        ReleasesList releases = new ReleasesList(List.of(info));
+        AppManifest manifest = manifest(
+            "user/example", "http://url", "example.exe", "/ProgramFiles/uninstall.exe");
         Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(releases);
+        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(manifest));
         when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(true);
-        when(mockPlatformHandler.removeReleaseFromList(info)).thenReturn(true);
+        when(mockStateStore.removeManifest("user/example")).thenReturn(true);
 
         assertEquals(0, releaseManager.execute(new String[]{"uninstall", "user/example"}));
 
         verify(mockPlatformHandler).uninstall(uninstallPath);
-        verify(mockPlatformHandler).removeReleaseFromList(info);
+        verify(mockStateStore).removeManifest("user/example");
+        verify(mockStateStore).rebuildIndex();
     }
 
     @Test
@@ -153,31 +212,30 @@ class ReleaseManagerTest {
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
-        Asset asset = new Asset("http://url", "example.exe");
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", asset);
+        AppManifest manifest = manifest(
+            "user/example", "http://url", "example.exe", "/ProgramFiles/uninstall.exe");
         Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockStateStore.findManifest("user/example")).thenReturn(Optional.of(manifest));
         when(mockPlatformHandler.uninstall(uninstallPath)).thenReturn(false);
 
         assertEquals(1, releaseManager.execute(new String[]{"uninstall", "user/example"}));
 
         verify(mockPlatformHandler).uninstall(uninstallPath);
-        verify(mockPlatformHandler, never()).removeReleaseFromList(any());
+        verify(mockStateStore, never()).removeManifest(any());
     }
 
     @Test
-    void testExecuteUpdate() throws IOException, InterruptedException {
+    void testExecuteUpdate() throws Exception {
         Command cmd = Command.UPDATE;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
-        ReleasesList releases = new ReleasesList(List.of(info));
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(releases);
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(manifest(
+                "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
@@ -191,20 +249,25 @@ class ReleaseManagerTest {
         verify(mockGithubClient).downloadAsset(newAsset);
         verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
         verify(mockPlatformHandler, never()).uninstall(any());
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        verify(mockStateStore).rebuildIndex();
+        assertEquals("user/example", captor.getValue().repo());
+        assertEquals("http://newurl", captor.getValue().asset().url());
     }
 
     @Test
-    void testExecuteUpdateInstallsWithoutUninstallingOld() throws IOException, InterruptedException {
+    void testExecuteUpdateInstallsWithoutUninstallingOld() throws Exception {
         Command cmd = Command.UPDATE;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(manifest(
+                "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
@@ -220,20 +283,21 @@ class ReleaseManagerTest {
         inOrder.verify(mockVerifier).verify(newAsset, List.of(newAsset), downloaded);
         inOrder.verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
         verify(mockPlatformHandler, never()).uninstall(any());
+        verify(mockStateStore).saveManifest(any());
     }
 
     @Test
-    void testExecuteUpdateInstallFailureReturnsError() throws IOException, InterruptedException {
+    void testExecuteUpdateInstallFailureReturnsError() throws Exception {
         Command cmd = Command.UPDATE;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(manifest(
+                "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
@@ -245,20 +309,21 @@ class ReleaseManagerTest {
 
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+        verify(mockStateStore, never()).saveManifest(any());
     }
 
     @Test
-    void testExecuteUpdateFailsOnChecksumMismatch() throws IOException, InterruptedException {
+    void testExecuteUpdateFailsOnChecksumMismatch() throws Exception {
         Command cmd = Command.UPDATE;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
         Asset newAsset = new Asset("http://newurl", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
-
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(manifest(
+                "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
@@ -271,19 +336,20 @@ class ReleaseManagerTest {
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockStateStore, never()).saveManifest(any());
     }
 
     @Test
-    void testExecuteUpdateDoesNotUninstallWhenDownloadFails() throws IOException, InterruptedException {
+    void testExecuteUpdateDoesNotUninstallWhenDownloadFails() throws Exception {
         Command cmd = Command.UPDATE;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
         Asset newAsset = new Asset("http://newurl", "example.exe");
-
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(manifest(
+                "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenThrow(new IOException("boom"));
@@ -292,6 +358,26 @@ class ReleaseManagerTest {
 
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteUpdateAlreadyUpToDate() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(manifest(
+                "user/example", asset.url(), asset.name(), "/ProgramFiles/uninstall.exe")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockGithubClient, never()).downloadAsset(any());
+        verify(mockStateStore, never()).saveManifest(any());
     }
 
     @Test
@@ -371,16 +457,86 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteListRestoresMissingManifestWhenConfirmed() throws Exception {
+        Command cmd = Command.LIST;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest snapshot = manifest(
+            "owner/repo", "http://url", "example.exe", "/tmp/live");
+        GrmIndex.Entry entry = new GrmIndex.Entry(
+            snapshot.repo(),
+            snapshot.version(),
+            snapshot.installedAt(),
+            "/tmp/live",
+            "applications/github/owner__repo/grm_manifest.json",
+            snapshot);
+        when(mockStateStore.loadIndex()).thenReturn(Optional.of(
+            new GrmIndex(GrmIndex.KIND, GrmIndex.SCHEMA_VERSION, Instant.now(), List.of(entry))));
+        when(mockStateStore.findRecoveryIssues(any(), any())).thenReturn(List.of(
+            new StateStore.RecoveryIssue(
+                StateStore.RecoveryKind.RESTORE_MANIFEST, entry)));
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        assertEquals(0, releaseManager.execute(new String[]{"list"}));
+
+        verify(mockStateStore).saveManifest(snapshot);
+        verify(mockStateStore).rebuildIndex();
+    }
+
+    @Test
+    void testExecuteListAbortsWhenRecoveryDeclined() throws Exception {
+        Command cmd = Command.LIST;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest snapshot = manifest(
+            "owner/repo", "http://url", "example.exe", "/tmp/live");
+        GrmIndex.Entry entry = new GrmIndex.Entry(
+            snapshot.repo(),
+            snapshot.version(),
+            snapshot.installedAt(),
+            "/tmp/live",
+            "applications/github/owner__repo/grm_manifest.json",
+            snapshot);
+        when(mockStateStore.loadIndex()).thenReturn(Optional.of(
+            new GrmIndex(GrmIndex.KIND, GrmIndex.SCHEMA_VERSION, Instant.now(), List.of(entry))));
+        when(mockStateStore.findRecoveryIssues(any(), any())).thenReturn(List.of(
+            new StateStore.RecoveryIssue(
+                StateStore.RecoveryKind.RESTORE_MANIFEST, entry)));
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+
+        assertEquals(1, releaseManager.execute(new String[]{"list"}));
+
+        verify(mockStateStore, never()).saveManifest(any());
+        verify(mockStateStore, never()).rebuildIndex();
+    }
+
+    @Test
+    void testExecuteListDropsStaleIndexEntryWhenConfirmed() throws Exception {
+        Command cmd = Command.LIST;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        GrmIndex.Entry entry = new GrmIndex.Entry(
+            "owner/repo", "1.0.0", Instant.now(), "/tmp/missing",
+            "applications/github/owner__repo/grm_manifest.json", null);
+        when(mockStateStore.loadIndex()).thenReturn(Optional.of(
+            new GrmIndex(GrmIndex.KIND, GrmIndex.SCHEMA_VERSION, Instant.now(), List.of(entry))));
+        when(mockStateStore.findRecoveryIssues(any(), any())).thenReturn(List.of(
+            new StateStore.RecoveryIssue(
+                StateStore.RecoveryKind.DROP_INDEX_ENTRY, entry)));
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        assertEquals(0, releaseManager.execute(new String[]{"list"}));
+
+        verify(mockStateStore, never()).saveManifest(any());
+        verify(mockStateStore).rebuildIndex();
+    }
+
+    @Test
     void testExecuteList() throws IOException {
         Command cmd = Command.LIST;
         when(mockCmdParser.parse(any())).thenReturn(cmd);
-
-        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", null);
-        ReleasesList releases = new ReleasesList(List.of(info));
-        when(mockPlatformHandler.loadReleasesList()).thenReturn(releases);
+        when(mockStateStore.scanManifests()).thenReturn(List.of(
+            manifest("user/example", "http://url", "example.exe", "/ProgramFiles/uninstall.exe")));
 
         assertEquals(0, releaseManager.execute(new String[]{"list"}));
-        verify(mockPlatformHandler).loadReleasesList();
+        verify(mockStateStore, atLeastOnce()).scanManifests();
     }
 
     @Test

@@ -5,46 +5,51 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import cz.cuni.mff.releasemanager.types.Asset;
-import cz.cuni.mff.releasemanager.types.ReleaseInfo;
-import cz.cuni.mff.releasemanager.types.ReleasesList;
+import cz.cuni.mff.releasemanager.state.AppManifest;
+import cz.cuni.mff.releasemanager.state.AppPaths;
+import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 class PlatformHandlerTest {
 
     class TestPlatformHandler extends PlatformHandler {
-        private final String temp = "temp";
+        TestPlatformHandler(StateStore stateStore) {
+            super(stateStore);
+        }
 
         @Override
-        public Path install(Path asset, String repoFullName) { return null; }
+        public Path install(Path asset, String repoFullName) {
+            return null;
+        }
 
         @Override
-        public boolean uninstall(Path asset) { return true; }
+        public boolean uninstall(Path asset) {
+            return true;
+        }
 
         @Override
-        public String[] getFormats() { return new String[] { "zip" }; }
-
-        @Override
-        protected Path getReleasesListDirLocation() { return tempDir.resolve(temp); }
+        public String[] getFormats() {
+            return new String[] {"zip"};
+        }
     }
 
     private Path tempDir;
     private PlatformHandler handler;
+    private StateStore stateStore;
 
     @BeforeEach
     void setUp() throws IOException {
         tempDir = Files.createDirectories(Path.of("releases_test"));
-        handler = new TestPlatformHandler();
+        stateStore = new StateStore(new AppPaths(tempDir));
+        handler = new TestPlatformHandler(stateStore);
     }
 
     @AfterEach
@@ -63,159 +68,24 @@ class PlatformHandlerTest {
         }
     }
 
-    private ReleaseInfo createRelease(String repo) {
-        Asset asset = new Asset("url", "name");
-        return new ReleaseInfo(repo,  Instant.now(), "path", asset);
-    }
-
-    @Test
-    void testAddReleaseToList() throws IOException {
-        ReleaseInfo release = createRelease("repo1");
-        handler.addReleaseToList(release);
-
-        ReleasesList list = handler.loadReleasesList();
-        assertNotNull(list);
-        assertEquals(1, list.releases().size());
-        assertEquals("repo1", list.releases().get(0).repo());
-    }
-
-    @Test
-    void testAddReleaseToList_updateExisting() throws IOException {
-        ReleaseInfo release1 = createRelease("repo1");
-        handler.addReleaseToList(release1);
-
-        ReleaseInfo release2 = createRelease("repo1");
-        handler.addReleaseToList(release2);
-
-        ReleasesList list = handler.loadReleasesList();
-        assertNotNull(list);
-        assertEquals(1, list.releases().size());
-        assertEquals("repo1", list.releases().get(0).repo());
-    }
-
-    @Test
-    void testRemoveReleaseFromList() throws IOException {
-        ReleaseInfo release1 = createRelease("repo1");
-        ReleaseInfo release2 = createRelease("repo2");
-        handler.addReleaseToList(release1);
-        handler.addReleaseToList(release2);
-
-        handler.removeReleaseFromList(release1);
-
-        ReleasesList list = handler.loadReleasesList();
-        assertNotNull(list);
-        assertEquals(1, list.releases().size());
-        assertEquals("repo2", list.releases().get(0).repo());
-    }
-
-    @Test
-    void testRemoveReleaseFromList_deletesFileIfEmpty() throws IOException {
-        ReleaseInfo release = createRelease("repo1");
-        handler.addReleaseToList(release);
-
-        handler.removeReleaseFromList(release);
-
-        assertFalse(Files.exists(handler.getReleasesListFileLocation()));
-    }
-
-    @Test
-    void testLoadReleasesList_returnsNullIfFileDoesNotExist() throws IOException {
-        assertNull(handler.loadReleasesList());
-    }
-
-    @Test
-    void testLoadReleasesList_returnsNullForEmptyFile() throws IOException {
-        Files.createDirectories(handler.getReleasesListDirLocation());
-        Files.createFile(handler.getReleasesListFileLocation());
-
-        assertNull(handler.loadReleasesList());
-    }
-
-    @Test
-    void testAddReleaseToList_recoversFromEmptyFile() throws IOException {
-        Files.createDirectories(handler.getReleasesListDirLocation());
-        Files.createFile(handler.getReleasesListFileLocation());
-
-        handler.addReleaseToList(createRelease("repo1"));
-
-        ReleasesList list = handler.loadReleasesList();
-        assertNotNull(list);
-        assertEquals(1, list.releases().size());
-        assertEquals("repo1", list.releases().get(0).repo());
-    }
-
-    @Test
-    void testLoadReleasesList_quarantinesCorruptFile() throws IOException {
-        Files.createDirectories(handler.getReleasesListDirLocation());
-        Files.writeString(handler.getReleasesListFileLocation(), "garbage");
-
-        assertNull(handler.loadReleasesList());
-        assertFalse(Files.exists(handler.getReleasesListFileLocation()));
-        try (var files = Files.list(handler.getReleasesListDirLocation())) {
-            assertTrue(files.anyMatch(
-                path -> path.getFileName().toString().startsWith("releases.json.corrupt-")));
-        }
-    }
-
-    @Test
-    void testLoadReleasesList_returnsNullForMissingReleasesField() throws IOException {
-        Files.createDirectories(handler.getReleasesListDirLocation());
-        Files.writeString(handler.getReleasesListFileLocation(), "{}");
-
-        assertNull(handler.loadReleasesList());
-    }
-
-    @Test
-    void testLoadReleasesList_quarantinesEntriesWithoutRepo() throws IOException {
-        Files.createDirectories(handler.getReleasesListDirLocation());
-        Files.writeString(handler.getReleasesListFileLocation(), "{\"releases\":[{}]}");
-
-        assertNull(handler.loadReleasesList());
-        assertFalse(Files.exists(handler.getReleasesListFileLocation()));
-        try (var files = Files.list(handler.getReleasesListDirLocation())) {
-            assertTrue(files.anyMatch(
-                path -> path.getFileName().toString().startsWith("releases.json.corrupt-")));
-        }
-    }
-
-    @Test
-    void testLoadReleasesList_quarantinesEntriesMissingRequiredFields() throws IOException {
-        Files.createDirectories(handler.getReleasesListDirLocation());
-        Files.writeString(handler.getReleasesListFileLocation(),
-            "{\"releases\":[{\"repo\":\"repo1\"}]}");
-
-        assertNull(handler.loadReleasesList());
-        assertFalse(Files.exists(handler.getReleasesListFileLocation()));
-        try (var files = Files.list(handler.getReleasesListDirLocation())) {
-            assertTrue(files.anyMatch(
-                path -> path.getFileName().toString().startsWith("releases.json.corrupt-")));
-        }
-    }
-
-    @Test
-    void testAddReleaseToList_writesOnlyFinalFile() throws IOException {
-        handler.addReleaseToList(createRelease("repo1"));
-
-        try (var files = Files.list(handler.getReleasesListDirLocation())) {
-            assertEquals(1, files.count());
-        }
-    }
-
-    @Test
-    void testLoadReleasesList_keepsValidEntriesWhenSomeAreInvalid() throws IOException {
-        Files.createDirectories(handler.getReleasesListDirLocation());
-        Files.writeString(handler.getReleasesListFileLocation(), """
-            {"releases":[
-              {"repo":"repo1","uninstall_path":"/tmp/repo1","asset":{"url":"url","name":"name"}},
-              {}
-            ]}
-            """);
-
-        ReleasesList list = handler.loadReleasesList();
-
-        assertNotNull(list);
-        assertEquals(1, list.releases().size());
-        assertEquals("repo1", list.releases().get(0).repo());
+    private static AppManifest manifest(String repo, String installPath) {
+        return new AppManifest(
+            AppManifest.KIND,
+            AppManifest.SCHEMA_VERSION,
+            "github",
+            repo,
+            "1.0.0",
+            1L,
+            new AppManifest.Asset("file.zip", "https://example.com/file", null, null),
+            new AppManifest.Install(
+                "zip",
+                installPath,
+                "/tmp/root",
+                new AppManifest.Uninstall(installPath, List.of(), null)),
+            new AppManifest.Verification("missing", "sha256", null, null, null),
+            List.of(),
+            Instant.parse("2026-01-01T00:00:00Z"),
+            Instant.parse("2026-01-01T00:00:00Z"));
     }
 
     @Test
@@ -232,15 +102,11 @@ class PlatformHandlerTest {
     void testIsOwnedByAnotherRepo() throws IOException {
         Path target = tempDir.resolve("app");
         Files.createDirectories(target);
-        ReleaseInfo release = new ReleaseInfo(
-            "repo1",
-            Instant.now(),
-            target.resolve("uninstall.exe").toString(),
-            new Asset("url", "name"));
-        handler.addReleaseToList(release);
+        stateStore.saveManifest(manifest(
+            "owner/repo1", target.resolve("uninstall.exe").toString()));
 
-        assertTrue(handler.isOwnedByAnotherRepo(target, "repo2"));
-        assertFalse(handler.isOwnedByAnotherRepo(target, "repo1"));
+        assertTrue(handler.isOwnedByAnotherRepo(target, "owner/repo2"));
+        assertFalse(handler.isOwnedByAnotherRepo(target, "owner/repo1"));
     }
 
     @Test

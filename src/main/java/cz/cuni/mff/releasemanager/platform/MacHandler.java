@@ -182,8 +182,4 @@ public final class MacHandler extends PlatformHandler {
         return new String[] { ".dmg" };
     }
 
-    @Override
-    protected Path getReleasesListDirLocation() {
-        return Paths.get(System.getProperty("user.home"), "Library", "Application Support", APP_DATA_DIR);
-    }
 }

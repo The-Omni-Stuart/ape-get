@@ -127,4 +127,29 @@ class CmdParserTest {
 
         assertFalse(cmdParser.isStrict());
     }
+
+    @Test
+    void testParseAssumeYesBeforeCommand() {
+        Command result = cmdParser.parse(new String[] {"--yes", "install", "owner/repo"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isAssumeYes());
+    }
+
+    @Test
+    void testParseAssumeYesAfterArgument() {
+        Command result = cmdParser.parse(new String[] {"install", "owner/repo", "--yes"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isAssumeYes());
+    }
+
+    @Test
+    void testParseWithoutAssumeYes() {
+        cmdParser.parse(new String[] {"list"});
+
+        assertFalse(cmdParser.isAssumeYes());
+    }
 }

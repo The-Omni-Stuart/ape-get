@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.state;
 import java.time.Instant;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -24,6 +25,7 @@ public record GrmIndex(
         return new GrmIndex(KIND, SCHEMA_VERSION, Instant.now(), List.of());
     }
 
+    @JsonIgnore
     public boolean isValid() {
         return KIND.equals(kind)
             && schemaVersion == SCHEMA_VERSION

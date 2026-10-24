@@ -2,13 +2,16 @@ package cz.cuni.mff.releasemanager.state;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
@@ -16,6 +19,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
  * Reads and writes grm_manifest.json files and rebuilds grm_index.json.
  */
 public final class StateStore {
+    public enum RecoveryKind {
+        RESTORE_MANIFEST,
+        DROP_INDEX_ENTRY
+    }
+
+    public record RecoveryIssue(RecoveryKind kind, GrmIndex.Entry entry) {}
+
     private final AppPaths paths;
     private final ConfigStore configStore;
 
@@ -57,6 +67,55 @@ public final class StateStore {
         return scanManifests().stream()
             .filter(manifest -> manifest.repo().equals(repo))
             .findFirst();
+    }
+
+    /**
+     * Finds index entries that need an unsafe recovery decision.
+     * @param index current index
+     * @param manifests currently valid manifests
+     * @return ordered recovery issues
+     */
+    public List<RecoveryIssue> findRecoveryIssues(
+        GrmIndex index, List<AppManifest> manifests) {
+        if (index == null || index.apps() == null) {
+            return List.of();
+        }
+        Set<String> repos = new HashSet<>();
+        for (AppManifest manifest : manifests) {
+            if (manifest.repo() != null) {
+                repos.add(manifest.repo());
+            }
+        }
+
+        List<RecoveryIssue> issues = new ArrayList<>();
+        for (GrmIndex.Entry entry : index.apps()) {
+            if (entry == null || entry.repo() == null) {
+                if (entry != null) {
+                    issues.add(new RecoveryIssue(RecoveryKind.DROP_INDEX_ENTRY, entry));
+                }
+                continue;
+            }
+            if (repos.contains(entry.repo())) {
+                continue;
+            }
+
+            Path live = null;
+            if (entry.installPath() != null) {
+                try {
+                    live = Path.of(entry.installPath());
+                } catch (InvalidPathException ignored) {
+                    // treated as missing
+                }
+            }
+            boolean restorable = live != null
+                && Files.exists(live)
+                && entry.snapshot() != null
+                && entry.snapshot().isValid();
+            issues.add(new RecoveryIssue(
+                restorable ? RecoveryKind.RESTORE_MANIFEST : RecoveryKind.DROP_INDEX_ENTRY,
+                entry));
+        }
+        return issues;
     }
 
     public void saveManifest(AppManifest manifest) throws IOException {
