@@ -55,6 +55,17 @@ class GithubClientTest {
     }
 
     @Test
+    void followsRedirectsWithoutAllowingHttpsDowngrade() throws Exception {
+        GithubClient client = new GithubClient();
+        Field clientField = GithubClient.class.getDeclaredField("client");
+        clientField.setAccessible(true);
+
+        HttpClient http = (HttpClient) clientField.get(client);
+
+        assertEquals(HttpClient.Redirect.NORMAL, http.followRedirects());
+    }
+
+    @Test
     void searchRepoByName_returnsSearchResultOnSuccess() throws Exception {
         String repoName = "testrepo";
         String json = """

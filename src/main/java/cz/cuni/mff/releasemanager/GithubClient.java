@@ -58,7 +58,7 @@ public class GithubClient {
     GithubClient(Duration downloadTimeout) {
         this.downloadTimeout = downloadTimeout;
         client = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.ALWAYS)
+            .followRedirects(HttpClient.Redirect.NORMAL)
             .version(HttpClient.Version.HTTP_2)
             .connectTimeout(Duration.ofSeconds(30))
             .build();
