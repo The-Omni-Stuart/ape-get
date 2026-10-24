@@ -23,10 +23,29 @@ public record AppManifest(
     Verification verification,
     List<Backup> backups,
     @JsonProperty("installed_at") Instant installedAt,
-    @JsonProperty("updated_at") Instant updatedAt
+    @JsonProperty("updated_at") Instant updatedAt,
+    Signature signature
 ) {
     public static final String KIND = "grm.manifest";
     public static final int SCHEMA_VERSION = 1;
+
+    public AppManifest(
+        String kind,
+        int schemaVersion,
+        String provider,
+        String repo,
+        String version,
+        Long releaseId,
+        Asset asset,
+        Install install,
+        Verification verification,
+        List<Backup> backups,
+        Instant installedAt,
+        Instant updatedAt
+    ) {
+        this(kind, schemaVersion, provider, repo, version, releaseId, asset, install,
+            verification, backups, installedAt, updatedAt, null);
+    }
 
     @JsonIgnore
     public boolean isValid() {
@@ -68,6 +87,19 @@ public record AppManifest(
         String expected,
         String actual
     ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Signature(
+        String status,
+        String mechanism,
+        String signer,
+        String identity
+    ) {
+        @JsonIgnore
+        public boolean isVerified() {
+            return "verified".equals(status) && identity != null && !identity.isBlank();
+        }
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Backup(

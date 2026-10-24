@@ -56,6 +56,32 @@ class StateStoreTest {
     }
 
     @Test
+    void roundTripsSignaturePin() throws Exception {
+        AppManifest base = manifest("owner/repo");
+        AppManifest pinned = new AppManifest(
+            base.kind(),
+            base.schemaVersion(),
+            base.provider(),
+            base.repo(),
+            base.version(),
+            base.releaseId(),
+            base.asset(),
+            base.install(),
+            base.verification(),
+            base.backups(),
+            base.installedAt(),
+            base.updatedAt(),
+            new AppManifest.Signature("verified", "gpg", "Old Signer", "OLD"));
+
+        StateStore store = store();
+        store.saveManifest(pinned);
+
+        AppManifest read = store.findManifest("owner/repo").orElseThrow();
+        assertEquals("OLD", read.signature().identity());
+        assertTrue(read.signature().isVerified());
+    }
+
+    @Test
     void findsAndRemovesManifest() throws Exception {
         StateStore store = store();
         store.saveManifest(manifest("owner/repo"));

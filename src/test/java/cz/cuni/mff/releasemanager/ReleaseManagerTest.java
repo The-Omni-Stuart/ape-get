@@ -40,6 +40,8 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
+import cz.cuni.mff.releasemanager.verify.SignatureResult;
+import cz.cuni.mff.releasemanager.verify.SignatureVerifier;
 import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
 
@@ -53,6 +55,7 @@ class ReleaseManagerTest {
     private GithubClient mockGithubClient;
     private PlatformHandler mockPlatformHandler;
     private AssetVerifier mockVerifier;
+    private SignatureVerifier mockSignatureVerifier;
     private StateStore mockStateStore;
     private BackupManager mockBackupManager;
     private AppPaths mockPaths;
@@ -66,6 +69,7 @@ class ReleaseManagerTest {
         mockGithubClient = mock(GithubClient.class);
         mockPlatformHandler = mock(PlatformHandler.class);
         mockVerifier = mock(AssetVerifier.class);
+        mockSignatureVerifier = mock(SignatureVerifier.class);
         mockStateStore = mock(StateStore.class);
         mockBackupManager = mock(BackupManager.class);
         mockPrompt = mock(Prompt.class);
@@ -89,6 +93,10 @@ class ReleaseManagerTest {
         verifierField.setAccessible(true);
         verifierField.set(releaseManager, mockVerifier);
 
+        Field signatureField = ReleaseManager.class.getDeclaredField("signatureVerifier");
+        signatureField.setAccessible(true);
+        signatureField.set(releaseManager, mockSignatureVerifier);
+
         Field stateField = ReleaseManager.class.getDeclaredField("stateStore");
         stateField.setAccessible(true);
         stateField.set(releaseManager, mockStateStore);
@@ -105,6 +113,8 @@ class ReleaseManagerTest {
 
         when(mockStateStore.paths()).thenReturn(mockPaths);
         when(mockBackupManager.createAndPrune(any(), anyInt())).thenReturn(List.of());
+        when(mockSignatureVerifier.verify(any(), any(), any())).thenReturn(
+            SignatureResult.verified("example.exe", "gpg", "Test Signer", "FPR"));
         when(mockStateStore.loadConfig()).thenReturn(
             new ConfigStore.LoadResult(GrmConfig.defaults(), false, null));
         when(mockStateStore.scanManifests()).thenReturn(List.of());
@@ -137,6 +147,23 @@ class ReleaseManagerTest {
             List.of(),
             Instant.parse("2026-01-01T00:00:00Z"),
             Instant.parse("2026-01-01T00:00:00Z"));
+    }
+
+    private static AppManifest withSignature(AppManifest base, String identity) {
+        return new AppManifest(
+            base.kind(),
+            base.schemaVersion(),
+            base.provider(),
+            base.repo(),
+            base.version(),
+            base.releaseId(),
+            base.asset(),
+            base.install(),
+            base.verification(),
+            base.backups(),
+            base.installedAt(),
+            base.updatedAt(),
+            new AppManifest.Signature("verified", "gpg", "Old Signer", identity));
     }
 
     @Test
@@ -185,6 +212,7 @@ class ReleaseManagerTest {
         assertEquals("example.exe", saved.asset().name());
         assertEquals(Path.of("/ProgramFiles/example.exe").toString(),
             saved.install().path());
+        assertEquals("FPR", saved.signature().identity());
     }
 
     @Test
@@ -208,6 +236,102 @@ class ReleaseManagerTest {
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockVerifier).verify(asset, List.of(asset, checksum), downloaded);
+    }
+
+    @Test
+    void testExecuteInstallAbortsOnInvalidSignature() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isAllowSignerChange()).thenReturn(true);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(SignatureResult.invalid("example.exe", "gpg", "BAD signature"));
+
+        assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient).discardAsset(downloaded);
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteInstallRequiresSignatureWhenRequested() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isRequireSignature()).thenReturn(true);
+        when(mockCmdParser.isAllowSignerChange()).thenReturn(true);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(SignatureResult.missing("example.exe"));
+
+        assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient).discardAsset(downloaded);
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+    }
+
+    @Test
+    void testExecuteInstallContinuesWithoutSignatureByDefault() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(SignatureResult.missing("example.exe"));
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+            .thenReturn(Path.of("/ProgramFiles/example.exe"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient).installDownloadedAsset(downloaded, "user/example");
+    }
+
+    @Test
+    void testExecuteInstallVerifiesChecksumBeforeSignature() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+            .thenReturn(Path.of("/ProgramFiles/example.exe"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        InOrder order = inOrder(mockVerifier, mockSignatureVerifier);
+        order.verify(mockVerifier).verify(asset, List.of(asset), downloaded);
+        order.verify(mockSignatureVerifier).verify(asset, List.of(asset), downloaded);
     }
 
     @Test
@@ -279,6 +403,222 @@ class ReleaseManagerTest {
         verify(mockStateStore).rebuildIndex();
         assertEquals("user/example", captor.getValue().repo());
         assertEquals("http://newurl", captor.getValue().asset().url());
+        assertEquals("FPR", captor.getValue().signature().identity());
+    }
+
+    @Test
+    void testExecuteUpdateRefusesSignerChange() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(withSignature(
+                manifest("user/example", oldAsset.url(), oldAsset.name(),
+                    "/ProgramFiles/uninstall.exe"),
+                "OLD")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(SignatureResult.verified("example.exe", "gpg", "New Signer", "NEW"));
+
+        assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockGithubClient).discardAsset(downloaded);
+        verify(mockBackupManager, never()).createAndPrune(any(), anyInt());
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteUpdateAllowsSameSigner() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(withSignature(
+                manifest("user/example", oldAsset.url(), oldAsset.name(),
+                    "/ProgramFiles/uninstall.exe"),
+                "FPR")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(SignatureResult.verified("example.exe", "gpg", "Test Signer", "FPR"));
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+            .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals("FPR", captor.getValue().signature().identity());
+    }
+
+    @Test
+    void testExecuteUpdateRefusesUnsignedReleaseWhenPinned() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(withSignature(
+                manifest("user/example", oldAsset.url(), oldAsset.name(),
+                    "/ProgramFiles/uninstall.exe"),
+                "FPR")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(SignatureResult.missing("example.exe"));
+
+        assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockGithubClient).discardAsset(downloaded);
+    }
+
+    @Test
+    void testExecuteUpdateSignerChangeCanBeOverridden() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isAllowSignerChange()).thenReturn(true);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(withSignature(
+                manifest("user/example", oldAsset.url(), oldAsset.name(),
+                    "/ProgramFiles/uninstall.exe"),
+                "OLD")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(SignatureResult.verified("example.exe", "gpg", "New Signer", "NEW"));
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+            .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockPrompt).confirm(any(), anyBoolean());
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals("NEW", captor.getValue().signature().identity());
+    }
+
+    @Test
+    void testExecuteUpdateSignerChangeOverrideCanBeDeclined() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isAllowSignerChange()).thenReturn(true);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(withSignature(
+                manifest("user/example", oldAsset.url(), oldAsset.name(),
+                    "/ProgramFiles/uninstall.exe"),
+                "OLD")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(SignatureResult.verified("example.exe", "gpg", "New Signer", "NEW"));
+
+        assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockGithubClient).discardAsset(downloaded);
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteUpdateUnsignedPinnedCanBeOverridden() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isAllowSignerChange()).thenReturn(true);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(withSignature(
+                manifest("user/example", oldAsset.url(), oldAsset.name(),
+                    "/ProgramFiles/uninstall.exe"),
+                "OLD")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(newAsset, List.of(newAsset), downloaded))
+            .thenReturn(SignatureResult.missing("example.exe"));
+        when(mockGithubClient.installDownloadedAsset(downloaded, "user/example"))
+            .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals("missing", captor.getValue().signature().status());
+        assertEquals(null, captor.getValue().signature().identity());
+    }
+
+    @Test
+    void testExecuteInstallRefusesSignerChangeWhenAlreadyPinned() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest("user/example"))
+            .thenReturn(Optional.of(withSignature(
+                manifest("user/example", "http://oldurl", "example.exe",
+                    "/ProgramFiles/uninstall.exe"),
+                "OLD")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new GithubClient.ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockSignatureVerifier.verify(asset, List.of(asset), downloaded))
+            .thenReturn(SignatureResult.verified("example.exe", "gpg", "New Signer", "NEW"));
+
+        assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient, never()).installDownloadedAsset(any(), any());
+        verify(mockGithubClient).discardAsset(downloaded);
     }
 
     @Test

@@ -29,6 +29,10 @@ import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
+import cz.cuni.mff.releasemanager.verify.SignatureResult;
+import cz.cuni.mff.releasemanager.verify.SignatureStatus;
+import cz.cuni.mff.releasemanager.verify.SignatureVerifier;
+import cz.cuni.mff.releasemanager.verify.SignatureVerifiers;
 import cz.cuni.mff.releasemanager.verify.VerificationResult;
 import cz.cuni.mff.releasemanager.verify.VerificationStatus;
 
@@ -58,6 +62,7 @@ public class ReleaseManager {
     private final GithubClient githubClient;
     private final PlatformHandler platformHandler;
     private final AssetVerifier verifier;
+    private final SignatureVerifier signatureVerifier;
     private final StateStore stateStore;
     private final BackupManager backupManager;
     private final Prompt prompt;
@@ -69,6 +74,7 @@ public class ReleaseManager {
         githubClient = new GithubClient();
         platformHandler = Platform.getPlatformHandler();
         verifier = new AssetVerifier(githubClient);
+        signatureVerifier = SignatureVerifiers.forCurrentPlatform(githubClient);
         stateStore = new StateStore(AppPaths.forCurrentPlatform());
         backupManager = new BackupManager(stateStore.paths());
         prompt = new ConsolePrompt();
@@ -291,6 +297,13 @@ public class ReleaseManager {
             System.err.println("Please specify the correct repository name of format 'owner/repo'.");
             return false;
         }
+        AppManifest previous;
+        try {
+            previous = stateStore.findManifest(command.argument).orElse(null);
+        } catch (IOException e) {
+            System.err.println("Failed to load application state: " + e.getMessage());
+            return false;
+        }
         var release = githubClient.getLatestRelease(command.argument);
         if (release.installable().isEmpty()) {
             System.err.println("Failed to retrieve the latest release.");
@@ -305,6 +318,14 @@ public class ReleaseManager {
         if (!isAllowed(verification, downloadedAsset)) {
             return false;
         }
+        SignatureResult signature = verifySignature(
+            asset, release.all(), downloadedAsset);
+        if (!isSignatureAllowed(signature, downloadedAsset, previous)) {
+            return false;
+        }
+        if (!isSignerAllowed(previous, signature, downloadedAsset, "install")) {
+            return false;
+        }
         Path installedAsset = githubClient.installDownloadedAsset(
             downloadedAsset, command.argument);
         if (installedAsset == null) {
@@ -313,7 +334,7 @@ public class ReleaseManager {
         }
         AppManifest manifest = createManifest(
             command.argument, release, asset, installedAsset, verification,
-            Instant.now(), List.of());
+            signature, Instant.now(), List.of());
         if (!recordManifest(manifest)) {
             return false;
         }
@@ -364,12 +385,131 @@ public class ReleaseManager {
         return true;
     }
 
+    private SignatureResult verifySignature(
+        Asset asset, List<Asset> releaseAssets, Path downloaded) {
+        try {
+            return signatureVerifier.verify(asset, releaseAssets, downloaded);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return SignatureResult.error(asset.name(), e.getMessage());
+        }
+    }
+
+    private boolean isSignatureAllowed(
+        SignatureResult signature, Path downloaded, AppManifest previous) {
+        if (signature == null) {
+            githubClient.discardAsset(downloaded);
+            return false;
+        }
+        boolean pinned = previous != null && previous.signature() != null
+            && previous.signature().isVerified();
+        boolean required = cmdParser.isRequireSignature() || toolConfig.requireSignature();
+        if (!signature.allowsInstall(required)) {
+            System.err.println(signature.message() + " Refusing to install.");
+            githubClient.discardAsset(downloaded);
+            return false;
+        }
+        if (signature.status() == SignatureStatus.VERIFIED) {
+            System.out.println(signature.message());
+        } else if (!pinned) {
+            System.err.println(
+                signature.message() + " Continuing without a verified signature.");
+        }
+        return true;
+    }
+
+    private boolean isSignerAllowed(
+        AppManifest previous, SignatureResult signature, Path downloaded, String operation) {
+        if (previous == null || previous.signature() == null
+            || !previous.signature().isVerified()) {
+            return true;
+        }
+        AppManifest.Signature pinned = previous.signature();
+        boolean unsigned = signature == null
+            || signature.status() != SignatureStatus.VERIFIED
+            || signature.identity() == null;
+        boolean changed = !unsigned
+            && !pinned.identity().equalsIgnoreCase(signature.identity());
+        if (!unsigned && !changed) {
+            return true;
+        }
+
+        String reason = unsigned
+            ? "it is pinned to " + describe(pinned)
+                + ", but no verified signature is available"
+            : "the signer changed from " + describe(pinned)
+                + " to " + describe(signature);
+        if (!cmdParser.isAllowSignerChange()) {
+            System.err.println("Unable to " + operation + " " + previous.repo() + ".");
+            System.err.println("Reason: " + reason + ".");
+            System.err.println(
+                "Be careful: this can mean the release was replaced or tampered with.");
+            System.err.println(unsigned
+                ? "If you trust this release, rerun with --allow-signer-change "
+                    + "to clear the pinned signer."
+                : "If you trust the new signer, rerun with --allow-signer-change "
+                    + "to accept it and update the pin.");
+            githubClient.discardAsset(downloaded);
+            return false;
+        }
+
+        String question = unsigned
+            ? "Clear the signer pin for " + previous.repo() + "?\n"
+                + "  pinned: " + describe(pinned) + "\n"
+                + "  now:    no verified signature\n"
+                + "Only continue if you trust this release."
+            : "Accept the signer change for " + previous.repo() + "?\n"
+                + "  from: " + describe(pinned) + "\n"
+                + "  to:   " + describe(signature) + "\n"
+                + "Only continue if you trust the new signer.";
+        if (!confirm(question)) {
+            System.err.println("Signer override declined.");
+            githubClient.discardAsset(downloaded);
+            return false;
+        }
+        if (unsigned) {
+            System.err.println("Warning: signer pin cleared for " + previous.repo() + ".");
+        } else {
+            System.err.println("Warning: signer pin updated for " + previous.repo()
+                + " to " + describe(signature) + ".");
+        }
+        return true;
+    }
+
+    private static String describe(AppManifest.Signature signature) {
+        String signer = signature.signer() == null ? "unknown signer" : signature.signer();
+        return signature.identity() == null
+            ? signer
+            : signer + " (" + signature.identity() + ")";
+    }
+
+    private static String describe(SignatureResult signature) {
+        String signer = signature.signer() == null ? "unknown signer" : signature.signer();
+        return signature.identity() == null
+            ? signer
+            : signer + " (" + signature.identity() + ")";
+    }
+
+    private static AppManifest.Signature signatureRecord(SignatureResult signature) {
+        if (signature == null) {
+            return null;
+        }
+        return new AppManifest.Signature(
+            signature.status().name().toLowerCase(Locale.ROOT),
+            signature.mechanism(),
+            signature.signer(),
+            signature.identity());
+    }
+
     private AppManifest createManifest(
         String repo,
         GithubClient.ReleaseAssets release,
         Asset asset,
         Path installed,
         VerificationResult verification,
+        SignatureResult signature,
         Instant installedAt,
         List<AppManifest.Backup> backups
     ) {
@@ -400,7 +540,8 @@ public class ReleaseManager {
                 verification.actual()),
             backups,
             installedAt,
-            Instant.now());
+            Instant.now(),
+            signatureRecord(signature));
     }
 
     private boolean recordManifest(AppManifest manifest) {
@@ -570,6 +711,14 @@ public class ReleaseManager {
         if (!isAllowed(verification, downloadedAsset)) {
             return false;
         }
+        SignatureResult signature = verifySignature(
+            newAsset, latest.all(), downloadedAsset);
+        if (!isSignatureAllowed(signature, downloadedAsset, previous)) {
+            return false;
+        }
+        if (!isSignerAllowed(previous, signature, downloadedAsset, "update")) {
+            return false;
+        }
 
         List<AppManifest.Backup> backups = previous.backups() == null
             ? List.of()
@@ -599,6 +748,7 @@ public class ReleaseManager {
             newAsset,
             installedAsset,
             verification,
+            signature,
             previous.installedAt(),
             backups);
         if (!recordManifest(updated)) {
@@ -695,7 +845,8 @@ public class ReleaseManager {
             restored.verification(),
             current.backups() == null ? List.of() : current.backups(),
             restored.installedAt(),
-            Instant.now());
+            Instant.now(),
+            restored.signature());
         if (!recordManifest(rolledBack)) {
             return false;
         }
@@ -907,5 +1058,10 @@ public class ReleaseManager {
         out.println("  doctor - diagnose state and orphaned installs");
         out.println("  adopt [name] - adopt an existing Linux install");
         out.println("  help - display this help message");
+        out.println("Options:");
+        out.println("  --strict - fail when a checksum is missing or unusable");
+        out.println("  --require-signature - fail when no verified signature is available");
+        out.println("  --allow-signer-change - accept a changed signer after confirmation");
+        out.println("  --yes - assume yes for confirmation prompts");
     }
 }

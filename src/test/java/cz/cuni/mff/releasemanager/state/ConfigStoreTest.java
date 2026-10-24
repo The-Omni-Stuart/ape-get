@@ -31,6 +31,7 @@ class ConfigStoreTest {
         assertEquals(GrmConfig.KIND, result.config().kind());
         assertEquals(GrmConfig.SCHEMA_VERSION, result.config().schemaVersion());
         assertEquals(1, result.config().backupCount());
+        assertFalse(result.config().requireSignature());
         assertTrue(Files.exists(new AppPaths(tempDir).configFile()));
         String json = Files.readString(new AppPaths(tempDir).configFile());
         assertFalse(json.contains("\"valid\""));
@@ -78,6 +79,21 @@ class ConfigStoreTest {
 
         assertNotNull(result.quarantined());
         assertEquals(GrmConfig.KIND, result.config().kind());
+    }
+
+    @Test
+    void readsRequireSignature() throws Exception {
+        AppPaths paths = new AppPaths(tempDir);
+        Files.createDirectories(paths.root());
+        Files.writeString(paths.configFile(), """
+            { "kind": "grm.config", "schema_version": 1,
+              "strict_verification": false, "backup_count": 1,
+              "require_signature": true }
+            """);
+
+        ConfigStore.LoadResult result = store().load();
+
+        assertTrue(result.config().requireSignature());
     }
 
     @Test

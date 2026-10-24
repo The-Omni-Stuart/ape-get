@@ -14,6 +14,8 @@ public class CmdParser {
     private final Scanner scanner = new Scanner(System.in);
     private boolean strict;
     private boolean assumeYes;
+    private boolean requireSignature;
+    private boolean allowSignerChange;
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -24,12 +26,18 @@ public class CmdParser {
     public Command parse(String[] args) {
         strict = false;
         assumeYes = false;
+        requireSignature = false;
+        allowSignerChange = false;
         List<String> filtered = new ArrayList<>(args.length);
         for (String arg : args) {
             if ("--strict".equals(arg)) {
                 strict = true;
             } else if ("--yes".equals(arg)) {
                 assumeYes = true;
+            } else if ("--require-signature".equals(arg)) {
+                requireSignature = true;
+            } else if ("--allow-signer-change".equals(arg)) {
+                allowSignerChange = true;
             } else {
                 filtered.add(arg);
             }
@@ -86,6 +94,20 @@ public class CmdParser {
      */
     public boolean isAssumeYes() {
         return assumeYes;
+    }
+
+    /**
+     * @return true if the last parse saw --require-signature
+     */
+    public boolean isRequireSignature() {
+        return requireSignature;
+    }
+
+    /**
+     * @return true if the last parse saw --allow-signer-change
+     */
+    public boolean isAllowSignerChange() {
+        return allowSignerChange;
     }
 
     /**

@@ -147,6 +147,60 @@ class CmdParserTest {
     }
 
     @Test
+    void testParseRequireSignatureBeforeCommand() {
+        Command result = cmdParser.parse(
+            new String[] {"--require-signature", "install", "owner/repo"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isRequireSignature());
+    }
+
+    @Test
+    void testParseRequireSignatureAfterArgument() {
+        Command result = cmdParser.parse(
+            new String[] {"install", "owner/repo", "--require-signature"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isRequireSignature());
+    }
+
+    @Test
+    void testParseWithoutRequireSignature() {
+        cmdParser.parse(new String[] {"list"});
+
+        assertFalse(cmdParser.isRequireSignature());
+    }
+
+    @Test
+    void testParseAllowSignerChangeBeforeCommand() {
+        Command result = cmdParser.parse(
+            new String[] {"--allow-signer-change", "update", "owner/repo"});
+
+        assertEquals(Command.UPDATE, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isAllowSignerChange());
+    }
+
+    @Test
+    void testParseAllowSignerChangeAfterArgument() {
+        Command result = cmdParser.parse(
+            new String[] {"update", "owner/repo", "--allow-signer-change"});
+
+        assertEquals(Command.UPDATE, result);
+        assertEquals("owner/repo", result.argument);
+        assertTrue(cmdParser.isAllowSignerChange());
+    }
+
+    @Test
+    void testParseWithoutAllowSignerChange() {
+        cmdParser.parse(new String[] {"list"});
+
+        assertFalse(cmdParser.isAllowSignerChange());
+    }
+
+    @Test
     void testParseWithoutAssumeYes() {
         cmdParser.parse(new String[] {"list"});
 
