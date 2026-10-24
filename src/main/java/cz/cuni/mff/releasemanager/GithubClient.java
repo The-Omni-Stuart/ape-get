@@ -23,6 +23,7 @@ import java.util.concurrent.TimeoutException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import cz.cuni.mff.releasemanager.platform.AssetSelector;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.types.Asset;
@@ -342,7 +343,7 @@ public class GithubClient {
      */
     private List<Asset> filterInstallable(List<Asset> assets) {
         String[] formats = platformHandler.getFormats();
-        return assets.stream()
+        List<Asset> matchingFormat = assets.stream()
             .filter(asset -> asset != null && asset.name() != null)
             .filter(asset -> {
                 String name = asset.name().toLowerCase(Locale.ROOT);
@@ -354,6 +355,8 @@ public class GithubClient {
                 return false;
             })
             .toList();
+        return AssetSelector.preferArchitecture(
+            matchingFormat, Platform.detectPlatform().getArchitecture());
     }
 
     /**

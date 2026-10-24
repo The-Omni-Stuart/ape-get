@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
@@ -148,6 +150,36 @@ class GithubClientTest {
         assertEquals(4, release.all().size());
         assertEquals(1, release.installable().size());
         assertEquals("Example-1.0.AppImage", release.installable().get(0).name());
+    }
+
+    @Test
+    void getLatestReleasePrefersCurrentArchitecture() throws Exception {
+        String json = """
+            {
+              "assets": [
+                { "name": "app-arm64.AppImage", "url": "http://example.com/arm64" },
+                { "name": "app-x86_64.AppImage", "url": "http://example.com/x86_64" }
+              ]
+            }
+            """;
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn(json);
+        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".appimage"});
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+            .thenReturn(mockResponse);
+
+        Platform.Architecture architecture = Platform.detectPlatform().getArchitecture();
+        assumeTrue(architecture == Platform.Architecture.ARM_64
+            || architecture == Platform.Architecture.X86_64);
+
+        GithubClient.ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
+
+        assertEquals(1, release.installable().size());
+        assertEquals(architecture == Platform.Architecture.ARM_64
+                ? "app-arm64.AppImage"
+                : "app-x86_64.AppImage",
+            release.installable().get(0).name());
     }
 
     @Test

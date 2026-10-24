@@ -1,5 +1,7 @@
 package cz.cuni.mff.releasemanager.platform;
 
+import java.util.Locale;
+
 /**
  * This class is used to detect the current operating system and architecture.
  */
@@ -11,12 +13,10 @@ public final class Platform {
         WINDOWS, LINUX, MAC
     }
     /**
-     * ARCHITECTURE CHECK IS NOT YET SUPPORTED
-     * 
      * Enum representing the supported architectures.
      */
     public enum Architecture {
-        X86_32, X86_64, ARM_32, ARM_64
+        X86_32, X86_64, ARM_32, ARM_64, UNIVERSAL
     }
 
     private static Platform instance;
@@ -47,22 +47,23 @@ public final class Platform {
     }
 
     /**
-     * ARCHITECTURE CHECK IS NOT YET SUPPORTED
-     * 
      * Detects the current architecture.
      * @return the detected architecture
      */
     private static Architecture detectArch() {
-        final String architecture = System.getProperty("os.arch").toLowerCase();
-        if (architecture.contains("x86_64") || architecture.contains("amd64")) {
-            return Architecture.X86_64; 
-        }
-        else if (architecture.contains("x86")) {
-            return Architecture.X86_32;
-        } else if (architecture.contains("arm")) {
-            return Architecture.ARM_32;
-        } else if (architecture.contains("aarch64")) {
+        return parseArch(System.getProperty("os.arch"));
+    }
+
+    static Architecture parseArch(String architecture) {
+        final String value = architecture == null ? "" : architecture.toLowerCase(Locale.ROOT);
+        if (value.contains("aarch64") || value.contains("arm64")) {
             return Architecture.ARM_64;
+        } else if (value.contains("x86_64") || value.contains("amd64")) {
+            return Architecture.X86_64;
+        } else if (value.contains("x86") || value.contains("i386") || value.contains("i686")) {
+            return Architecture.X86_32;
+        } else if (value.contains("arm")) {
+            return Architecture.ARM_32;
         } else {
             throw new IllegalStateException("Unsupported architecture: " + architecture);
         }
