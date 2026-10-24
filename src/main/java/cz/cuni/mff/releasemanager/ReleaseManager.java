@@ -240,8 +240,18 @@ public class ReleaseManager {
                         System.out.println("Already up to date.");
                     }
                     else {
+                        Path downloadedAsset;
+                        try {
+                            downloadedAsset = githubClient.downloadAsset(newAsset);
+                        } catch (IOException | InterruptedException e) {
+                            if (e instanceof InterruptedException) {
+                                Thread.currentThread().interrupt();
+                            }
+                            System.out.println("Failed to download update: " + e.getMessage());
+                            return;
+                        }
                         platformHandler.uninstall(Path.of(release.uninstallPath()));
-                        Path installedAsset = githubClient.installAsset(newAsset);
+                        Path installedAsset = githubClient.installDownloadedAsset(downloadedAsset);
                         if (installedAsset != null) {
                             System.out.println("Successfully updated.");
                             addReleaseToList(command.argument, installedAsset, newAsset);

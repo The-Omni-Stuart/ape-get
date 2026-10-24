@@ -109,25 +109,33 @@ public class GithubClient {
     }
 
     /**
-     * Installs the asset by downloading it and passing it to the platform handler for installation.
-     * @param asset The asset to install.
+     * Downloads the asset to a temporary file without installing it.
+     * @param asset The asset to download.
+     * @return The path to the downloaded file.
+     * @throws IOException if the download fails.
+     * @throws InterruptedException if the download is interrupted.
+     */
+    public Path downloadAsset(Asset asset) throws IOException, InterruptedException {
+        try (InputStream assetStream = getAsset(asset.url())) {
+            return FileUtils.saveInputStreamToFile(assetStream, asset.name());
+        }
+    }
+
+    /**
+     * Installs an already downloaded asset and removes the staged file afterwards.
+     * @param assetPath The downloaded asset.
      * @return The path to the file for uninstall.
      */
-    public Path installAsset(Asset asset) {
-        Path assetPath = null;
+    public Path installDownloadedAsset(Path assetPath) {
+        if (assetPath == null) {
+            return null;
+        }
         Path installed = null;
-        try (InputStream assetStream = getAsset(asset.url())) {
-            assetPath = FileUtils.saveInputStreamToFile(assetStream, asset.name());
+        try {
             installed = platformHandler.install(assetPath);
             return installed;
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            System.out.println("Error downloading asset: " + e.getMessage());
-            return null;
         } finally {
-            if (assetPath != null && !assetPath.equals(installed)) {
+            if (!assetPath.equals(installed)) {
                 try {
                     Files.deleteIfExists(assetPath);
                 } catch (IOException ignored) {
@@ -136,6 +144,25 @@ public class GithubClient {
                 FileUtils.removeTempDir(assetPath);
             }
         }
+    }
+
+    /**
+     * Installs the asset by downloading it and passing it to the platform handler for installation.
+     * @param asset The asset to install.
+     * @return The path to the file for uninstall.
+     */
+    public Path installAsset(Asset asset) {
+        Path assetPath;
+        try {
+            assetPath = downloadAsset(asset);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.out.println("Error downloading asset: " + e.getMessage());
+            return null;
+        }
+        return installDownloadedAsset(assetPath);
     }
 
     /**

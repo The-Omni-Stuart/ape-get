@@ -9,8 +9,11 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -102,8 +105,8 @@ class ReleaseManagerTest {
     }
 
     @Test
-    void testExecuteUpdate() throws IOException {
-        Command cmd = Command.UPDATE; 
+    void testExecuteUpdate() throws IOException, InterruptedException {
+        Command cmd = Command.UPDATE;
         cmd.argument = "user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
 
@@ -111,14 +114,63 @@ class ReleaseManagerTest {
         ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
         ReleasesList releases = new ReleasesList(List.of(info));
         Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
 
         when(mockPlatformHandler.loadReleasesList()).thenReturn(releases);
         when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
-        when(mockGithubClient.installAsset(newAsset)).thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockGithubClient.installDownloadedAsset(downloaded))
+            .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         releaseManager.execute(new String[]{"update", "user/example"});
 
-        verify(mockGithubClient).installAsset(newAsset);
+        verify(mockGithubClient).downloadAsset(newAsset);
+        verify(mockGithubClient).installDownloadedAsset(downloaded);
+    }
+
+    @Test
+    void testExecuteUpdateDownloadsBeforeUninstalling() throws IOException, InterruptedException {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+
+        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockGithubClient.installDownloadedAsset(downloaded))
+            .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
+
+        releaseManager.execute(new String[]{"update", "user/example"});
+
+        InOrder inOrder = inOrder(mockGithubClient, mockPlatformHandler);
+        inOrder.verify(mockGithubClient).downloadAsset(newAsset);
+        inOrder.verify(mockPlatformHandler).uninstall(Path.of("/ProgramFiles/uninstall.exe"));
+        inOrder.verify(mockGithubClient).installDownloadedAsset(downloaded);
+    }
+
+    @Test
+    void testExecuteUpdateDoesNotUninstallWhenDownloadFails() throws IOException, InterruptedException {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        ReleaseInfo info = new ReleaseInfo("user/example", Instant.now(), "/ProgramFiles/uninstall.exe", oldAsset);
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+
+        when(mockPlatformHandler.loadReleasesList()).thenReturn(new ReleasesList(List.of(info)));
+        when(mockGithubClient.getLatestReleaseAssets("user/example")).thenReturn(List.of(newAsset));
+        when(mockGithubClient.downloadAsset(newAsset)).thenThrow(new IOException("boom"));
+
+        releaseManager.execute(new String[]{"update", "user/example"});
+
+        verify(mockPlatformHandler, never()).uninstall(any());
+        verify(mockGithubClient, never()).installDownloadedAsset(any());
     }
 
     @Test
