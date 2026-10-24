@@ -10,6 +10,7 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
@@ -113,16 +114,28 @@ public class GithubClient {
      * @return The path to the file for uninstall.
      */
     public Path installAsset(Asset asset) {
-        InputStream assetStream;
-        try {
-            assetStream = getAsset(asset.url());
+        Path assetPath = null;
+        Path installed = null;
+        try (InputStream assetStream = getAsset(asset.url())) {
+            assetPath = FileUtils.saveInputStreamToFile(assetStream, asset.name());
+            installed = platformHandler.install(assetPath);
+            return installed;
         } catch (IOException | InterruptedException e) {
-            System.out.println("Error retrieving asset: " + e.getMessage());
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.out.println("Error downloading asset: " + e.getMessage());
             return null;
+        } finally {
+            if (assetPath != null && !assetPath.equals(installed)) {
+                try {
+                    Files.deleteIfExists(assetPath);
+                } catch (IOException ignored) {
+                    // best-effort cleanup of the staged download
+                }
+                FileUtils.removeTempDir(assetPath);
+            }
         }
-
-        final Path assetPath = FileUtils.saveInputStreamToFile(assetStream, asset.name());
-        return platformHandler.install(assetPath);
     }
 
     /**

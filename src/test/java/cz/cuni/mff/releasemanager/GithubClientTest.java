@@ -1,13 +1,16 @@
 package cz.cuni.mff.releasemanager;
 
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
@@ -116,6 +120,20 @@ class GithubClientTest {
         ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
         verify(mockHttpClient).send(requestCaptor.capture(), eq(HttpResponse.BodyHandlers.ofString()));
         assertEquals("q=two+words+%26+more&per_page=5", requestCaptor.getValue().uri().getRawQuery());
+    }
+
+    @Test
+    void installAsset_doesNotInstallEmptyDownload() throws Exception {
+        HttpResponse<InputStream> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn(InputStream.nullInputStream());
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofInputStream())))
+                .thenReturn(mockResponse);
+
+        Path result = githubClient.installAsset(new Asset("http://example.com/file.exe", "file.exe"));
+
+        assertNull(result);
+        verifyNoInteractions(mockPlatformHandler);
     }
 
 }
