@@ -343,6 +343,7 @@ public class ReleaseManager {
         out.println("  --name <command> - command name for a portable package");
         out.println("  --no-command - install without creating a command");
         out.println("  --desktop - create a desktop entry (Linux)");
+        out.println("  --no-desktop - remove an existing desktop entry");
         out.println("  --terminal - run the desktop entry in a terminal");
         out.println("  --icon <path> - icon for the desktop entry");
         out.println("  --assimilate - convert an APE with the cosmocc assimilate tool");

@@ -15,12 +15,13 @@ public record InstallRequest(
     boolean assimilate,
     boolean desktop,
     String icon,
-    boolean terminal
+    boolean terminal,
+    boolean noDesktop
 ) {
     // old installer paths do not need a portable kind or command
     public InstallRequest(Path asset, String provider, String repoFullName, String version) {
         this(asset, provider, repoFullName, version,
-            PackageKind.UNKNOWN, null, false, false, null, false);
+            PackageKind.UNKNOWN, null, false, false, null, false, false);
     }
 
     public InstallRequest(
@@ -33,6 +34,22 @@ public record InstallRequest(
         boolean assimilate
     ) {
         this(asset, provider, repoFullName, version, kind, command, assimilate,
-            false, null, false);
+            false, null, false, false);
+    }
+
+    public InstallRequest(
+        Path asset,
+        String provider,
+        String repoFullName,
+        String version,
+        PackageKind kind,
+        String command,
+        boolean assimilate,
+        boolean desktop,
+        String icon,
+        boolean terminal
+    ) {
+        this(asset, provider, repoFullName, version, kind, command, assimilate,
+            desktop, icon, terminal, false);
     }
 }

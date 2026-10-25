@@ -225,6 +225,39 @@ class LinuxHandlerTest {
         assertTrue(content.contains("Terminal=true"), content);
     }
 
+
+    @Test
+    void noDesktopRemovesExistingEntry() throws Exception {
+        Path asset = Files.writeString(tempDir.resolve("tool.AppImage"), "payload");
+        handler.install(new InstallRequest(
+            asset, "github", "owner/repo", "v1.2.3", PackageKind.APPIMAGE,
+            "tool", false, true, null, false, false));
+        Path entry = handler.desktopEntryPath("github", "owner/repo", "tool");
+        assertTrue(Files.exists(entry));
+
+        StateStore store = new StateStore(paths);
+        store.saveManifest(new AppManifest(
+            AppManifest.KIND, AppManifest.SCHEMA_VERSION,
+            "github", "owner/repo", "v1.2.3", 1L,
+            new AppManifest.Asset("tool.AppImage", "url", null),
+            new AppManifest.Install("appimage", installedPath().toString(), appDir().toString(),
+                "tool", entry.toString(),
+                new AppManifest.Uninstall(bin.resolve("tool").toString(), List.of(), null)),
+            new AppManifest.Verification("unknown", "none", null, null, null),
+            List.of(), Instant.now(), Instant.now()));
+
+        Path replacement = Files.writeString(tempDir.resolve("tool2.AppImage"), "payload");
+        handler.install(new InstallRequest(
+            replacement, "github", "owner/repo", "v1.2.3", PackageKind.APPIMAGE,
+            "tool", false, false, null, false, true));
+
+        assertFalse(Files.exists(entry));
+    }
+
+    private Path installedPath() {
+        return appDir().resolve("versions/v1.2.3/tool.AppImage");
+    }
+
     @Test
     void uninstallPortableRemovesLauncherAndRoot() throws Exception {
         Path asset = Files.writeString(tempDir.resolve("tool.AppImage"), "payload");

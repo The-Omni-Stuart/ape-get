@@ -29,6 +29,7 @@ public class CmdParser {
     private boolean noCommand;
     private boolean assimilate;
     private boolean desktop;
+    private boolean noDesktop;
     private boolean terminal;
     private String icon;
     private boolean all;
@@ -57,6 +58,7 @@ public class CmdParser {
         noCommand = false;
         assimilate = false;
         desktop = false;
+        noDesktop = false;
         terminal = false;
         icon = null;
         all = false;
@@ -119,6 +121,8 @@ public class CmdParser {
                 assimilate = true;
             } else if ("--desktop".equals(arg)) {
                 desktop = true;
+            } else if ("--no-desktop".equals(arg)) {
+                noDesktop = true;
             } else if ("--terminal".equals(arg)) {
                 terminal = true;
             } else if ("--icon".equals(arg)) {
@@ -263,6 +267,13 @@ public class CmdParser {
      */
     public boolean isDesktop() {
         return desktop;
+    }
+
+    /**
+     * @return true when --no-desktop was supplied
+     */
+    public boolean isNoDesktop() {
+        return noDesktop;
     }
 
     /**

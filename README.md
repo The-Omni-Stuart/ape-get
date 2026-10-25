@@ -127,7 +127,7 @@ Provider tokens are read from the environment variable named by `token_env`; sec
 stored in the config.
 
 Common flags: `--asset`, `--version`, `--kind`, `--name`, `--no-command`, `--all`,
-`--outdated`, `--channel`, `--dry-run`, `--desktop`, `--terminal`, `--icon`,
+`--outdated`, `--channel`, `--dry-run`, `--desktop`, `--no-desktop`, `--terminal`, `--icon`,
 `--assimilate`, `--json`, `--quiet`, `--yes`.
 `--json` writes one document to stdout; progress, warnings, and prompts go to stderr.
 `--yes` is required for non-interactive use; without it, confirmation prompts refuse when no TTY is
@@ -135,7 +135,9 @@ available.
 
 Portable packages create a command in the user bin directory by default. `--name` changes it and
 `--no-command` suppresses it. Plain `.exe` assets are treated as NSIS installers; use
-`--kind portable-exe` for a portable Windows executable.
+`--kind portable-exe` for a portable Windows executable. `--desktop` creates a Linux menu entry,
+using the AppImage's embedded name, comment, categories, and icon when available; `--no-desktop`
+removes it on update.
 
 `--channel beta` follows prereleases where the provider exposes them. Automatic updates are
 configured in `grm_config.json` with `auto_update` (`off`, `check`, or `apply`),

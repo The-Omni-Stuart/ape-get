@@ -25,12 +25,13 @@ public final class PlatformInstaller {
         boolean assimilate,
         boolean desktop,
         String icon,
-        boolean terminal) {
+        boolean terminal,
+        boolean noDesktop) {
         Path installed = null;
         try {
             installed = platformHandler.install(new InstallRequest(
                 downloaded, ref.provider(), ref.path(), version,
-                kind, command, assimilate, desktop, icon, terminal));
+                kind, command, assimilate, desktop, icon, terminal, noDesktop));
         } finally {
             if (!downloaded.equals(installed)) {
                 StagedAsset.discard(downloaded);

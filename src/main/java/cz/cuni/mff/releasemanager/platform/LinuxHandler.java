@@ -8,8 +8,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Locale;
 
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.StateStore;
@@ -170,11 +173,15 @@ public final class LinuxHandler extends PlatformHandler {
             if (launcher != null) {
                 replaceSymlink(launcher,
                     appDir.resolve("current").resolve(target.getFileName()));
-                if (request.desktop()) {
+                Path entry = desktopEntryPath(request.provider(), repoFullName, command);
+                if (request.noDesktop()) {
+                    if (entry != null) {
+                        Files.deleteIfExists(entry);
+                    }
+                } else if (request.desktop()) {
                     writeDesktopEntry(
-                        desktopEntryPath(request.provider(), repoFullName, command),
-                        command, launcher, repoFullName, request.icon(),
-                        request.terminal());
+                        entry, command, launcher, repoFullName, request.icon(),
+                        request.terminal(), request.kind(), target, appDir);
                 }
             }
 
@@ -191,32 +198,100 @@ public final class LinuxHandler extends PlatformHandler {
         }
     }
 
-    private void writeDesktopEntry(
+    private boolean writeDesktopEntry(
         Path entry,
         String command,
         Path launcher,
         String repoFullName,
         String icon,
-        boolean terminal) throws IOException {
+        boolean terminal,
+        PackageKind kind,
+        Path asset,
+        Path appDir) throws IOException {
         if (entry == null) {
             Output.error("Warning: could not create a desktop entry for " + command + ".");
-            return;
+            return false;
         }
-        Files.createDirectories(entry.getParent());
-        String name = repoFullName == null
-            ? command : repoFullName.substring(repoFullName.lastIndexOf('/') + 1);
+        AppImageDesktop.Metadata metadata = kind == PackageKind.APPIMAGE
+            ? AppImageDesktop.read(asset).orElse(null) : null;
+        Map<String, String> values = new LinkedHashMap<>();
+        if (metadata != null) {
+            values.putAll(metadata.entries());
+        }
+        values.keySet().removeAll(Set.of(
+            "Type", "Name", "Exec", "TryExec", "Icon", "Terminal", "Categories",
+            "Path", "DBusActivatable"));
+        values.values().removeIf(value -> value == null);
+        String name = metadata != null && metadata.entries().get("Name") != null
+            ? metadata.entries().get("Name")
+            : repoFullName == null ? command
+                : repoFullName.substring(repoFullName.lastIndexOf('/') + 1);
+        String args = execArguments(metadata == null ? null : metadata.entries().get("Exec"));
+        String terminalValue = terminal
+            ? "true"
+            : metadata != null && metadata.entries().get("Terminal") != null
+                ? metadata.entries().get("Terminal") : "false";
+        String iconValue = installIcon(icon, metadata, appDir);
+        String categories = metadata != null && metadata.entries().get("Categories") != null
+            ? metadata.entries().get("Categories") : "Utility;";
+
         StringBuilder content = new StringBuilder()
             .append("[Desktop Entry]\n")
             .append("Type=Application\n")
             .append("Name=").append(name).append('\n')
-            .append("Exec=\"").append(launcher).append("\"\n")
-            .append("Terminal=").append(terminal).append('\n')
-            .append("Categories=Utility;\n");
-        if (icon != null && !icon.isBlank()) {
-            Path iconPath = Path.of(icon).toAbsolutePath().normalize();
-            content.append("Icon=").append(iconPath).append('\n');
+            .append("Exec=\"").append(launcher).append('"')
+            .append(args.isEmpty() ? "" : " " + args).append('\n')
+            .append("Terminal=").append(terminalValue).append('\n')
+            .append("Categories=").append(categories).append('\n');
+        if (iconValue != null) {
+            content.append("Icon=").append(iconValue).append('\n');
         }
+        for (Map.Entry<String, String> value : values.entrySet()) {
+            content.append(value.getKey()).append('=').append(value.getValue()).append('\n');
+        }
+        Files.createDirectories(entry.getParent());
         Files.writeString(entry, content.toString());
+        return true;
+    }
+
+    private String installIcon(
+        String requestedIcon, AppImageDesktop.Metadata metadata, Path appDir)
+        throws IOException {
+        byte[] bytes = null;
+        String extension = ".png";
+        if (requestedIcon != null && !requestedIcon.isBlank()) {
+            Path source = Path.of(requestedIcon).toAbsolutePath().normalize();
+            if (Files.isRegularFile(source)) {
+                bytes = Files.readAllBytes(source);
+                String name = source.getFileName().toString();
+                int dot = name.lastIndexOf('.');
+                if (dot >= 0) {
+                    extension = name.substring(dot).toLowerCase(Locale.ROOT);
+                }
+            } else {
+                Output.error("Warning: icon not found: " + source);
+            }
+        } else if (metadata != null && metadata.icon() != null) {
+            bytes = metadata.icon();
+            extension = metadata.iconExtension() == null ? ".png" : metadata.iconExtension();
+        } else if (metadata != null && metadata.entries().get("Icon") != null) {
+            return metadata.entries().get("Icon");
+        }
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        Path icon = appDir.resolve("desktop").resolve("icon" + extension);
+        Files.createDirectories(icon.getParent());
+        Files.write(icon, bytes);
+        return icon.toString();
+    }
+
+    private static String execArguments(String exec) {
+        if (exec == null || exec.isBlank()) {
+            return "";
+        }
+        int space = exec.indexOf(' ');
+        return space < 0 ? "" : exec.substring(space + 1).trim();
     }
 
     // explicit opt-in conversion; the APE is still the verified asset

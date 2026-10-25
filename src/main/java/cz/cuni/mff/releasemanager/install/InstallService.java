@@ -128,15 +128,15 @@ public final class InstallService {
         Path installed = components.platform().install(
             downloaded, ref, release.version(),
             plan.kind(), plan.command(), cmdParser.isAssimilate(),
-            cmdParser.isDesktop(), cmdParser.getIcon(), cmdParser.isTerminal());
+            cmdParser.isDesktop(), cmdParser.getIcon(), cmdParser.isTerminal(),
+            cmdParser.isNoDesktop());
         if (installed == null) {
             Output.error("Installation failed.");
             return false;
         }
         AppManifest manifest = components.manifestFactory().create(
             ref, provider.config(), release, asset, plan.kind(), plan.command(),
-            cmdParser.isDesktop(), installed, verification, signature,
-            Instant.now(), List.of());
+            installed, verification, signature, Instant.now(), List.of());
         if (!manifests.save(manifest)) {
             return false;
         }
@@ -261,8 +261,6 @@ public final class InstallService {
         if (plan == null) {
             return failed(ref, fromVersion, null);
         }
-        boolean desktop = cmdParser.isDesktop()
-            || previous.install().desktopEntry() != null;
         List<AppManifest.Backup> backupList;
         try {
             backupList = components.backups().forUpdate(previous);
@@ -274,14 +272,14 @@ public final class InstallService {
         Path installed = components.platform().install(
             downloaded, ref, latest.version(),
             plan.kind(), plan.command(), cmdParser.isAssimilate(),
-            cmdParser.isDesktop(), cmdParser.getIcon(), cmdParser.isTerminal());
+            cmdParser.isDesktop(), cmdParser.getIcon(), cmdParser.isTerminal(),
+            cmdParser.isNoDesktop());
         if (installed == null) {
             return failed(ref, fromVersion, "Installation failed.");
         }
         AppManifest updated = components.manifestFactory().create(
             ref, provider.config(), latest, newAsset, plan.kind(), plan.command(),
-            desktop, installed, verification, signature,
-            previous.installedAt(), backupList);
+            installed, verification, signature, previous.installedAt(), backupList);
         if (!manifests.save(updated)) {
             return failed(ref, fromVersion, null);
         }

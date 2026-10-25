@@ -1,5 +1,6 @@
 package cz.cuni.mff.releasemanager.install;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -35,7 +36,6 @@ public final class ManifestFactory {
         Asset asset,
         PackageKind kind,
         String command,
-        boolean desktop,
         Path installed,
         VerificationResult verification,
         SignatureResult signature,
@@ -50,9 +50,10 @@ public final class ManifestFactory {
             launcher = platformHandler.launcherPath(ref.provider(), ref.path());
         }
         Path uninstallPath = launcher == null ? installed : launcher;
-        Path desktopEntry = desktop
-            ? platformHandler.desktopEntryPath(ref.provider(), ref.path(), command)
-            : null;
+        Path desktopPath = platformHandler.desktopEntryPath(
+            ref.provider(), ref.path(), command);
+        Path desktopEntry = desktopPath != null && Files.exists(desktopPath)
+            ? desktopPath : null;
         return new AppManifest(
             AppManifest.KIND,
             AppManifest.SCHEMA_VERSION,

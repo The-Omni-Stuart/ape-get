@@ -273,6 +273,7 @@ class CmdParserTest {
         assertTrue(cmdParser.isAssimilate());
         assertTrue(cmdParser.isDesktop());
         assertTrue(cmdParser.isTerminal());
+        assertFalse(cmdParser.isNoDesktop());
         assertFalse(cmdParser.isNoCommand());
     }
 
@@ -283,6 +284,7 @@ class CmdParserTest {
 
         assertEquals(Command.INSTALL, result);
         assertTrue(cmdParser.isNoCommand());
+        assertFalse(cmdParser.isDesktop());
     }
 
 

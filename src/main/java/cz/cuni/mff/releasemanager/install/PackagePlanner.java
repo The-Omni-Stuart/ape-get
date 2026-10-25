@@ -64,6 +64,10 @@ public final class PackagePlanner {
             Output.error("--assimilate is only supported for APE packages.");
             return null;
         }
+        if (cmdParser.isDesktop() && cmdParser.isNoDesktop()) {
+            Output.error("--desktop and --no-desktop cannot be used together.");
+            return null;
+        }
         if (cmdParser.isDesktop()) {
             if (!kind.isPortable() || command == null) {
                 Output.error("--desktop requires a portable package with a command.");
