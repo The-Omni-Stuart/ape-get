@@ -51,9 +51,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
-
           $nsisDir = 'C:\Program Files (x86)\NSIS'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            choco install nsis -y --no-progress
+            if (Test-Path (Join-Path $nsisDir 'makensis.exe')) { break }
+            Start-Sleep -Seconds 15
+          }
           if (!(Test-Path (Join-Path $nsisDir 'makensis.exe'))) {
             throw "makensis.exe not found in $nsisDir"
           }
