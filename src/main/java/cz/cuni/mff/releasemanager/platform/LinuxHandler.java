@@ -14,6 +14,7 @@ import java.util.UUID;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.Output;
 
 /**
  * Handles installation and uninstallation on Linux using versioned directories
@@ -93,7 +94,7 @@ public final class LinuxHandler extends PlatformHandler {
             replaceSymlink(launcher,
                 appDir.resolve("current").resolve(target.getFileName()));
 
-            System.out.println("Installed to: " + target);
+            Output.info("Installed to: " + target);
             if (!PathEnvironment.isOnPath(launcher.getParent())) {
                 System.err.println("Note: " + launcher.getParent()
                     + " is not on PATH; run " + launcher + " directly.");

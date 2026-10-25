@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
+import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
@@ -107,7 +108,7 @@ public final class WindowsHandler extends PlatformHandler {
         Files.move(assetPath, target, StandardCopyOption.REPLACE_EXISTING);
         FileUtils.removeTempDir(assetPath);
 
-        System.out.println("Installer cached at: " + target);
+        Output.info("Installer cached at: " + target);
         return target;
     }
 
@@ -141,7 +142,7 @@ public final class WindowsHandler extends PlatformHandler {
 
         Files.deleteIfExists(assetPath);
         FileUtils.removeTempDir(assetPath);
-        System.out.println("Installed to: " + targetDir.toString());
+        Output.info("Installed to: " + targetDir.toString());
 
         Path uninstallPath = findUninstallPath(targetDir);
         return uninstallPath;

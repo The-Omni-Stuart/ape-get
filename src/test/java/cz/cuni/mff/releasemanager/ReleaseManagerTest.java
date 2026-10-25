@@ -1,13 +1,20 @@
 package cz.cuni.mff.releasemanager;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.IntSupplier;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +23,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -30,6 +38,7 @@ import static org.mockito.Mockito.when;
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.cmd.Prompt;
+import cz.cuni.mff.releasemanager.platform.InstallRequest;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
@@ -479,6 +488,106 @@ class ReleaseManagerTest {
         assertEquals(versioned.toString(), captor.getValue().install().path());
         assertEquals(Path.of("/home/user/.local/bin/example").toString(),
             captor.getValue().install().uninstall().path());
+    }
+
+    @Test
+    void testExecuteInstallQuietSuppressesProgress() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isQuiet()).thenReturn(true);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockPlatformHandler.install(any(InstallRequest.class)))
+            .thenReturn(Path.of("/ProgramFiles/example.exe"));
+
+        String output = captureOut(
+            () -> releaseManager.execute(new String[]{"install", "user/example", "--quiet"}));
+
+        assertEquals("", output.trim());
+    }
+
+    @Test
+    void testExecuteInstallDryRunDoesNotDownloadOrInstall() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isDryRun()).thenReturn(true);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient, never()).downloadAsset(any());
+        verify(mockPlatformHandler, never()).install(any(InstallRequest.class));
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteUpdateDryRunStopsBeforeDownload() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isDryRun()).thenReturn(true);
+
+        Asset oldAsset = new Asset("http://oldurl", "example.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(manifest(
+                "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockGithubClient, never()).downloadAsset(any());
+        verify(mockBackupManager, never()).createAndPrune(any(), anyInt());
+        verify(mockPlatformHandler, never()).install(any(InstallRequest.class));
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteUninstallDryRunKeepsInstallAndState() throws Exception {
+        Command cmd = Command.UNINSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isDryRun()).thenReturn(true);
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(manifest(
+                "user/example", "http://url", "example.exe",
+                "/ProgramFiles/uninstall.exe")));
+
+        assertEquals(0, releaseManager.execute(new String[]{"uninstall", "user/example"}));
+
+        verify(mockPlatformHandler, never()).uninstall(any());
+        verify(mockStateStore, never()).removeManifest(any(RepoRef.class));
+    }
+
+    @Test
+    void testExecuteRollbackDryRunStopsBeforeRestore() throws Exception {
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isDryRun()).thenReturn(true);
+        AppManifest current = manifest(
+            "user/example", "http://new", "example.exe", "/tmp/live");
+        AppManifest.Backup backup = backup("0.9.0");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(current));
+        when(mockBackupManager.latest(current)).thenReturn(Optional.of(backup));
+
+        assertEquals(0, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockBackupManager, never()).restore(any(), any());
+        verify(mockStateStore, never()).saveManifest(any());
     }
 
     @Test
@@ -1362,6 +1471,110 @@ class ReleaseManagerTest {
 
         verify(mockStateStore, never()).saveManifest(any());
         verify(mockStateStore).rebuildIndex();
+    }
+
+    private static String captureOut(IntSupplier action) {
+        PrintStream original = System.out;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(bytes, true, StandardCharsets.UTF_8));
+        try {
+            action.getAsInt();
+        } finally {
+            System.setOut(original);
+        }
+        return bytes.toString(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void testExecuteListJson() throws Exception {
+        Command cmd = Command.LIST;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+        when(mockStateStore.scanManifests()).thenReturn(List.of(
+            manifest("user/example", "http://url", "example.exe", "/tmp/live")));
+
+        String output = captureOut(() -> releaseManager.execute(new String[]{"list", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertEquals(1, root.get("apps").size());
+        JsonNode app = root.get("apps").get(0);
+        assertEquals("github", app.get("provider").asText());
+        assertEquals("user/example", app.get("repo").asText());
+        assertEquals("1.0.0", app.get("version").asText());
+        assertEquals("installed", app.get("install_state").asText());
+    }
+
+    @Test
+    void testExecuteInfoJson() throws Exception {
+        Command cmd = Command.INFO;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(manifest(
+                "user/example", "http://url", "example.exe", "/tmp/live")));
+
+        String output = captureOut(
+            () -> releaseManager.execute(new String[]{"info", "user/example", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertEquals("user/example", root.get("repo").asText());
+        assertEquals("http://url", root.get("asset").get("url").asText());
+        assertEquals("installed", root.get("install_state").asText());
+        assertTrue(root.get("backups").isArray());
+    }
+
+    @Test
+    void testExecuteSearchJson() throws Exception {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getProvider()).thenReturn("github");
+        when(mockCmdParser.isJson()).thenReturn(true);
+        when(mockGithubClient.searchRepoByName("example")).thenReturn(Optional.of(
+            new SearchResult(List.of(new Repo("user/example", "Example repo")))));
+
+        String output = captureOut(
+            () -> releaseManager.execute(new String[]{"search", "example", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertEquals(1, root.get("results").size());
+        assertEquals("github", root.get("results").get(0).get("provider").asText());
+        assertEquals("user/example", root.get("results").get(0).get("repo").asText());
+        assertEquals("Example repo", root.get("results").get(0).get("description").asText());
+    }
+
+    @Test
+    void testExecuteDoctorJson() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+
+        String output = captureOut(() -> releaseManager.execute(new String[]{"doctor", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertTrue(root.get("healthy").asBoolean());
+        assertEquals(0, root.get("manifests").asInt());
+        assertTrue(root.get("issues").isArray());
+    }
+
+    @Test
+    void testExecuteProvidersListJson() throws Exception {
+        Command cmd = Command.PROVIDERS;
+        cmd.arguments = List.of("list");
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+
+        String output = captureOut(
+            () -> releaseManager.execute(new String[]{"providers", "list", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertEquals(3, root.get("providers").size());
+        assertEquals("codeberg", root.get("providers").get(0).get("name").asText());
+        assertTrue(root.get("providers").get(0).get("built_in").asBoolean());
     }
 
     @Test

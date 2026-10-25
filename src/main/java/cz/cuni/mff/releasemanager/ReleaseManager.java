@@ -17,6 +17,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.cmd.ConsolePrompt;
@@ -45,6 +47,8 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.types.SearchResult;
+import cz.cuni.mff.releasemanager.utils.Json;
+import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;
 import cz.cuni.mff.releasemanager.verify.SignatureStatus;
@@ -115,6 +119,7 @@ public class ReleaseManager {
      */
     public int execute(String[] args) {
         Command command = cmdParser.parse(args);
+        Output.configure(cmdParser.isQuiet(), cmdParser.isJson());
 
         boolean stateful = command == Command.INSTALL
             || command == Command.UPDATE
@@ -199,7 +204,7 @@ public class ReleaseManager {
             if (config.created()) {
                 printSetup();
             } else {
-                System.out.println("Rebuilt index at " + stateStore.paths().indexFile());
+                Output.info("Rebuilt index at " + stateStore.paths().indexFile());
             }
             return true;
         }
@@ -218,14 +223,14 @@ public class ReleaseManager {
                         + issue.entry().repo() + ": " + e.getMessage());
                     return false;
                 }
-                System.out.println("Restored manifest for " + issue.entry().repo() + ".");
+                Output.info("Restored manifest for " + issue.entry().repo() + ".");
                 changed = true;
             } else {
                 if (!confirm(dropMessage(issue.entry()))) {
                     System.err.println("Stale index entry kept for " + issue.entry().repo() + ".");
                     return false;
                 }
-                System.out.println("Removed stale index entry for " + issue.entry().repo() + ".");
+                Output.info("Removed stale index entry for " + issue.entry().repo() + ".");
                 changed = true;
             }
         }
@@ -253,9 +258,17 @@ public class ReleaseManager {
     }
 
     private void printSetup() {
-        System.out.println("First-time setup complete.");
-        System.out.println("  config: " + stateStore.paths().configFile());
-        System.out.println("  index:  " + stateStore.paths().indexFile());
+        Output.info("First-time setup complete.");
+        Output.info("  config: " + stateStore.paths().configFile());
+        Output.info("  index:  " + stateStore.paths().indexFile());
+    }
+
+    private void printJson(Object value) {
+        try {
+            Output.data(Json.write(value));
+        } catch (JsonProcessingException e) {
+            System.err.println("Failed to render JSON: " + e.getMessage());
+        }
     }
 
     private static Set<String> repos(GrmIndex index) {
@@ -375,7 +388,7 @@ public class ReleaseManager {
                 System.err.println("No providers are configured.");
                 return false;
             }
-            System.out.println("Searching " + adapters.size() + " provider(s)...");
+            Output.info("Searching " + adapters.size() + " provider(s)...");
             return printSearchResults(searchService.searchAll(
                 adapters, command.argument, Duration.ofSeconds(10)));
         }
@@ -403,6 +416,14 @@ public class ReleaseManager {
             }
         }
         List<Repo> items = result.items() == null ? List.of() : result.items();
+        if (cmdParser.isJson()) {
+            List<Map<String, Object>> results = new ArrayList<>();
+            for (Repo repo : items) {
+                results.add(searchEntry(providerName, repo));
+            }
+            printJson(Map.of("results", results));
+            return true;
+        }
         if (items.isEmpty()) {
             System.out.println("No results found.");
             return true;
@@ -412,7 +433,7 @@ public class ReleaseManager {
         for (Repo repo : items) {
             System.out.println(prefix + repo.fullName() + ": " + repo.description());
         }
-        System.out.println("To install a release, use the 'install' command followed by the repository name.");
+        Output.info("To install a release, use the 'install' command followed by the repository name.");
         return true;
     }
 
@@ -428,32 +449,56 @@ public class ReleaseManager {
     }
 
     private boolean printSearchResults(List<SearchService.ProviderResult> results) {
-        int hits = 0;
+        List<Map<String, Object>> hits = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
         int succeeded = 0;
         for (SearchService.ProviderResult result : results) {
             if (result.error() != null) {
-                System.err.println("Warning: " + result.provider() + ": " + result.error());
+                errors.add(Map.of(
+                    "provider", result.provider(),
+                    "error", result.error()));
                 continue;
             }
             succeeded++;
             for (Repo repo : result.repos()) {
-                System.out.println(result.provider() + ":" + repo.fullName() + ": "
-                    + (repo.description() == null ? "" : repo.description()));
-                hits++;
+                hits.add(searchEntry(result.provider(), repo));
             }
+        }
+        if (cmdParser.isJson()) {
+            Map<String, Object> report = new LinkedHashMap<>();
+            report.put("results", hits);
+            report.put("errors", errors);
+            printJson(report);
+            return succeeded > 0;
+        }
+        for (Map<String, Object> error : errors) {
+            System.err.println("Warning: " + error.get("provider") + ": "
+                + error.get("error"));
         }
         if (succeeded == 0) {
             System.err.println("All provider searches failed.");
             return false;
         }
-        if (hits == 0) {
+        if (hits.isEmpty()) {
             System.out.println("No results found.");
             return true;
         }
-        System.out.println("Found " + hits + " repositories across "
+        for (Map<String, Object> hit : hits) {
+            System.out.println(hit.get("provider") + ":" + hit.get("repo") + ": "
+                + (hit.get("description") == null ? "" : hit.get("description")));
+        }
+        System.out.println("Found " + hits.size() + " repositories across "
             + succeeded + " provider(s).");
-        System.out.println("Use provider:owner/repo to install one of them.");
+        Output.info("Use provider:owner/repo to install one of them.");
         return true;
+    }
+
+    private static Map<String, Object> searchEntry(String provider, Repo repo) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("provider", provider);
+        entry.put("repo", repo.fullName());
+        entry.put("description", repo.description());
+        return entry;
     }
 
     /**
@@ -487,6 +532,10 @@ public class ReleaseManager {
         if (asset == null) {
             return false;
         }
+        if (cmdParser.isDryRun()) {
+            printInstallPlan(ref, release, asset);
+            return true;
+        }
         Path downloadedAsset = download(provider, asset);
         if (downloadedAsset == null) {
             return false;
@@ -515,7 +564,7 @@ public class ReleaseManager {
         if (!recordManifest(manifest)) {
             return false;
         }
-        System.out.println("Installation successful.");
+        Output.info("Installation successful.");
         return true;
     }
     private Path download(ReleaseProvider provider, Asset asset) {
@@ -590,7 +639,7 @@ public class ReleaseManager {
             return false;
         }
         if (signature.status() == SignatureStatus.VERIFIED) {
-            System.out.println(signature.message());
+            Output.info(signature.message());
         } else if (!pinned) {
             System.err.println(
                 signature.message() + " Continuing without a verified signature.");
@@ -766,8 +815,31 @@ public class ReleaseManager {
         return "unknown";
     }
 
-    private Asset selectAsset(List<Asset> assets) {
-        String requested = cmdParser.getAsset();
+    private void printInstallPlan(RepoRef ref, ReleaseAssets release, Asset asset) {
+        System.out.println("Dry run: would install " + ref.display() + " "
+            + versionLabel(release) + ".");
+        System.out.println("  Asset:  " + asset.name());
+        System.out.println("  Source: " + asset.url());
+        Path launcher = platformHandler.launcherPath(ref.path());
+        if (launcher != null) {
+            System.out.println("  Launcher: " + launcher);
+        }
+        System.out.println("No changes were made.");
+    }
+
+    private void printUpdatePlan(RepoRef ref, ReleaseAssets release, Asset asset) {
+        System.out.println("Dry run: would update " + ref.display() + " to "
+            + versionLabel(release) + ".");
+        System.out.println("  Asset:  " + asset.name());
+        System.out.println("  Source: " + asset.url());
+        System.out.println("No changes were made.");
+    }
+
+    private static String versionLabel(ReleaseAssets release) {
+        return release.version() == null ? "(unknown version)" : release.version();
+    }
+
+    private Asset selectAsset(List<Asset> assets) {        String requested = cmdParser.getAsset();
         if (requested == null || requested.isBlank()) {
             return getSingleAsset(assets);
         }
@@ -883,6 +955,17 @@ public class ReleaseManager {
             return false;
         }
 
+        if (cmdParser.isDryRun()) {
+            String uninstallPath = manifest.install().uninstall() != null
+                && manifest.install().uninstall().path() != null
+                ? manifest.install().uninstall().path()
+                : manifest.install().path();
+            System.out.println("Dry run: would uninstall " + ref.display() + ".");
+            System.out.println("  Path: " + uninstallPath);
+            System.out.println("No changes were made.");
+            return true;
+        }
+
         if (!uninstallManifest(manifest)) {
             return false;
         }
@@ -893,7 +976,7 @@ public class ReleaseManager {
                 + ", but failed to rebuild the index: " + e.getMessage());
             return false;
         }
-        System.out.println("Successfully uninstalled.");
+        Output.info("Successfully uninstalled.");
         return true;
     }
 
@@ -974,19 +1057,38 @@ public class ReleaseManager {
         }
         List<ProviderConfig> configs = new ArrayList<>(providers.all());
         configs.sort(java.util.Comparator.comparing(ProviderConfig::name));
+        List<Map<String, Object>> entries = new ArrayList<>();
         for (ProviderConfig config : configs) {
             long count = manifests.stream()
                 .filter(manifest -> config.name().equals(manifest.provider()))
                 .count();
-            String builtIn = ProviderRegistry.builtIns().containsKey(config.name())
-                ? " [built-in]" : "";
-            String token = "";
+            boolean builtIn = ProviderRegistry.builtIns().containsKey(config.name());
+            String tokenState = null;
             if (config.tokenEnv() != null && !config.tokenEnv().isBlank()) {
-                token = " token-env=" + config.tokenEnv()
-                    + (System.getenv(config.tokenEnv()) == null ? " (missing)" : " (set)");
+                tokenState = System.getenv(config.tokenEnv()) == null ? "missing" : "set";
             }
+            if (cmdParser.isJson()) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("name", config.name());
+                entry.put("type", config.type());
+                entry.put("url", config.url());
+                entry.put("api", config.resolvedApi());
+                entry.put("token_env", config.tokenEnv());
+                entry.put("token_state", tokenState);
+                entry.put("built_in", builtIn);
+                entry.put("packages", count);
+                entries.add(entry);
+                continue;
+            }
+            String token = config.tokenEnv() == null || config.tokenEnv().isBlank()
+                ? ""
+                : " token-env=" + config.tokenEnv() + " (" + tokenState + ")";
             System.out.println(config.name() + " (" + config.type() + ", "
-                + config.resolvedApi() + ") packages=" + count + builtIn + token);
+                + config.resolvedApi() + ") packages=" + count
+                + (builtIn ? " [built-in]" : "") + token);
+        }
+        if (cmdParser.isJson()) {
+            printJson(Map.of("providers", entries));
         }
         return true;
     }
@@ -997,6 +1099,34 @@ public class ReleaseManager {
             System.err.println("Provider '" + name + "' is not configured.");
             return false;
         }
+        List<AppManifest> manifests;
+        try {
+            manifests = stateStore.scanManifests().stream()
+                .filter(manifest -> config.name().equals(manifest.provider()))
+                .toList();
+        } catch (IOException e) {
+            System.err.println("Failed to read installed packages: " + e.getMessage());
+            return false;
+        }
+        boolean builtIn = ProviderRegistry.builtIns().containsKey(config.name());
+        if (cmdParser.isJson()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", config.name());
+            entry.put("type", config.type());
+            entry.put("url", config.url());
+            entry.put("api", config.resolvedApi());
+            entry.put("token_env", config.tokenEnv());
+            entry.put("built_in", builtIn);
+            List<Map<String, Object>> packages = new ArrayList<>();
+            for (AppManifest manifest : manifests) {
+                packages.add(Map.of(
+                    "repo", manifest.repo(),
+                    "version", manifest.version() == null ? "" : manifest.version()));
+            }
+            entry.put("packages", packages);
+            printJson(entry);
+            return true;
+        }
         System.out.println("Name: " + config.name());
         System.out.println("Type: " + config.type());
         System.out.println("URL: " + config.url());
@@ -1004,19 +1134,11 @@ public class ReleaseManager {
         System.out.println("Token env: "
             + (config.tokenEnv() == null || config.tokenEnv().isBlank()
                 ? "none" : config.tokenEnv()));
-        System.out.println("Built-in: " + ProviderRegistry.builtIns().containsKey(config.name()));
-        try {
-            List<AppManifest> manifests = stateStore.scanManifests().stream()
-                .filter(manifest -> config.name().equals(manifest.provider()))
-                .toList();
-            System.out.println("Packages: " + manifests.size());
-            for (AppManifest manifest : manifests) {
-                System.out.println("  " + config.name() + ":" + manifest.repo() + " "
-                    + (manifest.version() == null ? "unknown" : manifest.version()));
-            }
-        } catch (IOException e) {
-            System.err.println("Failed to read installed packages: " + e.getMessage());
-            return false;
+        System.out.println("Built-in: " + builtIn);
+        System.out.println("Packages: " + manifests.size());
+        for (AppManifest manifest : manifests) {
+            System.out.println("  " + config.name() + ":" + manifest.repo() + " "
+                + (manifest.version() == null ? "unknown" : manifest.version()));
         }
         return true;
     }
@@ -1075,7 +1197,7 @@ public class ReleaseManager {
                 if (api == null || api.isBlank()) {
                     api = detected.api();
                 }
-                System.out.println("Detected " + type.id() + " at " + urlBase
+                Output.info("Detected " + type.id() + " at " + urlBase
                     + " (API " + api + ").");
             } else {
                 type = ProviderType.from(typeValue).orElse(null);
@@ -1104,7 +1226,7 @@ public class ReleaseManager {
         if (!saveProviders(updated)) {
             return false;
         }
-        System.out.println("Added provider " + name + " (" + type.id() + ", "
+        Output.info("Added provider " + name + " (" + type.id() + ", "
             + config.resolvedApi() + ").");
         return true;
     }
@@ -1182,7 +1304,7 @@ public class ReleaseManager {
         if (!saveProviders(map)) {
             return false;
         }
-        System.out.println("Updated provider " + name + ".");
+        Output.info("Updated provider " + name + ".");
         return true;
     }
 
@@ -1223,10 +1345,10 @@ public class ReleaseManager {
         }
 
         if (!manifests.isEmpty()) {
-            System.out.println("Provider " + name + " (" + config.type() + ", "
+            Output.info("Provider " + name + " (" + config.type() + ", "
                 + config.resolvedApi() + ") has " + manifests.size() + " installed package(s):");
             for (AppManifest manifest : manifests) {
-                System.out.println("  " + name + ":" + manifest.repo() + " "
+                Output.info("  " + name + ":" + manifest.repo() + " "
                     + (manifest.version() == null ? "unknown" : manifest.version()));
             }
             if (!options.flags().contains("purge") && !options.flags().contains("abandon")) {
@@ -1268,7 +1390,7 @@ public class ReleaseManager {
         if (!saveProviders(map)) {
             return false;
         }
-        System.out.println("Removed provider " + name + ".");
+        Output.info("Removed provider " + name + ".");
         return true;
     }
 
@@ -1351,7 +1473,7 @@ public class ReleaseManager {
         if (!saveProviders(map)) {
             return false;
         }
-        System.out.println("Recovered provider " + name + ".");
+        Output.info("Recovered provider " + name + ".");
         return true;
     }
 
@@ -1471,7 +1593,11 @@ public class ReleaseManager {
             }
         }
         if (previous.asset().url().equals(newAsset.url())) {
-            System.out.println("Already up to date.");
+            Output.info("Already up to date.");
+            return true;
+        }
+        if (cmdParser.isDryRun()) {
+            printUpdatePlan(ref, latest, newAsset);
             return true;
         }
 
@@ -1527,7 +1653,7 @@ public class ReleaseManager {
         if (!recordManifest(updated)) {
             return false;
         }
-        System.out.println("Successfully updated.");
+        Output.info("Successfully updated.");
         return true;
     }
 
@@ -1542,8 +1668,16 @@ public class ReleaseManager {
             System.err.println("Failed to load applications: " + e.getMessage());
             return false;
         }
-        if (manifests.isEmpty()) {
+        if (manifests.isEmpty() && !cmdParser.isJson()) {
             System.out.println("No releases installed.");
+            return true;
+        }
+        if (cmdParser.isJson()) {
+            List<Map<String, Object>> apps = new ArrayList<>();
+            for (AppManifest manifest : manifests) {
+                apps.add(listEntry(manifest));
+            }
+            printJson(Map.of("apps", apps));
             return true;
         }
         for (AppManifest manifest : manifests) {
@@ -1556,8 +1690,76 @@ public class ReleaseManager {
         return true;
     }
 
-    private boolean info(Command command) {
-        RepoRef ref = parseRepo(command.argument);
+    private Map<String, Object> listEntry(AppManifest manifest) {
+        Map<String, Object> app = new LinkedHashMap<>();
+        app.put("provider", manifest.provider());
+        app.put("repo", manifest.repo());
+        app.put("version", manifest.version());
+        app.put("installed_at", manifest.installedAt());
+        app.put("updated_at", manifest.updatedAt());
+        app.put("install_path",
+            manifest.install() == null ? null : manifest.install().path());
+        app.put("install_state", platformHandler.installState(manifest)
+            .name().toLowerCase(Locale.ROOT));
+        app.put("asset", manifest.asset() == null ? null : manifest.asset().name());
+        return app;
+    }
+
+    private Map<String, Object> infoEntry(AppManifest manifest) {
+        Map<String, Object> info = listEntry(manifest);
+        info.put("release_id", manifest.releaseId());
+
+        Map<String, Object> asset = new LinkedHashMap<>();
+        if (manifest.asset() != null) {
+            asset.put("name", manifest.asset().name());
+            asset.put("url", manifest.asset().url());
+            asset.put("sha256", manifest.asset().sha256());
+        }
+        info.put("asset", asset);
+
+        if (manifest.install() != null) {
+            info.put("install_root", manifest.install().root());
+            AppManifest.Uninstall uninstall = manifest.install().uninstall();
+            info.put("launcher", uninstall == null ? null : uninstall.path());
+            info.put("product_code", uninstall == null ? null : uninstall.productCode());
+        }
+
+        Map<String, Object> verification = new LinkedHashMap<>();
+        if (manifest.verification() != null) {
+            verification.put("status", manifest.verification().status());
+            verification.put("method", manifest.verification().method());
+            verification.put("checksum_asset", manifest.verification().checksumAsset());
+            verification.put("expected", manifest.verification().expected());
+            verification.put("actual", manifest.verification().actual());
+        }
+        info.put("verification", verification);
+
+        Map<String, Object> signature = new LinkedHashMap<>();
+        if (manifest.signature() != null) {
+            signature.put("status", manifest.signature().status());
+            signature.put("mechanism", manifest.signature().mechanism());
+            signature.put("signer", manifest.signature().signer());
+            signature.put("identity", manifest.signature().identity());
+            signature.put("notarized", manifest.signature().notarized());
+        }
+        info.put("signature", signature);
+
+        List<Map<String, Object>> backups = new ArrayList<>();
+        if (manifest.backups() != null) {
+            for (AppManifest.Backup backup : manifest.backups()) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("version", backup.version());
+                entry.put("created_at", backup.createdAt());
+                entry.put("path", backup.path());
+                entry.put("artifact", backup.artifact());
+                backups.add(entry);
+            }
+        }
+        info.put("backups", backups);
+        return info;
+    }
+
+    private boolean info(Command command) {        RepoRef ref = parseRepo(command.argument);
         if (ref == null) {
             return false;
         }
@@ -1572,6 +1774,11 @@ public class ReleaseManager {
         } catch (IOException e) {
             System.err.println("Failed to load application state: " + e.getMessage());
             return false;
+        }
+
+        if (cmdParser.isJson()) {
+            printJson(infoEntry(manifest));
+            return true;
         }
 
         System.out.println("Repository: " + manifest.repo());
@@ -1663,6 +1870,14 @@ public class ReleaseManager {
             return false;
         }
         AppManifest.Backup backup = latestBackup.get();
+        if (cmdParser.isDryRun()) {
+            System.out.println("Dry run: would roll back " + ref.display() + " from "
+                + (current.version() == null ? "unknown" : current.version())
+                + " to " + (backup.version() == null ? "unknown" : backup.version()) + ".");
+            System.out.println("  Backup: " + backup.artifact());
+            System.out.println("No changes were made.");
+            return true;
+        }
 
         String message = "Roll back " + ref.display() + " from "
             + (current.version() == null ? "unknown" : current.version())
@@ -1711,7 +1926,7 @@ public class ReleaseManager {
         if (!recordManifest(rolledBack)) {
             return false;
         }
-        System.out.println("Rolled back " + ref.display() + " to "
+        Output.info("Rolled back " + ref.display() + " to "
             + (backup.version() == null ? "unknown" : backup.version()) + ".");
         return true;
     }
@@ -1729,13 +1944,14 @@ public class ReleaseManager {
     }
 
     private boolean doctor() {
-        System.out.println("State root: " + stateStore.paths().root());
-        System.out.println("Config: " + stateStore.paths().configFile());
-        System.out.println("Index: " + stateStore.paths().indexFile());
-
         boolean healthy = true;
-        if (!Files.exists(stateStore.paths().configFile())) {
-            System.out.println("Config: missing");
+        List<String> issues = new ArrayList<>();
+        Path root = stateStore.paths().root();
+        Path configFile = stateStore.paths().configFile();
+        Path indexFile = stateStore.paths().indexFile();
+
+        if (!Files.exists(configFile)) {
+            issues.add("Config: missing at " + configFile);
             healthy = false;
         } else {
             try {
@@ -1743,35 +1959,34 @@ public class ReleaseManager {
                 providers = new ProviderRegistry(toolConfig.providers());
                 applyInstallRoot();
             } catch (IOException e) {
-                System.err.println("Failed to read config: " + e.getMessage());
+                issues.add("Config: failed to read: " + e.getMessage());
                 healthy = false;
             }
         }
 
-        List<AppManifest> manifests;
+        List<AppManifest> manifests = List.of();
         try {
             manifests = stateStore.scanManifests();
         } catch (IOException e) {
-            System.err.println("Failed to read manifests: " + e.getMessage());
-            return false;
+            issues.add("Manifests: failed to read: " + e.getMessage());
+            healthy = false;
         }
-        System.out.println("Manifests: " + manifests.size());
 
         Optional<GrmIndex> index;
         try {
             index = stateStore.loadIndex();
         } catch (IOException e) {
-            System.err.println("Failed to read index: " + e.getMessage());
+            issues.add("Index: failed to read: " + e.getMessage());
             index = Optional.empty();
             healthy = false;
         }
         if (index.isEmpty()) {
-            System.out.println("Index: missing or corrupt (run a stateful command to rebuild)");
+            issues.add("Index: missing or corrupt (run a stateful command to rebuild)");
             healthy = false;
         } else {
             for (StateStore.RecoveryIssue issue
                 : stateStore.findRecoveryIssues(index.get(), manifests)) {
-                System.out.println("Recovery: " + issue.kind() + " " + issue.entry().repo());
+                issues.add("Recovery: " + issue.kind() + " " + issue.entry().repo());
                 healthy = false;
             }
         }
@@ -1779,11 +1994,11 @@ public class ReleaseManager {
         for (AppManifest manifest : manifests) {
             PlatformHandler.InstallState state = platformHandler.installState(manifest);
             if (state == PlatformHandler.InstallState.MISSING) {
-                System.out.println("Missing live app: " + manifest.repo()
+                issues.add("Missing live app: " + manifest.repo()
                     + " -> " + manifest.install().path());
                 healthy = false;
             } else if (state == PlatformHandler.InstallState.UNKNOWN) {
-                System.out.println("Unknown live app state: " + manifest.repo()
+                issues.add("Unknown live app state: " + manifest.repo()
                     + " -> " + manifest.install().path());
                 healthy = false;
             }
@@ -1797,23 +2012,46 @@ public class ReleaseManager {
             }
         }
         for (String provider : missingProviders) {
-            System.out.println("Provider not configured: " + provider
+            issues.add("Provider not configured: " + provider
                 + " (run providers recover " + provider + ")");
             healthy = false;
         }
 
         if (os == Platform.OS.LINUX) {
-            healthy &= scanOrphans();
+            List<String> orphans = orphanCandidates();
+            if (!orphans.isEmpty()) {
+                issues.addAll(orphans);
+                healthy = false;
+            }
+        }
+
+        if (cmdParser.isJson()) {
+            Map<String, Object> report = new LinkedHashMap<>();
+            report.put("healthy", healthy);
+            report.put("state_root", root.toString());
+            report.put("config", configFile.toString());
+            report.put("index", indexFile.toString());
+            report.put("manifests", manifests.size());
+            report.put("issues", issues);
+            printJson(report);
+        } else {
+            System.out.println("State root: " + root);
+            System.out.println("Config: " + configFile);
+            System.out.println("Index: " + indexFile);
+            System.out.println("Manifests: " + manifests.size());
+            for (String issue : issues) {
+                System.out.println(issue);
+            }
         }
         return healthy;
     }
 
-    private boolean scanOrphans() {
+    private List<String> orphanCandidates() {
         Path liveRoot = platformHandler.getInstallRoot();
         if (liveRoot == null || !Files.isDirectory(liveRoot)) {
-            return true;
+            return List.of();
         }
-        boolean healthy = true;
+        List<String> orphans = new ArrayList<>();
         try (var files = Files.list(liveRoot)) {
             List<AppManifest> manifests = stateStore.scanManifests();
             for (Path file : files.filter(Files::isRegularFile).toList()) {
@@ -1824,14 +2062,12 @@ public class ReleaseManager {
                     continue;
                 }
                 String repo = name.replace("__", "/");
-                System.out.println("Orphan candidate: " + file + " (repo: " + repo + ")");
-                healthy = false;
+                orphans.add("Orphan candidate: " + file + " (repo: " + repo + ")");
             }
         } catch (IOException e) {
-            System.err.println("Failed to scan " + liveRoot + ": " + e.getMessage());
-            return false;
+            return List.of("Failed to scan " + liveRoot + ": " + e.getMessage());
         }
-        return healthy;
+        return orphans;
     }
 
     private boolean adopt(Command command) {
@@ -1897,7 +2133,7 @@ public class ReleaseManager {
             if (!recordManifest(manifest)) {
                 return false;
             }
-            System.out.println("Adopted " + ref.display() + " at " + live + ".");
+            Output.info("Adopted " + ref.display() + " at " + live + ".");
             return true;
         } catch (IOException e) {
             System.err.println("Failed to adopt " + ref.display() + ": " + e.getMessage());
