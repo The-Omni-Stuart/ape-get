@@ -173,6 +173,9 @@ public final class WindowsHandler extends PlatformHandler {
             System.err.println("Refusing to uninstall path outside install directories: " + asset);
             return false;
         }
+        if (!Files.exists(asset)) {
+            return true;
+        }
         try {
             String fileName = asset.getFileName().toString();
             if (fileName.endsWith(".msi")) {
@@ -203,6 +206,13 @@ public final class WindowsHandler extends PlatformHandler {
             if (asset != null && !isAllowedUninstallPath(asset)) {
                 System.err.println("Refusing to uninstall path outside install directories: " + asset);
                 return false;
+            }
+            if (productInstallState(productCode) == InstallState.MISSING) {
+                if (asset != null) {
+                    Files.deleteIfExists(asset);
+                    FileUtils.removeTempDir(asset);
+                }
+                return true;
             }
             Process process = process(
                 "msiexec", "/x", productCode, "/qn", "/norestart")
