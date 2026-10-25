@@ -285,6 +285,34 @@ class CmdParserTest {
         assertTrue(cmdParser.isNoCommand());
     }
 
+
+    @Test
+    void testParseUpdateAll() {
+        Command result = cmdParser.parse(new String[] {"update", "--all"});
+
+        assertEquals(Command.UPDATE, result);
+        assertTrue(cmdParser.isAll());
+        assertEquals(null, result.argument);
+    }
+
+    @Test
+    void testParseOutdatedAndChannel() {
+        Command result = cmdParser.parse(new String[] {
+            "list", "--outdated", "--channel", "beta"});
+
+        assertEquals(Command.LIST, result);
+        assertTrue(cmdParser.isOutdated());
+        assertEquals("beta", cmdParser.getChannel());
+    }
+
+    @Test
+    void testUpdateAllRejectsRepository() {
+        Command result = cmdParser.parse(new String[] {
+            "update", "owner/repo", "--all"});
+
+        assertEquals(Command.USAGE, result);
+    }
+
     @Test
     void testParseOutputFlags() {
         Command result = cmdParser.parse(new String[] {

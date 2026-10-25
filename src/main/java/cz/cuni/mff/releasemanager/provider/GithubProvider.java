@@ -29,6 +29,14 @@ public final class GithubProvider implements ReleaseProvider {
     }
 
     @Override
+    public ReleaseAssets latest(String path, UpdateChannel channel)
+        throws IOException, InterruptedException {
+        return channel == UpdateChannel.BETA
+            ? githubClient.getLatestRelease(path, channel)
+            : githubClient.getLatestRelease(path);
+    }
+
+    @Override
     public ReleaseAssets release(String path, String tag) throws IOException, InterruptedException {
         return githubClient.getRelease(path, tag);
     }

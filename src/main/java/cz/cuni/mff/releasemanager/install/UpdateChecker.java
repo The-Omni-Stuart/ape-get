@@ -1,0 +1,57 @@
+package cz.cuni.mff.releasemanager.install;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import cz.cuni.mff.releasemanager.json.JsonViews.OutdatedEntry;
+import cz.cuni.mff.releasemanager.provider.ProviderResolver;
+import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
+import cz.cuni.mff.releasemanager.provider.UpdateChannel;
+import cz.cuni.mff.releasemanager.state.AppManifest;
+import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.types.RepoRef;
+
+// compares installed manifests with the latest release on a channel
+public final class UpdateChecker {
+    private final ProviderResolver resolveProvider;
+    private final ReleaseFetcher fetcher;
+
+    public UpdateChecker(ProviderResolver resolveProvider, ReleaseFetcher fetcher) {
+        this.resolveProvider = resolveProvider;
+        this.fetcher = fetcher;
+    }
+
+    public Report check(List<AppManifest> manifests, UpdateChannel channel) {
+        List<OutdatedEntry> outdated = new ArrayList<>();
+        boolean failed = false;
+        for (AppManifest manifest : manifests) {
+            RepoRef ref = new RepoRef(manifest.provider(), manifest.repo());
+            ReleaseProvider provider = resolveProvider.resolve(ref.provider());
+            if (provider == null) {
+                failed = true;
+                continue;
+            }
+            ReleaseAssets latest = fetcher.fetch(
+                provider, ref.path(), null, channel);
+            if (latest == null || latest.installable().isEmpty()) {
+                failed = true;
+                continue;
+            }
+            Asset candidate = latest.installable().stream()
+                .filter(asset -> manifest.asset() != null
+                    && asset.name().equals(manifest.asset().name()))
+                .findFirst()
+                .orElse(latest.installable().get(0));
+            if (manifest.asset() == null
+                || !candidate.url().equals(manifest.asset().url())) {
+                outdated.add(new OutdatedEntry(
+                    ref.provider(), ref.path(), manifest.version(),
+                    latest.version(), candidate.name()));
+            }
+        }
+        return new Report(outdated, failed);
+    }
+
+    public record Report(List<OutdatedEntry> outdated, boolean failed) {}
+}

@@ -22,6 +22,19 @@ public interface ReleaseProvider {
     ReleaseAssets latest(String path) throws IOException, InterruptedException;
 
     /**
+     * Reads the latest release on the requested channel.
+     * @param path repository path on this provider
+     * @param channel stable or beta
+     * @return latest release and its assets
+     * @throws IOException if the provider request fails
+     * @throws InterruptedException if the request is interrupted
+     */
+    default ReleaseAssets latest(String path, UpdateChannel channel)
+        throws IOException, InterruptedException {
+        return latest(path);
+    }
+
+    /**
      * Reads a specific release by tag.
      * @param path repository path on the provider
      * @param tag release tag

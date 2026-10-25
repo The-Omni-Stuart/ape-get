@@ -7,7 +7,8 @@ A multi-platform command-line tool for GitHub, Gitea/Forgejo/Codeberg, and GitLa
 - **Search** repositories across every configured provider
 - **Install** the latest release, a specific tag, or a specific asset
 - **Verify** SHA-256 checksums and publisher signatures before installing
-- **Update** installed releases if newer versions are available
+- **Update** one release or every installed release (`update --all`)
+- **Check** for newer releases without changing anything (`list --outdated`)
 - **Roll back** to the previous version from a local backup
 - **Uninstall** installed releases
 - **List** and **inspect** installed releases
@@ -80,6 +81,8 @@ java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar list
 | `install --version <tag> <repo>` | Install a specific release |
 | `install --asset <name\|index> <repo>` | Choose an asset non-interactively |
 | `update <repo>` | Update an installed release |
+| `update --all` | Update every installed release |
+| `list --outdated` | List installed releases with newer releases available |
 | `uninstall <repo>` | Uninstall a previously installed release |
 | `rollback <repo>` | Restore the latest local backup |
 | `list` | List installed releases |
@@ -110,6 +113,8 @@ install --dry-run --json github:owner/repo
 install --name ff github:fastfetch-cli/fastfetch
 install --kind portable-exe github:owner/tool
 install --desktop --terminal github:owner/tool
+update --all
+list --outdated
 ```
 
 Add a custom Gitea, Forgejo, or GitLab instance:
@@ -121,15 +126,21 @@ providers add work https://git.example.com --type auto
 Provider tokens are read from the environment variable named by `token_env`; secrets are never
 stored in the config.
 
-Common flags: `--asset`, `--version`, `--kind`, `--name`, `--no-command`, `--dry-run`,
-`--desktop`, `--terminal`, `--icon`, `--assimilate`, `--json`, `--quiet`, `--yes`.
+Common flags: `--asset`, `--version`, `--kind`, `--name`, `--no-command`, `--all`,
+`--outdated`, `--channel`, `--dry-run`, `--desktop`, `--terminal`, `--icon`,
+`--assimilate`, `--json`, `--quiet`, `--yes`.
 `--json` writes one document to stdout; progress, warnings, and prompts go to stderr.
 `--yes` is required for non-interactive use; without it, confirmation prompts refuse when no TTY is
 available.
 
 Portable packages create a command in the user bin directory by default. `--name` changes it and
 `--no-command` suppresses it. Plain `.exe` assets are treated as NSIS installers; use
-`--kind portable-exe` for a portable Windows executable. `--desktop` creates a Linux application-menu entry; `--terminal`
+`--kind portable-exe` for a portable Windows executable.
+
+`--channel beta` follows prereleases where the provider exposes them. Automatic updates are
+configured in `grm_config.json` with `auto_update` (`off`, `check`, or `apply`),
+`update_channel` (`stable` or `beta`), and `update_interval_hours`. A `list` command performs a
+due check or update and records it in `grm_updates.log`. `--desktop` creates a Linux application-menu entry; `--terminal`
 marks it as terminal-based and `--icon` points at an icon file. `--assimilate` converts an APE to a
 native binary using the cosmocc `assimilate` tool; it is never used unless requested.
 

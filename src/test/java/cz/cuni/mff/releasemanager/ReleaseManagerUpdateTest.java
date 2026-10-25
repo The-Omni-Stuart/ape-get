@@ -271,6 +271,48 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
         verify(mockStateStore, never()).saveManifest(any());
     }
 
+
+    @Test
+    void testExecuteUpdateAllJsonProducesOneBatch() throws Exception {
+        Command cmd = Command.UPDATE;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isAll()).thenReturn(true);
+        when(mockCmdParser.isJson()).thenReturn(true);
+
+        AppManifest one = manifest(
+            "user/one", "http://one/old", "example.exe", "/ProgramFiles/one-uninst.exe");
+        AppManifest two = manifest(
+            "user/two", "http://two/old", "example.exe", "/ProgramFiles/two-uninst.exe");
+        when(mockStateStore.scanManifests()).thenReturn(List.of(one, two));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/one")))
+            .thenReturn(Optional.of(one));
+        when(mockStateStore.findManifest(new RepoRef("github", "user/two")))
+            .thenReturn(Optional.of(two));
+
+        Asset oneAsset = new Asset("http://one/new", "example.exe");
+        Asset twoAsset = new Asset("http://two/new", "example.exe");
+        when(mockGithubClient.getLatestRelease("user/one"))
+            .thenReturn(new ReleaseAssets("2.0.0", 2L, List.of(oneAsset), List.of(oneAsset)));
+        when(mockGithubClient.getLatestRelease("user/two"))
+            .thenReturn(new ReleaseAssets("2.0.0", 2L, List.of(twoAsset), List.of(twoAsset)));
+        when(mockGithubClient.downloadAsset(oneAsset))
+            .thenReturn(Path.of("/tmp/one.exe"));
+        when(mockGithubClient.downloadAsset(twoAsset))
+            .thenReturn(Path.of("/tmp/two.exe"));
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified("example.exe", "checksum"));
+        when(mockPlatformHandler.install(any(InstallRequest.class)))
+            .thenReturn(Path.of("/ProgramFiles/example.exe"));
+
+        String output = captureOut(
+            () -> releaseManager.execute(new String[]{"update", "--all", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertEquals(2, root.get("updates").size());
+        assertEquals("updated", root.get("updates").get(0).get("status").asText());
+        assertEquals("updated", root.get("updates").get(1).get("status").asText());
+    }
+
     @Test
     void testExecuteUpdateAlreadyUpToDate() throws Exception {
         Command cmd = Command.UPDATE;

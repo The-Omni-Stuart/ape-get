@@ -167,6 +167,36 @@ class GithubClientTest {
         assertEquals("http://example.com/file2.msi", assets.get(1).url());
     }
 
+
+    @Test
+    void betaChannelIncludesPrereleases() throws Exception {
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("""
+            [
+              { "id": 2, "tag_name": "v2.0.0-beta", "draft": false,
+                "prerelease": true, "assets": [
+                  { "name": "app.bin", "browser_download_url": "https://example.invalid/beta" }
+                ] },
+              { "id": 1, "tag_name": "v1.0.0", "draft": false,
+                "prerelease": false, "assets": [
+                  { "name": "app.bin", "browser_download_url": "https://example.invalid/stable" }
+                ] }
+            ]
+            """);
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+            .thenReturn(mockResponse);
+        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".bin"});
+
+        ReleaseAssets release = githubClient.getLatestRelease(
+            "owner/repo", UpdateChannel.BETA);
+
+        assertEquals("v2.0.0-beta", release.version());
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), eq(HttpResponse.BodyHandlers.ofString()));
+        assertEquals("/repos/owner/repo/releases", captor.getValue().uri().getPath());
+    }
+
     @Test
     void getLatestRelease_returnsEmptyForInvalidRepoName() {
         List<Asset> assets = githubClient.getLatestRelease("invalidRepoName").installable();

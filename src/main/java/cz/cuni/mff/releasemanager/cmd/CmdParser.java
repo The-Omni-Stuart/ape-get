@@ -31,6 +31,9 @@ public class CmdParser {
     private boolean desktop;
     private boolean terminal;
     private String icon;
+    private boolean all;
+    private boolean outdated;
+    private String channel;
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -56,6 +59,9 @@ public class CmdParser {
         desktop = false;
         terminal = false;
         icon = null;
+        all = false;
+        outdated = false;
+        channel = null;
         List<String> filtered = new ArrayList<>(args.length);
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -73,6 +79,15 @@ public class CmdParser {
                 json = true;
             } else if ("--quiet".equals(arg)) {
                 quiet = true;
+            } else if ("--all".equals(arg)) {
+                all = true;
+            } else if ("--outdated".equals(arg)) {
+                outdated = true;
+            } else if ("--channel".equals(arg)) {
+                if (i + 1 >= args.length) {
+                    return usage("Missing value for --channel");
+                }
+                channel = args[++i];
             } else if ("--provider".equals(arg)) {
                 if (i + 1 >= args.length) {
                     return usage("Missing value for --provider");
@@ -139,6 +154,13 @@ public class CmdParser {
                 return usage(null);
             }
             command.argument = query;
+            return command;
+        }
+        if (command == Command.UPDATE && all) {
+            if (args.length != 1) {
+                return usage("--all does not take a repository");
+            }
+            command.argument = null;
             return command;
         }
         if (command.requiresArgument()) {
@@ -276,6 +298,27 @@ public class CmdParser {
      */
     public boolean isQuiet() {
         return quiet;
+    }
+
+    /**
+     * @return true when --all was supplied
+     */
+    public boolean isAll() {
+        return all;
+    }
+
+    /**
+     * @return true when --outdated was supplied
+     */
+    public boolean isOutdated() {
+        return outdated;
+    }
+
+    /**
+     * @return release channel from --channel, or null
+     */
+    public String getChannel() {
+        return channel;
     }
 
     /**

@@ -48,6 +48,10 @@ public record AppPaths(Path root) {
         return root.resolve("grm_lock");
     }
 
+    public Path updateLogFile() {
+        return root.resolve("grm_updates.log");
+    }
+
     public Path applicationsDir() {
         return root.resolve("applications");
     }

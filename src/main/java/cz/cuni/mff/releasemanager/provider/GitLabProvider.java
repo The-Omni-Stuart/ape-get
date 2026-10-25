@@ -46,6 +46,12 @@ public final class GitLabProvider implements ReleaseProvider {
 
     @Override
     public ReleaseAssets latest(String path) throws IOException, InterruptedException {
+        return latest(path, UpdateChannel.STABLE);
+    }
+
+    @Override
+    public ReleaseAssets latest(String path, UpdateChannel channel)
+        throws IOException, InterruptedException {
         String project = URLEncoder.encode(path, StandardCharsets.UTF_8);
         String url = config.resolvedApi() + "/projects/" + project + "/releases?per_page=20";
         List<GitLabRelease> releases = MAPPER.readValue(

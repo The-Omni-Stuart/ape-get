@@ -10,5 +10,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record Release(
     @JsonProperty("tag_name") String tagName,
     @JsonProperty("id") Long id,
-    List<Asset> assets
+    List<Asset> assets,
+    boolean draft,
+    boolean prerelease
 ) {}

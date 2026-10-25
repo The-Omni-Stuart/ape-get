@@ -15,10 +15,12 @@ import cz.cuni.mff.releasemanager.commands.AdoptCommand;
 import cz.cuni.mff.releasemanager.commands.Doctor;
 import cz.cuni.mff.releasemanager.commands.InfoCommand;
 import cz.cuni.mff.releasemanager.commands.ListCommand;
+import cz.cuni.mff.releasemanager.commands.OutdatedCommand;
 import cz.cuni.mff.releasemanager.commands.ProvidersCommand;
 import cz.cuni.mff.releasemanager.commands.RollbackService;
 import cz.cuni.mff.releasemanager.commands.UninstallCommand;
 import cz.cuni.mff.releasemanager.install.AssetChooser;
+import cz.cuni.mff.releasemanager.install.AutoUpdater;
 import cz.cuni.mff.releasemanager.install.BackupService;
 import cz.cuni.mff.releasemanager.install.InstallComponents;
 import cz.cuni.mff.releasemanager.install.InstallReporter;
@@ -30,6 +32,7 @@ import cz.cuni.mff.releasemanager.install.ReleaseDownloader;
 import cz.cuni.mff.releasemanager.install.ReleaseFetcher;
 import cz.cuni.mff.releasemanager.install.TrustGateFactory;
 import cz.cuni.mff.releasemanager.install.UninstallService;
+import cz.cuni.mff.releasemanager.install.UpdateChecker;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
@@ -44,6 +47,7 @@ import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.ManifestStore;
 import cz.cuni.mff.releasemanager.state.StateLock;
 import cz.cuni.mff.releasemanager.state.StateStore;
+import cz.cuni.mff.releasemanager.state.UpdateLog;
 import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureVerifier;
@@ -139,6 +143,13 @@ public class ReleaseManager {
             if (!ensureState()) {
                 return 1;
             }
+            if (command == Command.LIST && !cmdParser.isOutdated()
+                && !cmdParser.isDryRun()) {
+                new AutoUpdater(
+                    toolConfig, stateStore, cmdParser, updateChecker(),
+                    installService(), new UpdateLog(stateStore.paths().updateLogFile()))
+                    .maybeRun();
+            }
             return runCommand(command);
         } catch (IOException e) {
             Output.error("Cannot acquire state lock at "
@@ -154,8 +165,7 @@ public class ReleaseManager {
             case UNINSTALL -> new UninstallCommand(
                 cmdParser, stateStore, uninstallService()).run(command) ? 0 : 1;
             case UPDATE -> update(command) ? 0 : 1;
-            case LIST -> new ListCommand(
-                cmdParser, stateStore, platformHandler).run() ? 0 : 1;
+            case LIST -> list() ? 0 : 1;
             case INFO -> new InfoCommand(
                 cmdParser, stateStore, platformHandler).run(command) ? 0 : 1;
             case PROVIDERS -> providers(command) ? 0 : 1;
@@ -238,12 +248,25 @@ public class ReleaseManager {
                     cmdParser, toolConfig, verifier, signatureVerifier, confirmer),
                 new BackupService(os, toolConfig, backupManager, platformHandler),
                 new PlatformInstaller(platformHandler)),
-            new PackagePlanner(os, cmdParser));
+            new PackagePlanner(os, cmdParser),
+            toolConfig.channel());
     }
 
     // built per call so it follows the live state store and platform
     private UninstallService uninstallService() {
         return new UninstallService(stateStore, platformHandler);
+    }
+
+    private boolean list() {
+        if (cmdParser.isOutdated()) {
+            return new OutdatedCommand(
+                cmdParser, stateStore, updateChecker(), toolConfig.channel()).run();
+        }
+        return new ListCommand(cmdParser, stateStore, platformHandler).run();
+    }
+
+    private UpdateChecker updateChecker() {
+        return new UpdateChecker(this::resolveProvider, new ReleaseFetcher());
     }
 
     private boolean providers(Command command) {
@@ -253,6 +276,9 @@ public class ReleaseManager {
     }
 
     private boolean update(Command command) {
+        if (cmdParser.isAll()) {
+            return installService().updateAll(true);
+        }
         return installService().update(command);
     }
 
@@ -299,7 +325,7 @@ public class ReleaseManager {
         out.println("  search [name] - search for a release by name");
         out.println("  install [name] - install the latest release by name");
         out.println("  uninstall [name] - uninstall the release by name");
-        out.println("  update [name] - update the installed release by name");
+        out.println("  update [name] - update one release, or use --all");
         out.println("  list - list all installed releases");
         out.println("  info [name] - show details for an installed release");
         out.println("  providers - list, add, update, remove, or recover provider instances");
@@ -321,6 +347,9 @@ public class ReleaseManager {
         out.println("  --icon <path> - icon for the desktop entry");
         out.println("  --assimilate - convert an APE with the cosmocc assimilate tool");
         out.println("  --version <tag> - install or update to a specific release");
+        out.println("  --all - update every installed package");
+        out.println("  --outdated - list only packages with newer releases");
+        out.println("  --channel <stable|beta> - choose the release channel");
         out.println("  --dry-run - show what would happen without changing anything");
         out.println("  --json - machine-readable output");
         out.println("  --quiet - suppress progress messages");

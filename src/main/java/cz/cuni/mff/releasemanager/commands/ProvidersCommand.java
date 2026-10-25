@@ -578,15 +578,7 @@ public final class ProvidersCommand {
     }
 
     private boolean saveProviders(Map<String, ProviderConfig> map) {
-        GrmConfig updated = new GrmConfig(
-            toolConfig.kind(),
-            toolConfig.schemaVersion(),
-            toolConfig.strictVerification(),
-            toolConfig.backupCount(),
-            toolConfig.installRoot(),
-            toolConfig.requireSignature(),
-            map,
-            toolConfig.searchAllProviders());
+        GrmConfig updated = toolConfig.withProviders(map);
         try {
             stateStore.saveConfig(updated);
         } catch (IOException e) {

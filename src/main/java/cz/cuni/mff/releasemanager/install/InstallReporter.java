@@ -8,6 +8,8 @@ import cz.cuni.mff.releasemanager.json.JsonViews.InstalledResult;
 import cz.cuni.mff.releasemanager.json.JsonViews.ReleaseResult;
 import cz.cuni.mff.releasemanager.json.JsonViews.UpToDateResult;
 import cz.cuni.mff.releasemanager.json.JsonViews.UpToDateView;
+import cz.cuni.mff.releasemanager.json.JsonViews.UpdateBatch;
+import cz.cuni.mff.releasemanager.json.JsonViews.UpdateEntry;
 import cz.cuni.mff.releasemanager.json.JsonViews.UpdatedResult;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
@@ -78,6 +80,34 @@ public final class InstallReporter {
             Output.json(new UpdatedResult(result(ref, release, plan, installed)));
         } else {
             Output.info("Successfully updated.");
+        }
+    }
+
+    public void batch(java.util.List<UpdateResult> results) {
+        if (cmdParser.isJson()) {
+            Output.json(new UpdateBatch(results.stream()
+                .map(result -> new UpdateEntry(
+                    result.provider(), result.repo(),
+                    result.fromVersion(), result.toVersion(), result.statusId()))
+                .toList()));
+            return;
+        }
+        if (results.isEmpty()) {
+            Output.data("No releases installed.");
+            return;
+        }
+        for (UpdateResult result : results) {
+            String name = result.provider() + ":" + result.repo();
+            switch (result.status()) {
+                case UPDATED -> Output.data(
+                    name + " " + result.fromVersion() + " -> " + result.toVersion());
+                case UP_TO_DATE -> Output.data(
+                    name + " " + result.fromVersion() + " (up to date)");
+                case PLANNED -> Output.data(
+                    name + " " + result.fromVersion() + " -> " + result.toVersion()
+                        + " (dry run)");
+                case FAILED -> Output.error(name + " update failed.");
+            }
         }
     }
 

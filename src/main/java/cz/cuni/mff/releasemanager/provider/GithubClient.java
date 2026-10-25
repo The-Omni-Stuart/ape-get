@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import cz.cuni.mff.releasemanager.platform.AssetSelector;
@@ -97,6 +98,10 @@ public class GithubClient {
 
     // latest release with all assets and the installable subset
     public ReleaseAssets getLatestRelease(String repoFullName) {
+        return getLatestRelease(repoFullName, UpdateChannel.STABLE);
+    }
+
+    public ReleaseAssets getLatestRelease(String repoFullName, UpdateChannel channel) {
         String[] parts = repoFullName.split("/");
         if (parts.length != 2) {
             return new ReleaseAssets(List.of(), List.of());
@@ -104,6 +109,10 @@ public class GithubClient {
         String owner = parts[0];
         String repo = parts[1];
 
+        if (UpdateChannel.from(channel == null ? null : channel.id()) == UpdateChannel.BETA) {
+            String url = apiBase + "/repos/" + owner + "/" + repo + "/releases?per_page=20";
+            return fetchReleaseList(url, "No releases found for this repository.");
+        }
         String url = apiBase + "/repos/" + owner + "/" + repo + "/releases/latest";
         return fetchRelease(url, "No releases found for this repository.");
     }
@@ -132,12 +141,7 @@ public class GithubClient {
             }
             ObjectMapper mapper = new ObjectMapper();
             Release release = mapper.readValue(jsonResponse.get(), Release.class);
-            List<Asset> all = release.assets() == null ? List.of() : release.assets();
-            List<Asset> installable = filterInstallable(all);
-            if (installable.isEmpty()) {
-                Output.error("No suitable asset found for this repository.");
-            }
-            return new ReleaseAssets(release.tagName(), release.id(), all, installable);
+            return toReleaseAssets(release);
         } catch (IOException | InterruptedException ex) {
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -145,6 +149,43 @@ public class GithubClient {
             Output.error(ex.getMessage());
             return new ReleaseAssets(List.of(), List.of());
         }
+    }
+
+    private ReleaseAssets fetchReleaseList(String url, String emptyMessage) {
+        try {
+            var jsonResponse = request(URI.create(url));
+            if (jsonResponse.isEmpty()) {
+                Output.error(emptyMessage);
+                return new ReleaseAssets(List.of(), List.of());
+            }
+            ObjectMapper mapper = new ObjectMapper();
+            List<Release> releases = mapper.readValue(
+                jsonResponse.get(), new TypeReference<List<Release>>() {});
+            Release release = releases.stream()
+                .filter(candidate -> !candidate.draft())
+                .findFirst()
+                .orElse(null);
+            if (release == null) {
+                Output.error(emptyMessage);
+                return new ReleaseAssets(List.of(), List.of());
+            }
+            return toReleaseAssets(release);
+        } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            Output.error(ex.getMessage());
+            return new ReleaseAssets(List.of(), List.of());
+        }
+    }
+
+    private ReleaseAssets toReleaseAssets(Release release) {
+        List<Asset> all = release.assets() == null ? List.of() : release.assets();
+        List<Asset> installable = filterInstallable(all);
+        if (installable.isEmpty()) {
+            Output.error("No suitable asset found for this repository.");
+        }
+        return new ReleaseAssets(release.tagName(), release.id(), all, installable);
     }
 
     // downloads to a temp file; the caller owns the file until it is installed

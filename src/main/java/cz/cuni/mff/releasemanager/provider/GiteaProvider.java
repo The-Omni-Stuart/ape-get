@@ -48,13 +48,22 @@ public final class GiteaProvider implements ReleaseProvider {
 
     @Override
     public ReleaseAssets latest(String path) throws IOException, InterruptedException {
+        return latest(path, UpdateChannel.STABLE);
+    }
+
+    @Override
+    public ReleaseAssets latest(String path, UpdateChannel channel)
+        throws IOException, InterruptedException {
         String[] parts = requireRepo(path);
         String url = config.resolvedApi() + "/repos/" + parts[0] + "/" + parts[1]
             + "/releases?limit=20";
         List<GiteaRelease> releases = MAPPER.readValue(
             http.get(url, path), new TypeReference<List<GiteaRelease>>() {});
+        boolean beta = UpdateChannel.from(channel == null ? null : channel.id())
+            == UpdateChannel.BETA;
         GiteaRelease release = releases.stream()
-            .filter(candidate -> !candidate.draft() && !candidate.prerelease())
+            .filter(candidate -> !candidate.draft())
+            .filter(candidate -> beta || !candidate.prerelease())
             .findFirst()
             .orElseThrow(() -> new IOException("No published release found for " + path));
         return toReleaseAssets(release);

@@ -1,6 +1,7 @@
 package cz.cuni.mff.releasemanager.state;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 
 import cz.cuni.mff.releasemanager.types.RepoRef;
@@ -16,6 +17,10 @@ public final class ManifestStore {
 
     public Optional<AppManifest> find(RepoRef ref) throws IOException {
         return stateStore.findManifest(ref);
+    }
+
+    public List<AppManifest> scan() throws IOException {
+        return stateStore.scanManifests();
     }
 
     public boolean save(AppManifest manifest) {

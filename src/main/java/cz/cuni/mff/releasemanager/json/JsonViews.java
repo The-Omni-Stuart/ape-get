@@ -98,6 +98,24 @@ public final class JsonViews {
     public record UpToDateResult(
         @JsonProperty("up_to_date") UpToDateView upToDate) {}
 
+    public record UpdateEntry(
+        String provider,
+        String repo,
+        String from,
+        String to,
+        String status) {}
+
+    public record UpdateBatch(List<UpdateEntry> updates) {}
+
+    public record OutdatedEntry(
+        String provider,
+        String repo,
+        String current,
+        String latest,
+        String asset) {}
+
+    public record OutdatedList(List<OutdatedEntry> outdated) {}
+
     public record SearchEntry(String provider, String repo, String description) {}
 
     public record SearchResults(List<SearchEntry> results) {}
