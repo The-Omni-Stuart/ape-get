@@ -83,16 +83,6 @@ public final class StateStore {
     }
 
     /**
-     * Bare repository lookup, defaulting to GitHub.
-     * @param repo owner/repo path
-     * @return manifest when present
-     * @throws IOException if manifests cannot be read
-     */
-    public Optional<AppManifest> findManifest(String repo) throws IOException {
-        return findManifest(new RepoRef(RepoRef.DEFAULT_PROVIDER, repo));
-    }
-
-    /**
      * Finds index entries that need an unsafe recovery decision.
      * @param index current index
      * @param manifests currently valid manifests
@@ -146,7 +136,7 @@ public final class StateStore {
     }
 
     private static String manifestKey(String provider, String repo) {
-        return (provider == null ? RepoRef.DEFAULT_PROVIDER : provider) + "\u0000" + repo;
+        return (provider == null ? "github" : provider) + "\u0000" + repo;
     }
 
     public void saveManifest(AppManifest manifest) throws IOException {
@@ -176,10 +166,6 @@ public final class StateStore {
         if (Files.exists(dir)) {
             FileUtils.deleteRecursively(dir);
         }
-    }
-
-    public boolean removeManifest(String repo) throws IOException {
-        return removeManifest(new RepoRef(RepoRef.DEFAULT_PROVIDER, repo));
     }
 
     /**

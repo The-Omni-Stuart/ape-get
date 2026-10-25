@@ -6,8 +6,6 @@ import java.util.regex.Pattern;
  * A repository path on a configured provider: {@code provider:owner/repo}.
  */
 public record RepoRef(String provider, String path) {
-    public static final String DEFAULT_PROVIDER = "github";
-
     private static final Pattern PROVIDER_NAME =
         Pattern.compile("[a-z0-9][a-z0-9._-]*");
 
@@ -25,7 +23,7 @@ public record RepoRef(String provider, String path) {
         String[] segments = path.split("/", -1);
         if (segments.length < 2) {
             throw new IllegalArgumentException(
-                "Expected provider:owner/repo or owner/repo: " + path);
+                "Expected provider:owner/repo: " + path);
         }
         for (String segment : segments) {
             if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)) {
@@ -35,10 +33,10 @@ public record RepoRef(String provider, String path) {
     }
 
     /**
-     * Parses {@code provider:owner/repo}, or bare {@code owner/repo} as GitHub.
+     * Parses {@code provider:owner/repo}. The provider is required.
      * @param value command argument
      * @return parsed reference
-     * @throws IllegalArgumentException if the value is malformed
+     * @throws IllegalArgumentException if the value is malformed or has no provider
      */
     public static RepoRef parse(String value) {
         if (value == null || value.isBlank()) {
@@ -46,12 +44,13 @@ public record RepoRef(String provider, String path) {
         }
         int colon = value.indexOf(':');
         int slash = value.indexOf('/');
-        if (colon > 0 && (slash < 0 || colon < slash)) {
-            return new RepoRef(
-                value.substring(0, colon).toLowerCase(java.util.Locale.ROOT),
-                value.substring(colon + 1));
+        if (colon <= 0 || (slash >= 0 && colon > slash)) {
+            throw new IllegalArgumentException(
+                "Provider is required; use provider:owner/repo, for example github:owner/repo");
         }
-        return new RepoRef(DEFAULT_PROVIDER, value);
+        return new RepoRef(
+            value.substring(0, colon).toLowerCase(java.util.Locale.ROOT),
+            value.substring(colon + 1));
     }
 
     public String repoName() {

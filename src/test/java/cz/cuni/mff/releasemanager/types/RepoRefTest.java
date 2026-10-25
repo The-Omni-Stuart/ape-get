@@ -2,18 +2,17 @@ package cz.cuni.mff.releasemanager.types;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class RepoRefTest {
 
     @Test
-    void barePathDefaultsToGithub() {
-        RepoRef ref = RepoRef.parse("owner/repo");
+    void rejectsBarePath() {
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class, () -> RepoRef.parse("owner/repo"));
 
-        assertEquals("github", ref.provider());
-        assertEquals("owner/repo", ref.path());
-        assertEquals("owner", ref.namespace());
-        assertEquals("repo", ref.repoName());
+        assertTrue(error.getMessage().contains("provider"));
     }
 
     @Test

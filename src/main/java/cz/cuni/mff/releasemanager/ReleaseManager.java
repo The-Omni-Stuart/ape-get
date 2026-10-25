@@ -173,7 +173,7 @@ public class ReleaseManager {
         try {
             config = stateStore.loadConfig();
         } catch (IOException e) {
-            System.err.println("Failed to initialize state at "
+            System.err.println("Failed to initialise state at "
                 + stateStore.paths().root() + ": " + e.getMessage());
             return false;
         }
@@ -1769,9 +1769,7 @@ public class ReleaseManager {
         }
         for (AppManifest manifest : manifests) {
             String version = manifest.version() == null ? "unknown" : manifest.version();
-            String name = RepoRef.DEFAULT_PROVIDER.equals(manifest.provider())
-                ? manifest.repo()
-                : manifest.provider() + ":" + manifest.repo();
+            String name = manifest.provider() + ":" + manifest.repo();
             System.out.println(name + " " + version);
         }
         return true;

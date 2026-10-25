@@ -82,7 +82,7 @@ class StateStoreTest {
         StateStore store = store();
         store.saveManifest(pinned);
 
-        AppManifest read = store.findManifest("owner/repo").orElseThrow();
+        AppManifest read = store.findManifest(new RepoRef("github", "owner/repo")).orElseThrow();
         assertEquals("OLD", read.signature().identity());
         assertTrue(read.signature().isVerified());
         assertEquals(Boolean.TRUE, read.signature().notarized());
@@ -93,9 +93,9 @@ class StateStoreTest {
         StateStore store = store();
         store.saveManifest(manifest("owner/repo"));
 
-        assertTrue(store.findManifest("owner/repo").isPresent());
-        assertTrue(store.removeManifest("owner/repo"));
-        assertTrue(store.findManifest("owner/repo").isEmpty());
+        assertTrue(store.findManifest(new RepoRef("github", "owner/repo")).isPresent());
+        assertTrue(store.removeManifest(new RepoRef("github", "owner/repo")));
+        assertTrue(store.findManifest(new RepoRef("github", "owner/repo")).isEmpty());
         assertTrue(store.scanManifests().isEmpty());
     }
 
