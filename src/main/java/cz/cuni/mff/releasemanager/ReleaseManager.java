@@ -23,6 +23,7 @@ import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.cmd.ConsolePrompt;
 import cz.cuni.mff.releasemanager.cmd.Prompt;
+import cz.cuni.mff.releasemanager.platform.PathEnvironment;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.GithubProvider;
@@ -1988,6 +1989,7 @@ public class ReleaseManager {
     private boolean doctor() {
         boolean healthy = true;
         List<String> issues = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
         Path root = stateStore.paths().root();
         Path configFile = stateStore.paths().configFile();
         Path indexFile = stateStore.paths().indexFile();
@@ -2107,6 +2109,10 @@ public class ReleaseManager {
                 + " free, need " + MIN_FREE_BYTES / (1024 * 1024) + " MB");
             healthy = false;
         }
+        if (os == Platform.OS.LINUX && !manifests.isEmpty()
+            && installRoot != null && !PathEnvironment.isOnPath(installRoot)) {
+            warnings.add("PATH: " + installRoot + " is not on PATH");
+        }
 
         if (os == Platform.OS.LINUX) {
             List<String> orphans = orphanCandidates();
@@ -2124,6 +2130,7 @@ public class ReleaseManager {
             report.put("index", indexFile.toString());
             report.put("manifests", manifests.size());
             report.put("issues", issues);
+            report.put("warnings", warnings);
             report.put("signature_tools", tools);
             report.put("pins", pins);
             report.put("free_bytes", freeBytes);
@@ -2142,6 +2149,9 @@ public class ReleaseManager {
             for (Map<String, Object> pin : pins) {
                 System.out.println("Pinned signer: " + pin.get("repo") + " -> "
                     + pin.get("signer") + " (" + pin.get("identity") + ")");
+            }
+            for (String warning : warnings) {
+                System.out.println("Warning: " + warning);
             }
             for (String issue : issues) {
                 System.out.println(issue);

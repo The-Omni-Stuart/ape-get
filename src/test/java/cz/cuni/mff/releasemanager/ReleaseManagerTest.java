@@ -1615,6 +1615,25 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteDoctorWarnsWhenInstallRootIsNotOnPath() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+        when(mockStateStore.scanManifests()).thenReturn(List.of(
+            manifest("user/example", "http://url", "example.exe", "/tmp/live")));
+
+        String output = captureOut(() -> releaseManager.execute(new String[]{"doctor", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertTrue(root.get("warnings").toString().contains("PATH"),
+            root.get("warnings").toString());
+        assertTrue(root.get("healthy").asBoolean());
+    }
+
+    @Test
     void testExecuteDoctorReportsMissingSignatureTool() throws Exception {
         Command cmd = Command.DOCTOR;
         when(mockCmdParser.parse(any())).thenReturn(cmd);
