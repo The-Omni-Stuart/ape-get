@@ -568,7 +568,12 @@ public class ReleaseManager {
         if (!recordManifest(manifest)) {
             return false;
         }
-        Output.info("Installation successful.");
+        if (cmdParser.isJson()) {
+            printJson(Map.of("installed",
+                releaseResult(ref, release, asset, installedAsset)));
+        } else {
+            Output.info("Installation successful.");
+        }
         return true;
     }
     private Path download(ReleaseProvider provider, Asset asset) {
@@ -820,23 +825,49 @@ public class ReleaseManager {
     }
 
     private void printInstallPlan(RepoRef ref, ReleaseAssets release, Asset asset) {
-        System.out.println("Dry run: would install " + ref.display() + " "
-            + versionLabel(release) + ".");
+        printPlan("install", ref, release, asset);
+    }
+
+    private void printUpdatePlan(RepoRef ref, ReleaseAssets release, Asset asset) {
+        printPlan("update", ref, release, asset);
+    }
+
+    private void printPlan(String action, RepoRef ref, ReleaseAssets release, Asset asset) {
+        Path launcher = platformHandler.launcherPath(ref.path());
+        if (cmdParser.isJson()) {
+            Map<String, Object> plan = new LinkedHashMap<>();
+            plan.put("dry_run", true);
+            plan.put("action", action);
+            plan.put("provider", ref.provider());
+            plan.put("repo", ref.path());
+            plan.put("version", release.version());
+            plan.put("asset", asset.name());
+            plan.put("source", asset.url());
+            plan.put("launcher", launcher == null ? null : launcher.toString());
+            printJson(plan);
+            return;
+        }
+        System.out.println("Dry run: would " + action + " " + ref.display()
+            + (action.equals("install") ? " " : " to ") + versionLabel(release) + ".");
         System.out.println("  Asset:  " + asset.name());
         System.out.println("  Source: " + asset.url());
-        Path launcher = platformHandler.launcherPath(ref.path());
         if (launcher != null) {
             System.out.println("  Launcher: " + launcher);
         }
         System.out.println("No changes were made.");
     }
 
-    private void printUpdatePlan(RepoRef ref, ReleaseAssets release, Asset asset) {
-        System.out.println("Dry run: would update " + ref.display() + " to "
-            + versionLabel(release) + ".");
-        System.out.println("  Asset:  " + asset.name());
-        System.out.println("  Source: " + asset.url());
-        System.out.println("No changes were made.");
+    private Map<String, Object> releaseResult(
+        RepoRef ref, ReleaseAssets release, Asset asset, Path installed) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("provider", ref.provider());
+        result.put("repo", ref.path());
+        result.put("version", release.version());
+        result.put("asset", asset.name());
+        result.put("path", installed == null ? null : installed.toString());
+        Path launcher = platformHandler.launcherPath(ref.path());
+        result.put("launcher", launcher == null ? null : launcher.toString());
+        return result;
     }
 
     private static String versionLabel(ReleaseAssets release) {
@@ -959,14 +990,24 @@ public class ReleaseManager {
             return false;
         }
 
+        String uninstallPath = manifest.install().uninstall() != null
+            && manifest.install().uninstall().path() != null
+            ? manifest.install().uninstall().path()
+            : manifest.install().path();
         if (cmdParser.isDryRun()) {
-            String uninstallPath = manifest.install().uninstall() != null
-                && manifest.install().uninstall().path() != null
-                ? manifest.install().uninstall().path()
-                : manifest.install().path();
-            System.out.println("Dry run: would uninstall " + ref.display() + ".");
-            System.out.println("  Path: " + uninstallPath);
-            System.out.println("No changes were made.");
+            if (cmdParser.isJson()) {
+                Map<String, Object> plan = new LinkedHashMap<>();
+                plan.put("dry_run", true);
+                plan.put("action", "uninstall");
+                plan.put("provider", ref.provider());
+                plan.put("repo", ref.path());
+                plan.put("path", uninstallPath);
+                printJson(plan);
+            } else {
+                System.out.println("Dry run: would uninstall " + ref.display() + ".");
+                System.out.println("  Path: " + uninstallPath);
+                System.out.println("No changes were made.");
+            }
             return true;
         }
 
@@ -980,7 +1021,15 @@ public class ReleaseManager {
                 + ", but failed to rebuild the index: " + e.getMessage());
             return false;
         }
-        Output.info("Successfully uninstalled.");
+        if (cmdParser.isJson()) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("provider", ref.provider());
+            result.put("repo", ref.path());
+            result.put("path", uninstallPath);
+            printJson(Map.of("uninstalled", result));
+        } else {
+            Output.info("Successfully uninstalled.");
+        }
         return true;
     }
 
@@ -1049,6 +1098,17 @@ public class ReleaseManager {
             }
         }
         return new ProviderOptions(values, positional, flags);
+    }
+
+    private Map<String, Object> providerEntry(ProviderConfig config) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("name", config.name());
+        entry.put("type", config.type());
+        entry.put("url", config.url());
+        entry.put("api", config.resolvedApi());
+        entry.put("token_env", config.tokenEnv());
+        entry.put("built_in", ProviderRegistry.builtIns().containsKey(config.name()));
+        return entry;
     }
 
     private boolean providersList() {
@@ -1230,8 +1290,12 @@ public class ReleaseManager {
         if (!saveProviders(updated)) {
             return false;
         }
-        Output.info("Added provider " + name + " (" + type.id() + ", "
-            + config.resolvedApi() + ").");
+        if (cmdParser.isJson()) {
+            printJson(Map.of("provider", providerEntry(config)));
+        } else {
+            Output.info("Added provider " + name + " (" + type.id() + ", "
+                + config.resolvedApi() + ").");
+        }
         return true;
     }
 
@@ -1308,7 +1372,11 @@ public class ReleaseManager {
         if (!saveProviders(map)) {
             return false;
         }
-        Output.info("Updated provider " + name + ".");
+        if (cmdParser.isJson()) {
+            printJson(Map.of("provider", providerEntry(updatedConfig)));
+        } else {
+            Output.info("Updated provider " + name + ".");
+        }
         return true;
     }
 
@@ -1394,7 +1462,11 @@ public class ReleaseManager {
         if (!saveProviders(map)) {
             return false;
         }
-        Output.info("Removed provider " + name + ".");
+        if (cmdParser.isJson()) {
+            printJson(Map.of("removed", name));
+        } else {
+            Output.info("Removed provider " + name + ".");
+        }
         return true;
     }
 
@@ -1477,7 +1549,11 @@ public class ReleaseManager {
         if (!saveProviders(map)) {
             return false;
         }
-        Output.info("Recovered provider " + name + ".");
+        if (cmdParser.isJson()) {
+            printJson(Map.of("provider", providerEntry(config)));
+        } else {
+            Output.info("Recovered provider " + name + ".");
+        }
         return true;
     }
 
@@ -1658,7 +1734,12 @@ public class ReleaseManager {
         if (!recordManifest(updated)) {
             return false;
         }
-        Output.info("Successfully updated.");
+        if (cmdParser.isJson()) {
+            printJson(Map.of("updated",
+                releaseResult(ref, latest, newAsset, installedAsset)));
+        } else {
+            Output.info("Successfully updated.");
+        }
         return true;
     }
 
@@ -1878,11 +1959,23 @@ public class ReleaseManager {
         }
         AppManifest.Backup backup = latestBackup.get();
         if (cmdParser.isDryRun()) {
-            System.out.println("Dry run: would roll back " + ref.display() + " from "
-                + (current.version() == null ? "unknown" : current.version())
-                + " to " + (backup.version() == null ? "unknown" : backup.version()) + ".");
-            System.out.println("  Backup: " + backup.artifact());
-            System.out.println("No changes were made.");
+            if (cmdParser.isJson()) {
+                Map<String, Object> plan = new LinkedHashMap<>();
+                plan.put("dry_run", true);
+                plan.put("action", "rollback");
+                plan.put("provider", ref.provider());
+                plan.put("repo", ref.path());
+                plan.put("from", current.version());
+                plan.put("to", backup.version());
+                plan.put("backup", backup.artifact());
+                printJson(plan);
+            } else {
+                System.out.println("Dry run: would roll back " + ref.display() + " from "
+                    + (current.version() == null ? "unknown" : current.version())
+                    + " to " + (backup.version() == null ? "unknown" : backup.version()) + ".");
+                System.out.println("  Backup: " + backup.artifact());
+                System.out.println("No changes were made.");
+            }
             return true;
         }
 
@@ -1922,8 +2015,7 @@ public class ReleaseManager {
         if (!recordManifest(rolledBack)) {
             return false;
         }
-        Output.info("Rolled back " + ref.display() + " to "
-            + (backup.version() == null ? "unknown" : backup.version()) + ".");
+        printRollbackResult(ref, backup);
         return true;
     }
 
@@ -1949,9 +2041,21 @@ public class ReleaseManager {
         if (!recordManifest(rolledBackManifest(restored, current))) {
             return false;
         }
-        Output.info("Rolled back " + ref.display() + " to "
-            + (backup.version() == null ? "unknown" : backup.version()) + ".");
+        printRollbackResult(ref, backup);
         return true;
+    }
+
+    private void printRollbackResult(RepoRef ref, AppManifest.Backup backup) {
+        if (cmdParser.isJson()) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("provider", ref.provider());
+            result.put("repo", ref.path());
+            result.put("version", backup.version());
+            printJson(Map.of("rolled_back", result));
+        } else {
+            Output.info("Rolled back " + ref.display() + " to "
+                + (backup.version() == null ? "unknown" : backup.version()) + ".");
+        }
     }
 
     private static AppManifest rolledBackManifest(
@@ -2247,7 +2351,11 @@ public class ReleaseManager {
             if (!recordManifest(manifest)) {
                 return false;
             }
-            Output.info("Adopted " + ref.display() + " at " + live + ".");
+            if (cmdParser.isJson()) {
+                printJson(Map.of("adopted", listEntry(manifest)));
+            } else {
+                Output.info("Adopted " + ref.display() + " at " + live + ".");
+            }
             return true;
         } catch (IOException e) {
             System.err.println("Failed to adopt " + ref.display() + ": " + e.getMessage());

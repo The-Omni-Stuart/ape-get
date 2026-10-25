@@ -66,7 +66,8 @@ public final class AssetVerifier {
                 String expected = lookup.sha256().get();
                 String actual = sha256(downloaded);
                 if (actual.equalsIgnoreCase(expected)) {
-                    return VerificationResult.verified(target.name(), checksumAsset.name());
+                    return VerificationResult.verified(
+                        target.name(), checksumAsset.name(), expected, actual);
                 }
                 return VerificationResult.mismatch(
                     target.name(), expected, actual, checksumAsset.name());

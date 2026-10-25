@@ -14,6 +14,12 @@ public record VerificationResult(
         return new VerificationResult(VerificationStatus.VERIFIED, assetName, null, null, checksumAssetName);
     }
 
+    public static VerificationResult verified(
+        String assetName, String checksumAssetName, String expected, String actual) {
+        return new VerificationResult(
+            VerificationStatus.VERIFIED, assetName, expected, actual, checksumAssetName);
+    }
+
     public static VerificationResult missing(String assetName) {
         return new VerificationResult(VerificationStatus.MISSING, assetName, null, null, null);
     }
