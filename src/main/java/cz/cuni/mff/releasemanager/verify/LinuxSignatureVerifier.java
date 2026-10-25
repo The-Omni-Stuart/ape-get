@@ -12,6 +12,7 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.Executables;
 import cz.cuni.mff.releasemanager.utils.ProcessRunner;
+import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 // verifies detached GPG signatures with the local keyring
 public final class LinuxSignatureVerifier implements SignatureVerifier {
@@ -48,7 +49,7 @@ public final class LinuxSignatureVerifier implements SignatureVerifier {
         try {
             return verifyWithGpg(target, signature, downloaded);
         } finally {
-            provider.discardAsset(signature);
+            StagedAsset.discard(signature);
         }
     }
 

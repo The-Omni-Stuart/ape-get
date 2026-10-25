@@ -1,4 +1,4 @@
-package cz.cuni.mff.releasemanager;
+package cz.cuni.mff.releasemanager.provider;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -25,10 +25,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cuni.mff.releasemanager.platform.AssetSelector;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
-import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Release;
 import cz.cuni.mff.releasemanager.types.SearchResult;
+import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 // GitHub API calls and asset downloads
@@ -90,7 +90,7 @@ public class GithubClient {
             return Optional.ofNullable(searchResult);
 
         } catch (IOException | InterruptedException ex) {
-            System.err.println(ex.getMessage());
+            Output.error(ex.getMessage());
             return Optional.empty();
         }
     }
@@ -127,7 +127,7 @@ public class GithubClient {
         try {
             var jsonResponse = request(URI.create(url));
             if (jsonResponse.isEmpty()) {
-                System.err.println(emptyMessage);
+                Output.error(emptyMessage);
                 return new ReleaseAssets(List.of(), List.of());
             }
             ObjectMapper mapper = new ObjectMapper();
@@ -135,14 +135,14 @@ public class GithubClient {
             List<Asset> all = release.assets() == null ? List.of() : release.assets();
             List<Asset> installable = filterInstallable(all);
             if (installable.isEmpty()) {
-                System.err.println("No suitable asset found for this repository.");
+                Output.error("No suitable asset found for this repository.");
             }
             return new ReleaseAssets(release.tagName(), release.id(), all, installable);
         } catch (IOException | InterruptedException ex) {
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println(ex.getMessage());
+            Output.error(ex.getMessage());
             return new ReleaseAssets(List.of(), List.of());
         }
     }
@@ -186,10 +186,6 @@ public class GithubClient {
             }
             throw new IOException("Download failed: " + cause, cause);
         }
-    }
-
-    public void discardAsset(Path assetPath) {
-        StagedAsset.discard(assetPath);
     }
 
     // adds the bearer token when one is configured
@@ -260,7 +256,7 @@ public class GithubClient {
         long remaining = headers.firstValueAsLong("X-RateLimit-Remaining").orElse(0);
         long resetTime = headers.firstValueAsLong("X-RateLimit-Reset").orElse(0);
 
-        System.err.printf("Rate limit exceeded: Remaining: %d, Reset: %tT UTC%n",
+        Output.errorf("Rate limit exceeded: Remaining: %d, Reset: %tT UTC%n",
             remaining, new Date(resetTime * 1000));
     }
 

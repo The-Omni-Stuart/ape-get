@@ -3,16 +3,9 @@ package cz.cuni.mff.releasemanager;
 import java.nio.file.Path;
 import java.util.List;
 
-
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.platform.InstallRequest;
@@ -24,6 +17,12 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;
 import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
 
@@ -66,8 +65,6 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
             .thenReturn(SignatureResult.invalid("example.exe", "gpg", "BAD signature"));
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "github:user/example"}));
-
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockStateStore, never()).saveManifest(any());
     }
@@ -89,8 +86,6 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
             .thenReturn(SignatureResult.missing("example.exe"));
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "github:user/example"}));
-
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
@@ -181,8 +176,6 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
                 asset.name(), "expected", "actual", "checksum"));
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "github:user/example"}));
-
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
@@ -201,8 +194,6 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
             .thenReturn(VerificationResult.missing(asset.name()));
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "github:user/example"}));
-
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
@@ -224,8 +215,6 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
             .thenReturn(VerificationResult.missing(asset.name()));
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "github:user/example"}));
-
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 }

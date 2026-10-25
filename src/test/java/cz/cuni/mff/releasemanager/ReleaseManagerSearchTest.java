@@ -6,17 +6,8 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.provider.SearchService;
@@ -25,6 +16,14 @@ import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ReleaseManagerSearchTest extends ReleaseManagerTestSupport {
 
@@ -131,14 +130,14 @@ class ReleaseManagerSearchTest extends ReleaseManagerTestSupport {
     }
 
     @Test
-    void testExecuteSearchFailureReturnsErrorCode() {
+    void testExecuteSearchWithNoResultsSucceeds() {
         Command cmd = Command.SEARCH;
         cmd.argument = "example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
         when(mockCmdParser.getProvider()).thenReturn("github");
         when(mockGithubClient.searchRepoByName("example")).thenReturn(Optional.empty());
 
-        assertEquals(1, releaseManager.execute(new String[]{"search", "example"}));
+        assertEquals(0, releaseManager.execute(new String[]{"search", "example"}));
     }
 
     @Test

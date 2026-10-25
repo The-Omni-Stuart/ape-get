@@ -1,4 +1,4 @@
-package cz.cuni.mff.releasemanager;
+package cz.cuni.mff.releasemanager.commands;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -6,13 +6,14 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
+
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
+import cz.cuni.mff.releasemanager.json.JsonViews.DoctorReport;
+import cz.cuni.mff.releasemanager.json.JsonViews.PinView;
+import cz.cuni.mff.releasemanager.json.JsonViews.ToolView;
 import cz.cuni.mff.releasemanager.platform.PathEnvironment;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
@@ -23,6 +24,7 @@ import cz.cuni.mff.releasemanager.state.GrmIndex;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.utils.DiskSpace;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.verify.SignatureVerifier;
 
 // checks state, live installs, PATH, disk space, mounts, and signature tools
@@ -35,21 +37,18 @@ public final class Doctor {
     private final StateStore stateStore;
     private final PlatformHandler platformHandler;
     private final SignatureVerifier signatureVerifier;
-    private final Consumer<Object> printJson;
 
     public Doctor(
         Platform.OS os,
         CmdParser cmdParser,
         StateStore stateStore,
         PlatformHandler platformHandler,
-        SignatureVerifier signatureVerifier,
-        Consumer<Object> printJson) {
+        SignatureVerifier signatureVerifier) {
         this.os = os;
         this.cmdParser = cmdParser;
         this.stateStore = stateStore;
         this.platformHandler = platformHandler;
         this.signatureVerifier = signatureVerifier;
-        this.printJson = printJson;
     }
 
     public boolean run() {
@@ -128,30 +127,27 @@ public final class Doctor {
             healthy = false;
         }
 
-        List<Map<String, Object>> tools = new ArrayList<>();
+        List<ToolView> tools = new ArrayList<>();
         for (SignatureVerifier.Tool tool : signatureVerifier.tools()) {
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("name", tool.name());
-            entry.put("required", tool.required());
-            entry.put("available", tool.available());
-            tools.add(entry);
+            tools.add(new ToolView(tool.name(), tool.required(), tool.available()));
             if (!tool.available()) {
-                issues.add((tool.required() ? "Signature tool missing: " : "Optional signature tool missing: ")
-                    + tool.name());
+                String prefix = tool.required()
+                    ? "Signature tool missing: "
+                    : "Optional signature tool missing: ";
+                issues.add(prefix + tool.name());
                 if (tool.required()) {
                     healthy = false;
                 }
             }
         }
 
-        List<Map<String, Object>> pins = new ArrayList<>();
+        List<PinView> pins = new ArrayList<>();
         for (AppManifest manifest : manifests) {
             if (manifest.signature() != null && manifest.signature().isVerified()) {
-                Map<String, Object> pin = new LinkedHashMap<>();
-                pin.put("repo", manifest.repo());
-                pin.put("signer", manifest.signature().signer());
-                pin.put("identity", manifest.signature().identity());
-                pins.add(pin);
+                pins.add(new PinView(
+                    manifest.repo(),
+                    manifest.signature().signer(),
+                    manifest.signature().identity()));
             }
         }
 
@@ -190,38 +186,37 @@ public final class Doctor {
         }
 
         if (cmdParser.isJson()) {
-            Map<String, Object> report = new LinkedHashMap<>();
-            report.put("healthy", healthy);
-            report.put("state_root", root.toString());
-            report.put("config", configFile.toString());
-            report.put("index", indexFile.toString());
-            report.put("manifests", manifests.size());
-            report.put("issues", issues);
-            report.put("warnings", warnings);
-            report.put("signature_tools", tools);
-            report.put("pins", pins);
-            report.put("free_bytes", freeBytes);
-            printJson.accept(report);
+            Output.json(new DoctorReport(
+                healthy,
+                root.toString(),
+                configFile.toString(),
+                indexFile.toString(),
+                manifests.size(),
+                issues,
+                warnings,
+                tools,
+                pins,
+                freeBytes));
         } else {
-            System.out.println("State root: " + root);
-            System.out.println("Config: " + configFile);
-            System.out.println("Index: " + indexFile);
-            System.out.println("Manifests: " + manifests.size());
-            System.out.println("Free space: "
+            Output.data("State root: " + root);
+            Output.data("Config: " + configFile);
+            Output.data("Index: " + indexFile);
+            Output.data("Manifests: " + manifests.size());
+            Output.data("Free space: "
                 + (freeBytes < 0 ? "unknown" : freeBytes / (1024 * 1024) + " MB"));
-            for (Map<String, Object> tool : tools) {
-                System.out.println("Signature tool: " + tool.get("name") + " "
-                    + (Boolean.TRUE.equals(tool.get("available")) ? "available" : "missing"));
+            for (ToolView tool : tools) {
+                Output.data("Signature tool: " + tool.name() + " "
+                    + (tool.available() ? "available" : "missing"));
             }
-            for (Map<String, Object> pin : pins) {
-                System.out.println("Pinned signer: " + pin.get("repo") + " -> "
-                    + pin.get("signer") + " (" + pin.get("identity") + ")");
+            for (PinView pin : pins) {
+                Output.data("Pinned signer: " + pin.repo() + " -> "
+                    + pin.signer() + " (" + pin.identity() + ")");
             }
             for (String warning : warnings) {
-                System.out.println("Warning: " + warning);
+                Output.data("Warning: " + warning);
             }
             for (String issue : issues) {
-                System.out.println(issue);
+                Output.data(issue);
             }
         }
         return healthy;
@@ -235,7 +230,7 @@ public final class Doctor {
         try {
             platformHandler.setInstallRoot(Path.of(root));
         } catch (InvalidPathException e) {
-            System.err.println("Ignoring invalid install_root: " + root);
+            Output.error("Ignoring invalid install_root: " + root);
         }
     }
 

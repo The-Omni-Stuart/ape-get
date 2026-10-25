@@ -119,6 +119,7 @@ Provider tokens are read from the environment variable named by `token_env`; sec
 stored in the config.
 
 Common flags: `--asset`, `--version`, `--dry-run`, `--json`, `--quiet`, `--yes`.
+`--json` writes one document to stdout; progress, warnings, and prompts go to stderr.
 `--yes` is required for non-interactive use; without it, confirmation prompts refuse when no TTY is
 available.
 

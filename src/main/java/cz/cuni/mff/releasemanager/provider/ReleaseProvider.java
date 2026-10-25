@@ -47,10 +47,4 @@ public interface ReleaseProvider {
      * @throws InterruptedException if the request is interrupted
      */
     SearchResult search(String query) throws IOException, InterruptedException;
-
-    /**
-     * Removes a staged download.
-     * @param assetPath local path
-     */
-    void discardAsset(Path assetPath);
 }

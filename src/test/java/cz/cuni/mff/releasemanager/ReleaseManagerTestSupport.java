@@ -12,21 +12,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.IntSupplier;
 
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.provider.GithubClient;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
+import cz.cuni.mff.releasemanager.provider.ProviderFactory;
 import cz.cuni.mff.releasemanager.provider.SearchService;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
@@ -40,6 +36,11 @@ import cz.cuni.mff.releasemanager.verify.AssetVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;
 import cz.cuni.mff.releasemanager.verify.SignatureVerifier;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 abstract class ReleaseManagerTestSupport {
 
@@ -74,7 +75,7 @@ abstract class ReleaseManagerTestSupport {
             Path.of(System.getProperty("java.io.tmpdir"), "grm-test-state"));
 
         releaseManager = new ReleaseManager(
-            mockCmdParser, mockGithubClient, mockPlatformHandler, mockVerifier,
+            mockCmdParser, new ProviderFactory(mockGithubClient), mockPlatformHandler, mockVerifier,
             mockSignatureVerifier, mockStateStore, mockBackupManager, mockPrompt,
             new SearchService(), Platform.OS.LINUX);
 
@@ -98,7 +99,7 @@ abstract class ReleaseManagerTestSupport {
 
     protected void useSearchService(SearchService service) {
         releaseManager = new ReleaseManager(
-            mockCmdParser, mockGithubClient, mockPlatformHandler, mockVerifier,
+            mockCmdParser, new ProviderFactory(mockGithubClient), mockPlatformHandler, mockVerifier,
             mockSignatureVerifier, mockStateStore, mockBackupManager, mockPrompt,
             service, Platform.OS.LINUX);
     }

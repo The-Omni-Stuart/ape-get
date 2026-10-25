@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.Optional;
 
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 // shared HTTP plumbing for the Gitea and GitLab adapters
@@ -69,10 +70,6 @@ final class ProviderHttp {
         }
     }
 
-    void discard(Path assetPath) {
-        StagedAsset.discard(assetPath);
-    }
-
     private HttpRequest.Builder request(String url, Duration timeout) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
             .header("User-Agent", "ape-get")
@@ -98,7 +95,7 @@ final class ProviderHttp {
         }
         String value = System.getenv(env);
         if (value == null || value.isBlank()) {
-            System.err.println("Warning: provider " + config.name()
+            Output.error("Warning: provider " + config.name()
                 + " expects a token in " + env + ".");
             return Optional.empty();
         }

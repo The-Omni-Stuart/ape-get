@@ -79,7 +79,7 @@ public class FileUtils {
                 }
             }
         } catch (IOException e) {
-            System.err.println("Failed to remove directory: " + e.getMessage());
+            Output.error("Failed to remove directory: " + e.getMessage());
         }
     }
 
@@ -103,7 +103,7 @@ public class FileUtils {
                 try {
                     Files.deleteIfExists(backup);
                 } catch (IOException e) {
-                    System.err.println(
+                    Output.error(
                         "Warning: could not remove backup " + backup + ": " + e.getMessage());
                 }
             }
@@ -145,7 +145,7 @@ public class FileUtils {
             try {
                 deleteRecursively(backup);
             } catch (IOException e) {
-                System.err.println("Warning: could not remove backup " + backup + ": " + e.getMessage());
+                Output.error("Warning: could not remove backup " + backup + ": " + e.getMessage());
             }
         }
     }

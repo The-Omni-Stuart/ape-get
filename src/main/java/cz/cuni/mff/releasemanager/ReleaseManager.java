@@ -2,62 +2,66 @@ package cz.cuni.mff.releasemanager;
 
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
 
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
+import cz.cuni.mff.releasemanager.cmd.Confirmer;
+import cz.cuni.mff.releasemanager.cmd.ConsoleConfirmer;
 import cz.cuni.mff.releasemanager.cmd.ConsolePrompt;
 import cz.cuni.mff.releasemanager.cmd.Prompt;
+import cz.cuni.mff.releasemanager.commands.AdoptCommand;
+import cz.cuni.mff.releasemanager.commands.Doctor;
+import cz.cuni.mff.releasemanager.commands.InfoCommand;
+import cz.cuni.mff.releasemanager.commands.ListCommand;
+import cz.cuni.mff.releasemanager.commands.ProvidersCommand;
+import cz.cuni.mff.releasemanager.commands.RollbackService;
+import cz.cuni.mff.releasemanager.commands.UninstallCommand;
+import cz.cuni.mff.releasemanager.install.AssetChooser;
+import cz.cuni.mff.releasemanager.install.BackupService;
+import cz.cuni.mff.releasemanager.install.InstallComponents;
+import cz.cuni.mff.releasemanager.install.InstallReporter;
+import cz.cuni.mff.releasemanager.install.InstallService;
+import cz.cuni.mff.releasemanager.install.ManifestFactory;
+import cz.cuni.mff.releasemanager.install.PlatformInstaller;
+import cz.cuni.mff.releasemanager.install.ReleaseDownloader;
+import cz.cuni.mff.releasemanager.install.ReleaseFetcher;
+import cz.cuni.mff.releasemanager.install.TrustGateFactory;
+import cz.cuni.mff.releasemanager.install.UninstallService;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
-import cz.cuni.mff.releasemanager.provider.GithubProvider;
-import cz.cuni.mff.releasemanager.provider.GitLabProvider;
-import cz.cuni.mff.releasemanager.provider.GiteaProvider;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
+import cz.cuni.mff.releasemanager.provider.ProviderFactory;
 import cz.cuni.mff.releasemanager.provider.ProviderRegistry;
-import cz.cuni.mff.releasemanager.provider.ProvidersCommand;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.provider.SearchCommand;
 import cz.cuni.mff.releasemanager.provider.SearchService;
-import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.BackupManager;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
+import cz.cuni.mff.releasemanager.state.ManifestStore;
 import cz.cuni.mff.releasemanager.state.StateLock;
-import cz.cuni.mff.releasemanager.state.ManifestViews;
 import cz.cuni.mff.releasemanager.state.StateStore;
-import cz.cuni.mff.releasemanager.types.Asset;
-import cz.cuni.mff.releasemanager.types.RepoRef;
-import cz.cuni.mff.releasemanager.utils.FileUtils;
-import cz.cuni.mff.releasemanager.utils.Json;
 import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureVerifiers;
 
-// dispatch, and the commands that do not need their own class
+// command dispatch and the short-lived wiring each command needs
 public class ReleaseManager {
 
     private static ReleaseManager instance;
 
     private final CmdParser cmdParser;
-    private final GithubClient githubClient;
+    private final ProviderFactory providerFactory;
     private final PlatformHandler platformHandler;
     private final AssetVerifier verifier;
     private final SignatureVerifier signatureVerifier;
     private final StateStore stateStore;
+    private final ManifestStore manifestStore;
     private final BackupManager backupManager;
-    private final Prompt prompt;
+    private final Confirmer confirmer;
     private Platform.OS os = Platform.detectPlatform().getOS();
     private GrmConfig toolConfig = GrmConfig.defaults();
     private ProviderRegistry providers = new ProviderRegistry();
@@ -65,19 +69,21 @@ public class ReleaseManager {
 
     private ReleaseManager() {
         cmdParser = new CmdParser();
-        githubClient = new GithubClient();
+        providerFactory = new ProviderFactory();
         platformHandler = Platform.getPlatformHandler();
         verifier = new AssetVerifier();
         signatureVerifier = SignatureVerifiers.forCurrentPlatform();
         stateStore = new StateStore(AppPaths.forCurrentPlatform());
+        manifestStore = new ManifestStore(stateStore);
         backupManager = new BackupManager(stateStore.paths());
-        prompt = new ConsolePrompt();
+        Prompt prompt = new ConsolePrompt();
+        confirmer = new ConsoleConfirmer(prompt, cmdParser);
     }
 
     // package-private seam so tests can supply their own collaborators
     ReleaseManager(
         CmdParser cmdParser,
-        GithubClient githubClient,
+        ProviderFactory providerFactory,
         PlatformHandler platformHandler,
         AssetVerifier verifier,
         SignatureVerifier signatureVerifier,
@@ -87,13 +93,14 @@ public class ReleaseManager {
         SearchService searchService,
         Platform.OS os) {
         this.cmdParser = cmdParser;
-        this.githubClient = githubClient;
+        this.providerFactory = providerFactory;
         this.platformHandler = platformHandler;
         this.verifier = verifier;
         this.signatureVerifier = signatureVerifier;
         this.stateStore = stateStore;
+        this.manifestStore = new ManifestStore(stateStore);
         this.backupManager = backupManager;
-        this.prompt = prompt;
+        this.confirmer = new ConsoleConfirmer(prompt, cmdParser);
         this.searchService = searchService;
         this.os = os;
     }
@@ -102,6 +109,7 @@ public class ReleaseManager {
     void setOs(Platform.OS os) {
         this.os = os;
     }
+
     // singleton used by Main
     public static ReleaseManager getInstance() {
         if (instance == null) {
@@ -109,6 +117,7 @@ public class ReleaseManager {
         }
         return instance;
     }
+
     // parse, lock stateful commands, repair state, then dispatch
     public int execute(String[] args) {
         Command command = cmdParser.parse(args);
@@ -131,7 +140,7 @@ public class ReleaseManager {
             }
             return runCommand(command);
         } catch (IOException e) {
-            System.err.println("Cannot acquire state lock at "
+            Output.error("Cannot acquire state lock at "
                 + stateStore.paths().lockFile() + ": " + e.getMessage());
             return 1;
         }
@@ -141,14 +150,19 @@ public class ReleaseManager {
         return switch (command) {
             case SEARCH -> search(command) ? 0 : 1;
             case INSTALL -> install(command) ? 0 : 1;
-            case UNINSTALL -> uninstall(command) ? 0 : 1;
+            case UNINSTALL -> new UninstallCommand(
+                cmdParser, stateStore, uninstallService()).run(command) ? 0 : 1;
             case UPDATE -> update(command) ? 0 : 1;
-            case LIST -> list() ? 0 : 1;
-            case INFO -> info(command) ? 0 : 1;
+            case LIST -> new ListCommand(
+                cmdParser, stateStore, platformHandler).run() ? 0 : 1;
+            case INFO -> new InfoCommand(
+                cmdParser, stateStore, platformHandler).run(command) ? 0 : 1;
             case PROVIDERS -> providers(command) ? 0 : 1;
             case ROLLBACK -> rollback(command) ? 0 : 1;
             case DOCTOR -> doctor() ? 0 : 1;
-            case ADOPT -> adopt(command) ? 0 : 1;
+            case ADOPT -> new AdoptCommand(
+                os, cmdParser, stateStore, manifestStore, platformHandler,
+                providers, confirmer).run(command) ? 0 : 1;
             case HELP -> {
                 help();
                 yield 0;
@@ -158,7 +172,7 @@ public class ReleaseManager {
     }
 
     private boolean ensureState() {
-        GrmConfig loaded = new StateBootstrap(stateStore, this::confirm).prepare();
+        GrmConfig loaded = new StateBootstrap(stateStore, confirmer).prepare();
         if (loaded == null) {
             return false;
         }
@@ -168,61 +182,28 @@ public class ReleaseManager {
         return true;
     }
 
-    private void printJson(Object value) {
-        try {
-            Output.data(Json.write(value));
-        } catch (JsonProcessingException e) {
-            System.err.println("Failed to render JSON: " + e.getMessage());
-        }
-    }
-
-    
-    
-    
-    private boolean confirm(String message) {
-        return prompt.confirm(message, cmdParser.isAssumeYes());
-    }
-
-    private RepoRef parseRepo(String value) {
-        try {
-            return RepoRef.parse(value);
-        } catch (IllegalArgumentException e) {
-            System.err.println(e.getMessage());
-            return null;
-        }
-    }
-
     private ReleaseProvider resolveProvider(String name) {
         ProviderConfig config = providers.get(name).orElse(null);
         if (config == null) {
-            System.err.println("Provider '" + name + "' is not configured.");
+            Output.error("Provider '" + name + "' is not configured.");
             return null;
         }
         var type = config.providerType().orElse(null);
         if (type == null) {
-            System.err.println("Provider '" + name + "' has an unsupported type.");
+            Output.error("Provider '" + name + "' has an unsupported type.");
             return null;
         }
-        return switch (type) {
-            case GITHUB -> new GithubProvider(
-                "github".equals(config.name())
-                    ? githubClient
-                    : new GithubClient(config.resolvedApi(), config.tokenEnv()),
-                config);
-            case GITEA -> new GiteaProvider(config);
-            case GITLAB -> new GitLabProvider(config);
-        };
+        return providerFactory.create(config);
     }
 
-    
-        // search across the configured providers
+    // search across the configured providers
     private boolean search(Command command) {
         if (!loadSearchConfig()) {
             return false;
         }
         return new SearchCommand(
-            cmdParser, githubClient, searchService, toolConfig, providers,
-            this::resolveProvider, this::printJson).run(command);
+            cmdParser, searchService, toolConfig, providers,
+            this::resolveProvider).run(command);
     }
 
     private boolean loadSearchConfig() {
@@ -231,7 +212,7 @@ public class ReleaseManager {
             providers = new ProviderRegistry(toolConfig.providers());
             return true;
         } catch (IOException e) {
-            System.err.println("Failed to read config: " + e.getMessage());
+            Output.error("Failed to read config: " + e.getMessage());
             return false;
         }
     }
@@ -240,238 +221,43 @@ public class ReleaseManager {
         return installService().install(command);
     }
 
-    // built per call so tests can inject their dependencies
+    // built per call so it sees the current config and platform
     private InstallService installService() {
         return new InstallService(
-            os, cmdParser, toolConfig, platformHandler, verifier, signatureVerifier,
-            backupManager, stateStore, this::parseRepo, this::resolveProvider,
-            this::recordManifest, githubClient::discardAsset, this::confirm,
-            this::printJson);
+            cmdParser,
+            manifestStore,
+            this::resolveProvider,
+            new InstallComponents(
+                new ReleaseFetcher(),
+                new AssetChooser(cmdParser),
+                new ReleaseDownloader(),
+                new ManifestFactory(platformHandler, stateStore.paths()),
+                new InstallReporter(cmdParser, platformHandler),
+                new TrustGateFactory(
+                    cmdParser, toolConfig, verifier, signatureVerifier, confirmer),
+                new BackupService(os, toolConfig, backupManager, platformHandler),
+                new PlatformInstaller(platformHandler)));
     }
 
-        
-    
-    private boolean recordManifest(AppManifest manifest) {
-        try {
-            stateStore.saveManifest(manifest);
-        } catch (IOException e) {
-            System.err.println("Installed, but failed to write manifest: " + e.getMessage());
-            return false;
-        }
-        try {
-            stateStore.rebuildIndex();
-        } catch (IOException e) {
-            System.err.println("Manifest saved, but failed to rebuild index: " + e.getMessage());
-        }
-        return true;
-    }
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-        // remove one install and its state
-    private boolean uninstallManifest(AppManifest manifest) {
-        AppManifest.Uninstall uninstall = manifest.install().uninstall();
-        String uninstallPath = uninstall != null && uninstall.path() != null
-            ? uninstall.path()
-            : manifest.install().path();
-        String productCode = uninstall == null ? null : uninstall.productCode();
-        boolean removed = productCode == null || productCode.isBlank()
-            ? platformHandler.uninstall(Path.of(uninstallPath))
-            : platformHandler.uninstall(Path.of(uninstallPath), productCode);
-        if (!removed) {
-            System.err.println("Failed to uninstall " + manifest.repo() + ".");
-            return false;
-        }
-
-        try {
-            if (!stateStore.removeManifest(
-                new RepoRef(manifest.provider(), manifest.repo()))) {
-                System.err.println(
-                    "Uninstalled " + manifest.repo() + ", but failed to remove its manifest.");
-                return false;
-            }
-            stateStore.deleteApplicationState(
-                new RepoRef(manifest.provider(), manifest.repo()));
-        } catch (IOException e) {
-            System.err.println(
-                "Uninstalled " + manifest.repo() + ", but failed to update state: "
-                    + e.getMessage());
-            return false;
-        }
-        return true;
-    }
-
-    private boolean uninstall(Command command) {
-        RepoRef ref = parseRepo(command.argument);
-        if (ref == null) {
-            return false;
-        }
-
-        AppManifest manifest;
-        try {
-            var found = stateStore.findManifest(ref);
-            if (found.isEmpty()) {
-                System.err.println("Release " + ref.display() + " is not found.");
-                return false;
-            }
-            manifest = found.get();
-        } catch (IOException e) {
-            System.err.println("Failed to load application state: " + e.getMessage());
-            return false;
-        }
-
-        String uninstallPath = manifest.install().uninstall() != null
-            && manifest.install().uninstall().path() != null
-            ? manifest.install().uninstall().path()
-            : manifest.install().path();
-        if (cmdParser.isDryRun()) {
-            if (cmdParser.isJson()) {
-                Map<String, Object> plan = new LinkedHashMap<>();
-                plan.put("dry_run", true);
-                plan.put("action", "uninstall");
-                plan.put("provider", ref.provider());
-                plan.put("repo", ref.path());
-                plan.put("path", uninstallPath);
-                printJson(plan);
-            } else {
-                System.out.println("Dry run: would uninstall " + ref.display() + ".");
-                System.out.println("  Path: " + uninstallPath);
-                System.out.println("No changes were made.");
-            }
-            return true;
-        }
-
-        if (!uninstallManifest(manifest)) {
-            return false;
-        }
-        try {
-            stateStore.rebuildIndex();
-        } catch (IOException e) {
-            System.err.println("Uninstalled " + ref.display()
-                + ", but failed to rebuild the index: " + e.getMessage());
-            return false;
-        }
-        if (cmdParser.isJson()) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("provider", ref.provider());
-            result.put("repo", ref.path());
-            result.put("path", uninstallPath);
-            printJson(Map.of("uninstalled", result));
-        } else {
-            Output.info("Successfully uninstalled.");
-        }
-        return true;
+    // built per call so it follows the live state store and platform
+    private UninstallService uninstallService() {
+        return new UninstallService(stateStore, platformHandler);
     }
 
     private boolean providers(Command command) {
         return new ProvidersCommand(
             cmdParser, stateStore, toolConfig, providers,
-            this::printJson, this::confirm, this::uninstallManifest).run(command);
+            confirmer, uninstallService()).run(command);
     }
 
     private boolean update(Command command) {
         return installService().update(command);
     }
 
-    
-    // every tracked app, one per line
-    private boolean list() {
-        List<AppManifest> manifests;
-        try {
-            manifests = stateStore.scanManifests();
-        } catch (IOException e) {
-            System.err.println("Failed to load applications: " + e.getMessage());
-            return false;
-        }
-        if (manifests.isEmpty() && !cmdParser.isJson()) {
-            System.out.println("No releases installed.");
-            return true;
-        }
-        if (cmdParser.isJson()) {
-            ManifestViews views = new ManifestViews(platformHandler);
-            List<Map<String, Object>> apps = new ArrayList<>();
-            for (AppManifest manifest : manifests) {
-                apps.add(views.listEntry(manifest));
-            }
-            printJson(Map.of("apps", apps));
-            return true;
-        }
-        for (AppManifest manifest : manifests) {
-            String version = manifest.version() == null ? "unknown" : manifest.version();
-            String name = manifest.provider() + ":" + manifest.repo();
-            System.out.println(name + " " + version);
-        }
-        return true;
-    }
-
-
-
-    private boolean info(Command command) {        RepoRef ref = parseRepo(command.argument);
-        if (ref == null) {
-            return false;
-        }
-        AppManifest manifest;
-        try {
-            var found = stateStore.findManifest(ref);
-            if (found.isEmpty()) {
-                System.err.println("Release " + ref.display() + " is not found.");
-                return false;
-            }
-            manifest = found.get();
-        } catch (IOException e) {
-            System.err.println("Failed to load application state: " + e.getMessage());
-            return false;
-        }
-
-        if (cmdParser.isJson()) {
-            printJson(new ManifestViews(platformHandler).infoEntry(manifest));
-            return true;
-        }
-
-        System.out.println("Repository: " + manifest.repo());
-        System.out.println("Provider: " + manifest.provider());
-        System.out.println("Version: "
-            + (manifest.version() == null ? "unknown" : manifest.version()));
-        System.out.println("Installed: " + manifest.installedAt());
-        System.out.println("Updated: " + manifest.updatedAt());
-        System.out.println("Path: " + manifest.install().path());
-        System.out.println("Install state: " + platformHandler.installState(manifest)
-            .name().toLowerCase(Locale.ROOT));
-        System.out.println("Asset: " + manifest.asset().name());
-        System.out.println("Checksum: " + ManifestViews.describeVerification(manifest.verification()));
-        System.out.println("Signature: " + ManifestViews.describePinnedSignature(manifest.signature()));
-        if (manifest.install().uninstall() != null) {
-            String productCode = manifest.install().uninstall().productCode();
-            if (productCode != null && !productCode.isBlank()) {
-                System.out.println("Product code: " + productCode);
-            }
-        }
-        List<AppManifest.Backup> backups = manifest.backups() == null
-            ? List.of()
-            : manifest.backups();
-        System.out.println("Backups: " + backups.size());
-        for (AppManifest.Backup backup : backups) {
-            System.out.println("  - "
-                + (backup.version() == null ? "unknown" : backup.version())
-                + " (" + backup.createdAt() + ") " + backup.path());
-        }
-        return true;
-    }
-
-
-
     private boolean rollback(Command command) {
         return new RollbackService(
-            os, cmdParser, stateStore, backupManager, platformHandler,
-            this::parseRepo, this::recordManifest, this::confirm,
-            this::printJson).rollback(command);
+            os, cmdParser, manifestStore, backupManager, platformHandler,
+            confirmer).rollback(command);
     }
 
     private void applyInstallRoot() {
@@ -482,91 +268,13 @@ public class ReleaseManager {
         try {
             platformHandler.setInstallRoot(Path.of(root));
         } catch (InvalidPathException e) {
-            System.err.println("Ignoring invalid install_root: " + root);
+            Output.error("Ignoring invalid install_root: " + root);
         }
     }
 
     private boolean doctor() {
         return new Doctor(
-            os, cmdParser, stateStore, platformHandler, signatureVerifier,
-            this::printJson).run();
-    }
-
-    private boolean adopt(Command command) {
-        if (os != Platform.OS.LINUX) {
-            System.err.println("adopt is currently supported on Linux only.");
-            return false;
-        }
-        RepoRef ref = parseRepo(command.argument);
-        if (ref == null) {
-            return false;
-        }
-        Path liveRoot = platformHandler.getInstallRoot();
-        if (liveRoot == null) {
-            System.err.println("Cannot determine the install root.");
-            return false;
-        }
-        Path live = liveRoot.resolve(FileUtils.installName(ref.provider(), ref.path()));
-        if (!Files.isRegularFile(live)) {
-            System.err.println("No installed file found at " + live + ".");
-            return false;
-        }
-        try {
-            if (stateStore.findManifest(ref).isPresent()) {
-                System.err.println("Release " + ref.display() + " is already tracked.");
-                return false;
-            }
-        } catch (IOException e) {
-            System.err.println("Failed to read application state: " + e.getMessage());
-            return false;
-        }
-
-        String message = "Adopt " + live + " as " + ref.display()
-            + "?\nVersion and checksum are unknown.";
-        if (!confirm(message)) {
-            System.err.println("Adoption declined.");
-            return false;
-        }
-
-        try {
-            String name = live.getFileName().toString();
-            ProviderConfig providerConfig = providers.get(ref.provider()).orElse(null);
-            AppManifest manifest = new AppManifest(
-                AppManifest.KIND,
-                AppManifest.SCHEMA_VERSION,
-                ref.provider(),
-                ref.path(),
-                null,
-                null,
-                new AppManifest.Asset(
-                    name,
-                    live.toUri().toString(),
-                    null),
-                new AppManifest.Install(
-                    InstallService.installKind(name),
-                    live.toString(),
-                    stateStore.paths().appDir(ref.provider(), ref.path()).toString(),
-                    new AppManifest.Uninstall(live.toString(), List.of(), null)),
-                new AppManifest.Verification("unknown", "none", null, null, null),
-                List.of(),
-                Files.getLastModifiedTime(live).toInstant(),
-                Instant.now(),
-                null,
-                providerConfig == null ? null : providerConfig.type(),
-                providerConfig == null ? null : providerConfig.resolvedApi());
-            if (!recordManifest(manifest)) {
-                return false;
-            }
-            if (cmdParser.isJson()) {
-                printJson(Map.of("adopted", new ManifestViews(platformHandler).listEntry(manifest)));
-            } else {
-                Output.info("Adopted " + ref.display() + " at " + live + ".");
-            }
-            return true;
-        } catch (IOException e) {
-            System.err.println("Failed to adopt " + ref.display() + ": " + e.getMessage());
-            return false;
-        }
+            os, cmdParser, stateStore, platformHandler, signatureVerifier).run();
     }
 
     // usage on stdout
@@ -577,7 +285,7 @@ public class ReleaseManager {
     // unknown command: message plus usage on stderr
     private int usage(Command command) {
         if (command.argument != null && !command.argument.isBlank()) {
-            System.err.println("Unknown command: " + command.argument);
+            Output.error("Unknown command: " + command.argument);
         }
         printUsage(System.err);
         return 2;

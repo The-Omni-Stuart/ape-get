@@ -5,18 +5,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
+import cz.cuni.mff.releasemanager.types.Asset;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-
-import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
-import cz.cuni.mff.releasemanager.types.Asset;
 
 class AssetVerifierTest {
 
@@ -49,19 +50,19 @@ class AssetVerifierTest {
         Path checksumPath = checksumFile(HELLO + "  file.txt\n");
         when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(provider, 
+        VerificationResult result = verifier.verify(provider,
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.VERIFIED, result.status());
         assertTrue(result.allowsInstall(true));
-        verify(provider).discardAsset(checksumPath);
+        assertFalse(Files.exists(checksumPath));
     }
 
     @Test
     void reportsMissingChecksumAsset() throws Exception {
         Asset target = new Asset("url", "file.txt");
 
-        VerificationResult result = verifier.verify(provider, 
+        VerificationResult result = verifier.verify(provider,
             target, List.of(target), downloadedHello());
 
         assertEquals(VerificationStatus.MISSING, result.status());
@@ -77,7 +78,7 @@ class AssetVerifierTest {
         Path checksumPath = checksumFile(OTHER + "  file.txt\n");
         when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(provider, 
+        VerificationResult result = verifier.verify(provider,
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.MISMATCH, result.status());
@@ -93,7 +94,7 @@ class AssetVerifierTest {
         Path checksumPath = checksumFile(OTHER + "  other.txt\n");
         when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(provider, 
+        VerificationResult result = verifier.verify(provider,
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.UNKNOWN_ASSET, result.status());
@@ -108,7 +109,7 @@ class AssetVerifierTest {
         Path checksumPath = checksumFile("garbage\n");
         when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(provider, 
+        VerificationResult result = verifier.verify(provider,
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.INVALID, result.status());
@@ -123,7 +124,7 @@ class AssetVerifierTest {
         Path checksumPath = checksumFile(OTHER + "  other.txt\n" + HELLO + "  file.txt\n");
         when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(provider, 
+        VerificationResult result = verifier.verify(provider,
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.VERIFIED, result.status());

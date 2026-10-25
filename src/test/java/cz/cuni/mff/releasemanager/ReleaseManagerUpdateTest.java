@@ -7,17 +7,9 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.platform.InstallRequest;
@@ -28,6 +20,13 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
 
@@ -245,8 +244,6 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
                 newAsset.name(), "expected", "actual", "checksum"));
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "github:user/example"}));
-
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockStateStore, never()).saveManifest(any());
@@ -291,5 +288,30 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
 
         verify(mockGithubClient, never()).downloadAsset(any());
         verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteUpdateAlreadyUpToDateJson() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "github:user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+
+        Asset asset = new Asset("http://url", "example.exe");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(manifest(
+                "user/example", asset.url(), asset.name(), "/ProgramFiles/uninstall.exe")));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+
+        String output = captureOut(
+            () -> releaseManager.execute(
+                new String[]{"update", "github:user/example", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertEquals("github", root.get("up_to_date").get("provider").asText());
+        assertEquals("user/example", root.get("up_to_date").get("repo").asText());
+        assertEquals("1.0.0", root.get("up_to_date").get("version").asText());
+        verify(mockGithubClient, never()).downloadAsset(any());
     }
 }

@@ -3,7 +3,6 @@ package cz.cuni.mff.releasemanager.provider;
 import java.io.IOException;
 import java.nio.file.Path;
 
-import cz.cuni.mff.releasemanager.GithubClient;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 
@@ -43,10 +42,5 @@ public final class GithubProvider implements ReleaseProvider {
     public SearchResult search(String query) throws IOException, InterruptedException {
         return githubClient.searchRepoByName(query)
             .orElse(new SearchResult(java.util.List.of()));
-    }
-
-    @Override
-    public void discardAsset(Path assetPath) {
-        githubClient.discardAsset(assetPath);
     }
 }

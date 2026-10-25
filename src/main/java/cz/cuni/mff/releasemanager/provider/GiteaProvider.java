@@ -121,11 +121,6 @@ public final class GiteaProvider implements ReleaseProvider {
         return new SearchResult(repos);
     }
 
-    @Override
-    public void discardAsset(Path assetPath) {
-        http.discard(assetPath);
-    }
-
     private String resolveDownloadUrl(String url) {
         if (url.startsWith("http://") || url.startsWith("https://")) {
             return url;

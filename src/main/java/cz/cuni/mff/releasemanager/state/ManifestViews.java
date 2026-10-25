@@ -1,10 +1,15 @@
 package cz.cuni.mff.releasemanager.state;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+
+import cz.cuni.mff.releasemanager.json.JsonViews.AppInfo;
+import cz.cuni.mff.releasemanager.json.JsonViews.AppView;
+import cz.cuni.mff.releasemanager.json.JsonViews.AssetView;
+import cz.cuni.mff.releasemanager.json.JsonViews.BackupView;
+import cz.cuni.mff.releasemanager.json.JsonViews.SignatureView;
+import cz.cuni.mff.releasemanager.json.JsonViews.VerificationView;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 
 // json and text views of an installed app
@@ -16,73 +21,74 @@ public final class ManifestViews {
         this.platformHandler = platformHandler;
     }
 
-    public Map<String, Object> listEntry(AppManifest manifest) {
-        Map<String, Object> app = new LinkedHashMap<>();
-        app.put("provider", manifest.provider());
-        app.put("repo", manifest.repo());
-        app.put("version", manifest.version());
-        app.put("installed_at", manifest.installedAt());
-        app.put("updated_at", manifest.updatedAt());
-        app.put("install_path",
-            manifest.install() == null ? null : manifest.install().path());
-        app.put("asset", manifest.asset() == null ? null : manifest.asset().name());
-        return app;
+    public AppView listEntry(AppManifest manifest) {
+        return new AppView(
+            manifest.provider(),
+            manifest.repo(),
+            manifest.version(),
+            manifest.installedAt(),
+            manifest.updatedAt(),
+            manifest.install() == null ? null : manifest.install().path(),
+            manifest.asset() == null ? null : manifest.asset().name());
     }
 
-    public Map<String, Object> infoEntry(AppManifest manifest) {
-        Map<String, Object> info = listEntry(manifest);
-        info.put("release_id", manifest.releaseId());
-        info.put("install_state", platformHandler.installState(manifest)
-            .name().toLowerCase(Locale.ROOT));
+    public AppInfo infoEntry(AppManifest manifest) {
+        AssetView asset = manifest.asset() == null
+            ? new AssetView(null, null, null)
+            : new AssetView(
+                manifest.asset().name(),
+                manifest.asset().url(),
+                manifest.asset().sha256());
 
-        Map<String, Object> asset = new LinkedHashMap<>();
-        if (manifest.asset() != null) {
-            asset.put("name", manifest.asset().name());
-            asset.put("url", manifest.asset().url());
-            asset.put("sha256", manifest.asset().sha256());
-        }
-        info.put("asset", asset);
+        AppManifest.Install install = manifest.install();
+        AppManifest.Uninstall uninstall = install == null ? null : install.uninstall();
 
-        if (manifest.install() != null) {
-            info.put("install_root", manifest.install().root());
-            AppManifest.Uninstall uninstall = manifest.install().uninstall();
-            info.put("launcher", uninstall == null ? null : uninstall.path());
-            info.put("product_code", uninstall == null ? null : uninstall.productCode());
-        }
+        VerificationView verification = manifest.verification() == null
+            ? new VerificationView(null, null, null, null, null)
+            : new VerificationView(
+                manifest.verification().status(),
+                manifest.verification().method(),
+                manifest.verification().checksumAsset(),
+                manifest.verification().expected(),
+                manifest.verification().actual());
 
-        Map<String, Object> verification = new LinkedHashMap<>();
-        if (manifest.verification() != null) {
-            verification.put("status", manifest.verification().status());
-            verification.put("method", manifest.verification().method());
-            verification.put("checksum_asset", manifest.verification().checksumAsset());
-            verification.put("expected", manifest.verification().expected());
-            verification.put("actual", manifest.verification().actual());
-        }
-        info.put("verification", verification);
+        SignatureView signature = manifest.signature() == null
+            ? new SignatureView(null, null, null, null, null)
+            : new SignatureView(
+                manifest.signature().status(),
+                manifest.signature().mechanism(),
+                manifest.signature().signer(),
+                manifest.signature().identity(),
+                manifest.signature().notarized());
 
-        Map<String, Object> signature = new LinkedHashMap<>();
-        if (manifest.signature() != null) {
-            signature.put("status", manifest.signature().status());
-            signature.put("mechanism", manifest.signature().mechanism());
-            signature.put("signer", manifest.signature().signer());
-            signature.put("identity", manifest.signature().identity());
-            signature.put("notarized", manifest.signature().notarized());
-        }
-        info.put("signature", signature);
-
-        List<Map<String, Object>> backups = new ArrayList<>();
+        List<BackupView> backups = new ArrayList<>();
         if (manifest.backups() != null) {
             for (AppManifest.Backup backup : manifest.backups()) {
-                Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("version", backup.version());
-                entry.put("created_at", backup.createdAt());
-                entry.put("path", backup.path());
-                entry.put("artifact", backup.artifact());
-                backups.add(entry);
+                backups.add(new BackupView(
+                    backup.version(),
+                    backup.createdAt(),
+                    backup.path(),
+                    backup.artifact()));
             }
         }
-        info.put("backups", backups);
-        return info;
+
+        return new AppInfo(
+            manifest.provider(),
+            manifest.repo(),
+            manifest.version(),
+            manifest.installedAt(),
+            manifest.updatedAt(),
+            install == null ? null : install.path(),
+            platformHandler.installState(manifest)
+                .name().toLowerCase(Locale.ROOT),
+            asset,
+            manifest.releaseId(),
+            install == null ? null : install.root(),
+            uninstall == null ? null : uninstall.path(),
+            uninstall == null ? null : uninstall.productCode(),
+            verification,
+            signature,
+            backups);
     }
 
     public static String describeVerification(AppManifest.Verification verification) {

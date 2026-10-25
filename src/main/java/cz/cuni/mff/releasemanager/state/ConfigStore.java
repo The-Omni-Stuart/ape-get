@@ -8,6 +8,8 @@ import java.time.Instant;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import cz.cuni.mff.releasemanager.utils.Output;
+
 /**
  * Loads and creates grm_config.json.
  */
@@ -69,7 +71,7 @@ public final class ConfigStore {
         Path quarantined = file.resolveSibling(
             file.getFileName() + ".corrupt-" + Instant.now().toEpochMilli());
         Files.move(file, quarantined, StandardCopyOption.REPLACE_EXISTING);
-        System.err.println("Warning: corrupt config moved to " + quarantined);
+        Output.error("Warning: corrupt config moved to " + quarantined);
         return quarantined;
     }
 }

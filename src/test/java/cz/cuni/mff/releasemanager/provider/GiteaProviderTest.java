@@ -10,16 +10,17 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.sun.net.httpserver.HttpServer;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.utils.StagedAsset;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class GiteaProviderTest {
 
@@ -152,7 +153,7 @@ class GiteaProviderTest {
         try {
             assertEquals("payload", Files.readString(downloaded));
         } finally {
-            provider.discardAsset(downloaded);
+            StagedAsset.discard(downloaded);
         }
     }
 
@@ -170,7 +171,7 @@ class GiteaProviderTest {
         try {
             assertEquals("token " + System.getenv("PATH"), downloadAuthorization.get());
         } finally {
-            provider.discardAsset(downloaded);
+            StagedAsset.discard(downloaded);
         }
     }
 
@@ -190,7 +191,7 @@ class GiteaProviderTest {
             assertEquals("payload", Files.readString(downloaded));
             assertNull(downloadAuthorization.get());
         } finally {
-            provider.discardAsset(downloaded);
+            StagedAsset.discard(downloaded);
         }
     }
 

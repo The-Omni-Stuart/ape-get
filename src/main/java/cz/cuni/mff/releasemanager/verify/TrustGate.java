@@ -4,15 +4,16 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
+
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
+import cz.cuni.mff.releasemanager.cmd.Confirmer;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.ManifestViews;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.Output;
+import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 // decides whether a downloaded release is trusted enough to install
 public final class TrustGate {
@@ -21,21 +22,18 @@ public final class TrustGate {
     private final GrmConfig toolConfig;
     private final AssetVerifier verifier;
     private final SignatureVerifier signatureVerifier;
-    private final Consumer<Path> discardAsset;
-    private final Predicate<String> confirm;
+    private final Confirmer confirm;
 
     public TrustGate(
         CmdParser cmdParser,
         GrmConfig toolConfig,
         AssetVerifier verifier,
         SignatureVerifier signatureVerifier,
-        Consumer<Path> discardAsset,
-        Predicate<String> confirm) {
+        Confirmer confirm) {
         this.cmdParser = cmdParser;
         this.toolConfig = toolConfig;
         this.verifier = verifier;
         this.signatureVerifier = signatureVerifier;
-        this.discardAsset = discardAsset;
         this.confirm = confirm;
     }
 
@@ -47,14 +45,14 @@ public final class TrustGate {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Checksum verification failed: " + e.getMessage());
+            Output.error("Checksum verification failed: " + e.getMessage());
             return null;
         }
     }
 
     public boolean isAllowed(VerificationResult verification, Path downloaded) {
         if (verification == null) {
-            discardAsset.accept(downloaded);
+            StagedAsset.discard(downloaded);
             return false;
         }
         boolean strict = cmdParser.isStrict() || toolConfig.strictVerification();
@@ -62,12 +60,12 @@ public final class TrustGate {
             String action = verification.status() == VerificationStatus.MISMATCH
                 ? " Refusing to install."
                 : " Refusing to install (strict mode).";
-            System.err.println(verification.message() + action);
-            discardAsset.accept(downloaded);
+            Output.error(verification.message() + action);
+            StagedAsset.discard(downloaded);
             return false;
         }
         if (verification.status() != VerificationStatus.VERIFIED) {
-            System.err.println(verification.message() + " Continuing without verification.");
+            Output.error(verification.message() + " Continuing without verification.");
         }
         return true;
     }
@@ -87,21 +85,21 @@ public final class TrustGate {
     public boolean isSignatureAllowed(
         SignatureResult signature, Path downloaded, AppManifest previous) {
         if (signature == null) {
-            discardAsset.accept(downloaded);
+            StagedAsset.discard(downloaded);
             return false;
         }
         boolean pinned = previous != null && previous.signature() != null
             && previous.signature().isVerified();
         boolean required = cmdParser.isRequireSignature() || toolConfig.requireSignature();
         if (!signature.allowsInstall(required)) {
-            System.err.println(signature.message() + " Refusing to install.");
-            discardAsset.accept(downloaded);
+            Output.error(signature.message() + " Refusing to install.");
+            StagedAsset.discard(downloaded);
             return false;
         }
         if (signature.status() == SignatureStatus.VERIFIED) {
             Output.info(signature.message());
         } else if (!pinned) {
-            System.err.println(
+            Output.error(
                 signature.message() + " Continuing without a verified signature.");
         }
         return true;
@@ -129,16 +127,16 @@ public final class TrustGate {
             : "the signer changed from " + ManifestViews.describeSignature(pinned)
                 + " to " + describe(signature);
         if (!cmdParser.isAllowSignerChange()) {
-            System.err.println("Unable to " + operation + " " + previous.repo() + ".");
-            System.err.println("Reason: " + reason + ".");
-            System.err.println(
+            Output.error("Unable to " + operation + " " + previous.repo() + ".");
+            Output.error("Reason: " + reason + ".");
+            Output.error(
                 "Be careful: this can mean the release was replaced or tampered with.");
-            System.err.println(unsigned
+            Output.error(unsigned
                 ? "If you trust this release, rerun with --allow-signer-change "
                     + "to clear the pinned signer."
                 : "If you trust the new signer, rerun with --allow-signer-change "
                     + "to accept it and update the pin.");
-            discardAsset.accept(downloaded);
+            StagedAsset.discard(downloaded);
             return false;
         }
 
@@ -151,15 +149,15 @@ public final class TrustGate {
                 + "  from: " + ManifestViews.describeSignature(pinned) + "\n"
                 + "  to:   " + describe(signature) + "\n"
                 + "Only continue if you trust the new signer.";
-        if (!confirm.test(question)) {
-            System.err.println("Signer override declined.");
-            discardAsset.accept(downloaded);
+        if (!confirm.confirm(question)) {
+            Output.error("Signer override declined.");
+            StagedAsset.discard(downloaded);
             return false;
         }
         if (unsigned) {
-            System.err.println("Warning: signer pin cleared for " + previous.repo() + ".");
+            Output.error("Warning: signer pin cleared for " + previous.repo() + ".");
         } else {
-            System.err.println("Warning: signer pin updated for " + previous.repo()
+            Output.error("Warning: signer pin updated for " + previous.repo()
                 + " to " + describe(signature) + ".");
         }
         return true;

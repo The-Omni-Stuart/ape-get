@@ -9,17 +9,18 @@ import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.sun.net.httpserver.HttpServer;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.utils.StagedAsset;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class GitLabProviderTest {
 
@@ -162,7 +163,7 @@ class GitLabProviderTest {
         try {
             assertEquals("payload", Files.readString(downloaded));
         } finally {
-            provider.discardAsset(downloaded);
+            StagedAsset.discard(downloaded);
         }
     }
 
@@ -180,7 +181,7 @@ class GitLabProviderTest {
         try {
             assertEquals(System.getenv("PATH"), downloadToken.get());
         } finally {
-            provider.discardAsset(downloaded);
+            StagedAsset.discard(downloaded);
         }
     }
 
@@ -199,7 +200,7 @@ class GitLabProviderTest {
             assertEquals("payload", Files.readString(downloaded));
             assertNull(downloadToken.get());
         } finally {
-            provider.discardAsset(downloaded);
+            StagedAsset.discard(downloaded);
         }
     }
 

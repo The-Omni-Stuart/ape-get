@@ -12,6 +12,7 @@ import java.util.List;
 
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 /**
  * Verifies a downloaded release asset against a checksum published in the same release.
@@ -72,7 +73,7 @@ public final class AssetVerifier {
                 return VerificationResult.mismatch(
                     target.name(), expected, actual, checksumAsset.name());
             } finally {
-                provider.discardAsset(checksumPath);
+                StagedAsset.discard(checksumPath);
             }
         }
 

@@ -12,6 +12,7 @@ import java.util.Set;
 
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.Output;
 
 // macOS installs: mount the DMG, copy the bundle, detach
 public final class MacHandler extends PlatformHandler {
@@ -46,7 +47,7 @@ public final class MacHandler extends PlatformHandler {
             Path target = targetDir.resolve(app.getFileName());
             if (Files.exists(target)
                 && isOwnedByAnotherRepo(target, request.provider(), request.repoFullName())) {
-                System.err.println("Refusing to overwrite " + target + " owned by another release.");
+                Output.error("Refusing to overwrite " + target + " owned by another release.");
                 return null;
             }
 
@@ -66,7 +67,7 @@ public final class MacHandler extends PlatformHandler {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Installation error: " + e.getMessage());
+            Output.error("Installation error: " + e.getMessage());
             return null;
         } finally {
             if (mounted) {
@@ -76,14 +77,14 @@ public final class MacHandler extends PlatformHandler {
                     if (e instanceof InterruptedException) {
                         Thread.currentThread().interrupt();
                     }
-                    System.err.println("Failed to detach " + MOUNT_DIR + ": " + e.getMessage());
+                    Output.error("Failed to detach " + MOUNT_DIR + ": " + e.getMessage());
                 }
             }
             if (stagingDir != null) {
                 try {
                     FileUtils.deleteRecursively(stagingDir);
                 } catch (IOException e) {
-                    System.err.println("Failed to remove staging directory: " + e.getMessage());
+                    Output.error("Failed to remove staging directory: " + e.getMessage());
                 }
             }
         }
@@ -108,7 +109,7 @@ public final class MacHandler extends PlatformHandler {
         ));
         Process process = process()
                 .command("hdiutil", "attach", "-nobrowse", "-mountpoint",
-                    MOUNT_DIR.toAbsolutePath().toString(), 
+                    MOUNT_DIR.toAbsolutePath().toString(),
                     asset.toString())
                 .inheritIO()
                 .start();
@@ -163,7 +164,7 @@ public final class MacHandler extends PlatformHandler {
     @Override
     public boolean uninstall(Path asset) {
         if (!isAllowedUninstallPath(asset)) {
-            System.err.println("Refusing to uninstall path outside Applications: " + asset);
+            Output.error("Refusing to uninstall path outside Applications: " + asset);
             return false;
         }
         if (!Files.exists(asset, LinkOption.NOFOLLOW_LINKS)) {
@@ -173,7 +174,7 @@ public final class MacHandler extends PlatformHandler {
             FileUtils.deleteRecursively(asset);
             return true;
         } catch (IOException e) {
-            System.err.println("Uninstallation error: " + e.getMessage());
+            Output.error("Uninstallation error: " + e.getMessage());
             return false;
         }
     }

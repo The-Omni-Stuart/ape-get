@@ -4,6 +4,8 @@ import java.util.NoSuchElementException;
 import java.util.Scanner;
 import java.util.function.Supplier;
 
+import cz.cuni.mff.releasemanager.utils.Output;
+
 /**
  * Interactive yes/no prompt with non-TTY and --yes handling.
  */
@@ -25,13 +27,12 @@ public final class ConsolePrompt implements Prompt {
         if (assumeYes) {
             return true;
         }
-        System.err.println(message);
+        Output.error(message);
         if (!interactive) {
-            System.err.println("Confirmation required. Re-run with --yes to approve.");
+            Output.error("Confirmation required. Re-run with --yes to approve.");
             return false;
         }
-        System.out.print("Continue? [y/N] ");
-        System.out.flush();
+        Output.prompt("Continue? [y/N] ");
         try {
             String answer = input.get();
             if (answer == null) {

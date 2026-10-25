@@ -4,16 +4,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
-
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.platform.InstallRequest;
@@ -24,6 +16,13 @@ import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;
 import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
 
@@ -52,7 +51,6 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
         assertEquals(1, releaseManager.execute(new String[]{"update", "github:user/example"}));
 
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockBackupManager, never()).createAndPrune(any(), anyInt());
         verify(mockStateStore, never()).saveManifest(any());
     }
@@ -113,7 +111,6 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
         assertEquals(1, releaseManager.execute(new String[]{"update", "github:user/example"}));
 
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
-        verify(mockGithubClient).discardAsset(downloaded);
     }
 
     @Test
@@ -177,7 +174,6 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
         assertEquals(1, releaseManager.execute(new String[]{"update", "github:user/example"}));
 
         verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
-        verify(mockGithubClient).discardAsset(downloaded);
         verify(mockStateStore, never()).saveManifest(any());
     }
 

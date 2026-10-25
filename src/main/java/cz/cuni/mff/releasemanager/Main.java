@@ -1,5 +1,7 @@
 package cz.cuni.mff.releasemanager;
 
+import cz.cuni.mff.releasemanager.utils.Output;
+
 /**
  * Entry point for the Github Release Manager application.
  */
@@ -14,7 +16,7 @@ public class Main {
         try {
             exitCode = ReleaseManager.getInstance().execute(args);
         } catch (RuntimeException e) {
-            System.err.println("Unexpected error: " + e.getMessage());
+            Output.error("Unexpected error: " + e.getMessage());
             exitCode = 1;
         }
         System.exit(exitCode);

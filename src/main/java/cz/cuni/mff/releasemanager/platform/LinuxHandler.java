@@ -49,23 +49,23 @@ public final class LinuxHandler extends PlatformHandler {
         try {
             Path assetPath = request.asset();
             if (assetPath == null || !Files.isRegularFile(assetPath)) {
-                System.err.println("Installation failed: asset is missing");
+                Output.error("Installation failed: asset is missing");
                 return null;
             }
             String repoFullName = request.repoFullName();
             Path launcher = launcherPath(request.provider(), repoFullName);
             if (launcher == null) {
-                System.err.println("Installation failed: invalid repository name");
+                Output.error("Installation failed: invalid repository name");
                 return null;
             }
             if (Files.isDirectory(launcher, LinkOption.NOFOLLOW_LINKS)) {
-                System.err.println("Refusing to replace directory " + launcher);
+                Output.error("Refusing to replace directory " + launcher);
                 return null;
             }
             if (Files.exists(launcher, LinkOption.NOFOLLOW_LINKS)
                 && isOwnedByAnotherRepo(
                     launcher, request.provider(), repoFullName)) {
-                System.err.println(
+                Output.error(
                     "Refusing to overwrite " + launcher + " owned by another release.");
                 return null;
             }
@@ -87,13 +87,13 @@ public final class LinuxHandler extends PlatformHandler {
 
             Output.info("Installed to: " + target);
             if (!PathEnvironment.isOnPath(launcher.getParent())) {
-                System.err.println("Note: " + launcher.getParent()
+                Output.error("Note: " + launcher.getParent()
                     + " is not on PATH; run " + launcher + " directly.");
             }
             FileUtils.removeTempDir(assetPath);
             return target;
         } catch (IOException e) {
-            System.err.println("Installation failed: " + e.getMessage());
+            Output.error("Installation failed: " + e.getMessage());
             return null;
         }
     }
@@ -130,7 +130,7 @@ public final class LinuxHandler extends PlatformHandler {
                     appDir.resolve("current").resolve(restored.getFileName()));
             }
         } catch (IOException e) {
-            System.err.println("Warning: could not update install links: " + e.getMessage());
+            Output.error("Warning: could not update install links: " + e.getMessage());
         }
     }
 
@@ -138,7 +138,7 @@ public final class LinuxHandler extends PlatformHandler {
     public boolean uninstall(Path asset) {
         Path installDir = getInstallDir();
         if (!isUnder(asset, installDir)) {
-            System.err.println("Refusing to uninstall path outside " + installDir + ": " + asset);
+            Output.error("Refusing to uninstall path outside " + installDir + ": " + asset);
             return false;
         }
         if (!Files.exists(asset, LinkOption.NOFOLLOW_LINKS)) {
@@ -148,7 +148,7 @@ public final class LinuxHandler extends PlatformHandler {
             Files.delete(asset);
             return !Files.exists(asset, LinkOption.NOFOLLOW_LINKS);
         } catch (IOException e) {
-            System.err.println("Failed to uninstall: " + e.getMessage());
+            Output.error("Failed to uninstall: " + e.getMessage());
             return false;
         }
     }

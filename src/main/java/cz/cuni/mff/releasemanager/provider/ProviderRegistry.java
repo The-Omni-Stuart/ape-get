@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
+import cz.cuni.mff.releasemanager.utils.Output;
 
 /**
  * Built-in provider instances plus user-defined ones from config.
@@ -35,11 +36,11 @@ public final class ProviderRegistry {
                 String name = entry.getKey();
                 ProviderConfig config = entry.getValue();
                 if (BUILT_INS.containsKey(name)) {
-                    System.err.println("Warning: ignoring provider config for built-in " + name + ".");
+                    Output.error("Warning: ignoring provider config for built-in " + name + ".");
                     continue;
                 }
                 if (!ProviderConfig.validName(name) || config == null || !config.isValid()) {
-                    System.err.println("Warning: ignoring invalid provider config for " + name + ".");
+                    Output.error("Warning: ignoring invalid provider config for " + name + ".");
                     continue;
                 }
                 merged.put(name.toLowerCase(Locale.ROOT), config.named(name));

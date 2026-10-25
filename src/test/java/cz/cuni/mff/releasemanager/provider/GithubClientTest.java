@@ -1,6 +1,5 @@
-package cz.cuni.mff.releasemanager;
+package cz.cuni.mff.releasemanager.provider;
 
-import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
@@ -15,25 +14,26 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
+
+import cz.cuni.mff.releasemanager.platform.Platform;
+import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.types.SearchResult;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
-import cz.cuni.mff.releasemanager.platform.Platform;
-import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
-import cz.cuni.mff.releasemanager.platform.PlatformHandler;
-import cz.cuni.mff.releasemanager.types.Asset;
-import cz.cuni.mff.releasemanager.types.SearchResult;
 
 class GithubClientTest {
 

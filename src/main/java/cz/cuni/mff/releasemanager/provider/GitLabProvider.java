@@ -107,11 +107,6 @@ public final class GitLabProvider implements ReleaseProvider {
         return new SearchResult(repos);
     }
 
-    @Override
-    public void discardAsset(Path assetPath) {
-        http.discard(assetPath);
-    }
-
     private static String downloadUrl(GitLabLink link) {
         if (link.directAssetUrl() != null && !link.directAssetUrl().isBlank()) {
             return link.directAssetUrl();

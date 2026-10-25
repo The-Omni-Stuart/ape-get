@@ -1,4 +1,4 @@
-package cz.cuni.mff.releasemanager.provider;
+package cz.cuni.mff.releasemanager.commands;
 
 import java.io.IOException;
 import java.net.URI;
@@ -9,11 +9,22 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Predicate;
+
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
+import cz.cuni.mff.releasemanager.cmd.Confirmer;
+import cz.cuni.mff.releasemanager.install.UninstallService;
+import cz.cuni.mff.releasemanager.json.JsonViews.PackageView;
+import cz.cuni.mff.releasemanager.json.JsonViews.ProviderConfigView;
+import cz.cuni.mff.releasemanager.json.JsonViews.ProviderDetail;
+import cz.cuni.mff.releasemanager.json.JsonViews.ProviderEntry;
+import cz.cuni.mff.releasemanager.json.JsonViews.ProviderList;
+import cz.cuni.mff.releasemanager.json.JsonViews.ProviderResult;
+import cz.cuni.mff.releasemanager.json.JsonViews.RemovedProvider;
+import cz.cuni.mff.releasemanager.provider.ProviderConfig;
+import cz.cuni.mff.releasemanager.provider.ProviderDetector;
+import cz.cuni.mff.releasemanager.provider.ProviderRegistry;
+import cz.cuni.mff.releasemanager.provider.ProviderType;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.StateStore;
@@ -24,9 +35,8 @@ public final class ProvidersCommand {
 
     private final CmdParser cmdParser;
     private final StateStore stateStore;
-    private final Consumer<Object> printJson;
-    private final Predicate<String> confirm;
-    private final Function<AppManifest, Boolean> uninstallManifest;
+    private final Confirmer confirm;
+    private final UninstallService uninstallService;
     private GrmConfig toolConfig;
     private ProviderRegistry providers;
 
@@ -35,16 +45,14 @@ public final class ProvidersCommand {
         StateStore stateStore,
         GrmConfig toolConfig,
         ProviderRegistry providers,
-        Consumer<Object> printJson,
-        Predicate<String> confirm,
-        Function<AppManifest, Boolean> uninstallManifest) {
+        Confirmer confirm,
+        UninstallService uninstallService) {
         this.cmdParser = cmdParser;
         this.stateStore = stateStore;
         this.toolConfig = toolConfig;
         this.providers = providers;
-        this.printJson = printJson;
         this.confirm = confirm;
-        this.uninstallManifest = uninstallManifest;
+        this.uninstallService = uninstallService;
     }
 
     public boolean run(Command command) {
@@ -65,15 +73,15 @@ public final class ProvidersCommand {
     }
 
     private boolean providersUsage() {
-        System.err.println("Usage:");
-        System.err.println("  providers list");
-        System.err.println("  providers show <name>");
-        System.err.println("  providers add <name> <url> [--type auto|github|gitea|gitlab]"
+        Output.error("Usage:");
+        Output.error("  providers list");
+        Output.error("  providers show <name>");
+        Output.error("  providers add <name> <url> [--type auto|github|gitea|gitlab]"
             + " [--api URL] [--token-env VAR]");
-        System.err.println("  providers update <name> [--type ...] [--api URL] [--url URL]"
+        Output.error("  providers update <name> [--type ...] [--api URL] [--url URL]"
             + " [--token-env VAR] [--force]");
-        System.err.println("  providers remove <name> [--abandon | --purge]");
-        System.err.println("  providers recover <name> [--type ...] [--api URL]");
+        Output.error("  providers remove <name> [--abandon | --purge]");
+        Output.error("  providers recover <name> [--type ...] [--api URL]");
         return false;
     }
 
@@ -109,15 +117,14 @@ public final class ProvidersCommand {
         return new ProviderOptions(values, positional, flags);
     }
 
-    private Map<String, Object> providerEntry(ProviderConfig config) {
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("name", config.name());
-        entry.put("type", config.type());
-        entry.put("url", config.url());
-        entry.put("api", config.resolvedApi());
-        entry.put("token_env", config.tokenEnv());
-        entry.put("built_in", ProviderRegistry.builtIns().containsKey(config.name()));
-        return entry;
+    private ProviderConfigView providerEntry(ProviderConfig config) {
+        return new ProviderConfigView(
+            config.name(),
+            config.type(),
+            config.url(),
+            config.resolvedApi(),
+            config.tokenEnv(),
+            ProviderRegistry.builtIns().containsKey(config.name()));
     }
 
     private boolean providersList() {
@@ -125,12 +132,12 @@ public final class ProvidersCommand {
         try {
             manifests = stateStore.scanManifests();
         } catch (IOException e) {
-            System.err.println("Failed to read installed packages: " + e.getMessage());
+            Output.error("Failed to read installed packages: " + e.getMessage());
             return false;
         }
         List<ProviderConfig> configs = new ArrayList<>(providers.all());
         configs.sort(java.util.Comparator.comparing(ProviderConfig::name));
-        List<Map<String, Object>> entries = new ArrayList<>();
+        List<ProviderEntry> entries = new ArrayList<>();
         for (ProviderConfig config : configs) {
             long count = manifests.stream()
                 .filter(manifest -> config.name().equals(manifest.provider()))
@@ -141,27 +148,26 @@ public final class ProvidersCommand {
                 tokenState = System.getenv(config.tokenEnv()) == null ? "missing" : "set";
             }
             if (cmdParser.isJson()) {
-                Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("name", config.name());
-                entry.put("type", config.type());
-                entry.put("url", config.url());
-                entry.put("api", config.resolvedApi());
-                entry.put("token_env", config.tokenEnv());
-                entry.put("token_state", tokenState);
-                entry.put("built_in", builtIn);
-                entry.put("packages", count);
-                entries.add(entry);
+                entries.add(new ProviderEntry(
+                    config.name(),
+                    config.type(),
+                    config.url(),
+                    config.resolvedApi(),
+                    config.tokenEnv(),
+                    tokenState,
+                    builtIn,
+                    count));
                 continue;
             }
             String token = config.tokenEnv() == null || config.tokenEnv().isBlank()
                 ? ""
                 : " token-env=" + config.tokenEnv() + " (" + tokenState + ")";
-            System.out.println(config.name() + " (" + config.type() + ", "
+            Output.data(config.name() + " (" + config.type() + ", "
                 + config.resolvedApi() + ") packages=" + count
                 + (builtIn ? " [built-in]" : "") + token);
         }
         if (cmdParser.isJson()) {
-            printJson.accept(Map.of("providers", entries));
+            Output.json(new ProviderList(entries));
         }
         return true;
     }
@@ -169,7 +175,7 @@ public final class ProvidersCommand {
     private boolean providersShow(String name) {
         ProviderConfig config = providers.get(name).orElse(null);
         if (config == null) {
-            System.err.println("Provider '" + name + "' is not configured.");
+            Output.error("Provider '" + name + "' is not configured.");
             return false;
         }
         List<AppManifest> manifests;
@@ -178,39 +184,38 @@ public final class ProvidersCommand {
                 .filter(manifest -> config.name().equals(manifest.provider()))
                 .toList();
         } catch (IOException e) {
-            System.err.println("Failed to read installed packages: " + e.getMessage());
+            Output.error("Failed to read installed packages: " + e.getMessage());
             return false;
         }
         boolean builtIn = ProviderRegistry.builtIns().containsKey(config.name());
         if (cmdParser.isJson()) {
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("name", config.name());
-            entry.put("type", config.type());
-            entry.put("url", config.url());
-            entry.put("api", config.resolvedApi());
-            entry.put("token_env", config.tokenEnv());
-            entry.put("built_in", builtIn);
-            List<Map<String, Object>> packages = new ArrayList<>();
+            List<PackageView> packages = new ArrayList<>();
             for (AppManifest manifest : manifests) {
-                packages.add(Map.of(
-                    "repo", manifest.repo(),
-                    "version", manifest.version() == null ? "" : manifest.version()));
+                packages.add(new PackageView(
+                    manifest.repo(),
+                    manifest.version() == null ? "" : manifest.version()));
             }
-            entry.put("packages", packages);
-            printJson.accept(entry);
+            Output.json(new ProviderDetail(
+                config.name(),
+                config.type(),
+                config.url(),
+                config.resolvedApi(),
+                config.tokenEnv(),
+                builtIn,
+                packages));
             return true;
         }
-        System.out.println("Name: " + config.name());
-        System.out.println("Type: " + config.type());
-        System.out.println("URL: " + config.url());
-        System.out.println("API: " + config.resolvedApi());
-        System.out.println("Token env: "
+        Output.data("Name: " + config.name());
+        Output.data("Type: " + config.type());
+        Output.data("URL: " + config.url());
+        Output.data("API: " + config.resolvedApi());
+        Output.data("Token env: "
             + (config.tokenEnv() == null || config.tokenEnv().isBlank()
                 ? "none" : config.tokenEnv()));
-        System.out.println("Built-in: " + builtIn);
-        System.out.println("Packages: " + manifests.size());
+        Output.data("Built-in: " + builtIn);
+        Output.data("Packages: " + manifests.size());
         for (AppManifest manifest : manifests) {
-            System.out.println("  " + config.name() + ":" + manifest.repo() + " "
+            Output.data("  " + config.name() + ":" + manifest.repo() + " "
                 + (manifest.version() == null ? "unknown" : manifest.version()));
         }
         return true;
@@ -222,7 +227,7 @@ public final class ProvidersCommand {
             options = parseProviderOptions(args, Set.of(),
                 Set.of("type", "api", "token-env", "name"));
         } catch (IllegalArgumentException e) {
-            System.err.println(e.getMessage());
+            Output.error(e.getMessage());
             return false;
         }
         if (options.positional().isEmpty() || options.positional().size() > 2) {
@@ -241,21 +246,21 @@ public final class ProvidersCommand {
                 try {
                     name = deriveProviderName(url);
                 } catch (IllegalArgumentException e) {
-                    System.err.println(e.getMessage());
+                    Output.error(e.getMessage());
                     return false;
                 }
             }
         }
         if (!ProviderConfig.validName(name)) {
-            System.err.println("Invalid provider name: " + name);
+            Output.error("Invalid provider name: " + name);
             return false;
         }
         if (ProviderRegistry.builtIns().containsKey(name)) {
-            System.err.println("Provider '" + name + "' is built-in; choose another name.");
+            Output.error("Provider '" + name + "' is built-in; choose another name.");
             return false;
         }
         if (providers.get(name).isPresent()) {
-            System.err.println("Provider '" + name + "' already exists; use providers update.");
+            Output.error("Provider '" + name + "' already exists; use providers update.");
             return false;
         }
 
@@ -275,23 +280,23 @@ public final class ProvidersCommand {
             } else {
                 type = ProviderType.from(typeValue).orElse(null);
                 if (type == null) {
-                    System.err.println("Unknown provider type: " + typeValue);
+                    Output.error("Unknown provider type: " + typeValue);
                     return false;
                 }
             }
         } catch (IOException e) {
-            System.err.println(e.getMessage());
+            Output.error(e.getMessage());
             return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            System.err.println("Provider detection interrupted.");
+            Output.error("Provider detection interrupted.");
             return false;
         }
 
         ProviderConfig config = new ProviderConfig(
             name, type.id(), urlBase, api, options.values().get("token-env")).named(name);
         if (!config.isValid()) {
-            System.err.println("Invalid provider config; check the HTTPS URL, API base, and token variable.");
+            Output.error("Invalid provider config; check the HTTPS URL, API base, and token variable.");
             return false;
         }
         Map<String, ProviderConfig> updated = currentProviders();
@@ -300,7 +305,7 @@ public final class ProvidersCommand {
             return false;
         }
         if (cmdParser.isJson()) {
-            printJson.accept(Map.of("provider", providerEntry(config)));
+            Output.json(new ProviderResult(providerEntry(config)));
         } else {
             Output.info("Added provider " + name + " (" + type.id() + ", "
                 + config.resolvedApi() + ").");
@@ -314,7 +319,7 @@ public final class ProvidersCommand {
             options = parseProviderOptions(args, Set.of("force"),
                 Set.of("type", "api", "token-env", "url"));
         } catch (IllegalArgumentException e) {
-            System.err.println(e.getMessage());
+            Output.error(e.getMessage());
             return false;
         }
         if (options.positional().size() != 1) {
@@ -323,18 +328,18 @@ public final class ProvidersCommand {
         String name = options.positional().get(0);
         ProviderConfig existing = providers.get(name).orElse(null);
         if (existing == null) {
-            System.err.println("Provider '" + name + "' is not configured.");
+            Output.error("Provider '" + name + "' is not configured.");
             return false;
         }
         if (ProviderRegistry.builtIns().containsKey(name)) {
-            System.err.println("Provider '" + name + "' is built-in and cannot be updated.");
+            Output.error("Provider '" + name + "' is built-in and cannot be updated.");
             return false;
         }
 
         String typeValue = options.values().getOrDefault("type", existing.type());
         ProviderType type = ProviderType.from(typeValue).orElse(null);
         if (type == null) {
-            System.err.println("Unknown provider type: " + typeValue);
+            Output.error("Unknown provider type: " + typeValue);
             return false;
         }
         String url = options.values().getOrDefault("url", existing.url());
@@ -348,7 +353,7 @@ public final class ProvidersCommand {
         ProviderConfig updatedConfig = new ProviderConfig(
             name, type.id(), url, api, tokenEnv).named(name);
         if (!updatedConfig.isValid()) {
-            System.err.println("Invalid provider config; check the HTTPS URL, API base, and token variable.");
+            Output.error("Invalid provider config; check the HTTPS URL, API base, and token variable.");
             return false;
         }
 
@@ -360,19 +365,19 @@ public final class ProvidersCommand {
                 || !updatedConfig.resolvedApi().equals(existing.resolvedApi());
             if (endpointChanged && !manifests.isEmpty()) {
                 if (!options.flags().contains("force")) {
-                    System.err.println("Provider '" + name + "' has " + manifests.size()
+                    Output.error("Provider '" + name + "' has " + manifests.size()
                         + " installed package(s); changing type/API requires --force.");
                     return false;
                 }
-                if (!confirm.test("Change provider " + name + " from " + existing.resolvedApi()
+                if (!confirm.confirm("Change provider " + name + " from " + existing.resolvedApi()
                     + " to " + updatedConfig.resolvedApi()
                     + "? Installed packages will fetch updates from the new endpoint.")) {
-                    System.err.println("Provider update declined.");
+                    Output.error("Provider update declined.");
                     return false;
                 }
             }
         } catch (IOException e) {
-            System.err.println("Failed to read installed packages: " + e.getMessage());
+            Output.error("Failed to read installed packages: " + e.getMessage());
             return false;
         }
 
@@ -382,7 +387,7 @@ public final class ProvidersCommand {
             return false;
         }
         if (cmdParser.isJson()) {
-            printJson.accept(Map.of("provider", providerEntry(updatedConfig)));
+            Output.json(new ProviderResult(providerEntry(updatedConfig)));
         } else {
             Output.info("Updated provider " + name + ".");
         }
@@ -394,24 +399,24 @@ public final class ProvidersCommand {
         try {
             options = parseProviderOptions(args, Set.of("abandon", "purge"), Set.of());
         } catch (IllegalArgumentException e) {
-            System.err.println(e.getMessage());
+            Output.error(e.getMessage());
             return false;
         }
         if (options.positional().size() != 1) {
             return providersUsage();
         }
         if (options.flags().contains("abandon") && options.flags().contains("purge")) {
-            System.err.println("Use only one of --abandon or --purge.");
+            Output.error("Use only one of --abandon or --purge.");
             return false;
         }
         String name = options.positional().get(0);
         ProviderConfig config = providers.get(name).orElse(null);
         if (config == null) {
-            System.err.println("Provider '" + name + "' is not configured.");
+            Output.error("Provider '" + name + "' is not configured.");
             return false;
         }
         if (ProviderRegistry.builtIns().containsKey(name)) {
-            System.err.println("Provider '" + name + "' is built-in and cannot be removed.");
+            Output.error("Provider '" + name + "' is built-in and cannot be removed.");
             return false;
         }
 
@@ -421,7 +426,7 @@ public final class ProvidersCommand {
                 .filter(manifest -> name.equals(manifest.provider()))
                 .toList();
         } catch (IOException e) {
-            System.err.println("Failed to read installed packages: " + e.getMessage());
+            Output.error("Failed to read installed packages: " + e.getMessage());
             return false;
         }
 
@@ -433,34 +438,34 @@ public final class ProvidersCommand {
                     + (manifest.version() == null ? "unknown" : manifest.version()));
             }
             if (!options.flags().contains("purge") && !options.flags().contains("abandon")) {
-                System.err.println("Refusing to remove the provider while packages are installed.");
-                System.err.println("  --purge     uninstall them, delete their state, then remove it");
-                System.err.println("  --abandon   remove only the provider config; packages remain");
+                Output.error("Refusing to remove the provider while packages are installed.");
+                Output.error("  --purge     uninstall them, delete their state, then remove it");
+                Output.error("  --abandon   remove only the provider config; packages remain");
                 return false;
             }
             if (options.flags().contains("purge")) {
-                if (!confirm.test("Uninstall " + manifests.size() + " package(s) and remove provider "
+                if (!confirm.confirm("Uninstall " + manifests.size() + " package(s) and remove provider "
                     + name + " (" + config.type() + ", " + config.resolvedApi() + ")?")) {
-                    System.err.println("Provider removal declined.");
+                    Output.error("Provider removal declined.");
                     return false;
                 }
                 for (AppManifest manifest : manifests) {
-                    if (!uninstallManifest.apply(manifest)) {
-                        System.err.println("Stopped; provider " + name + " was not removed.");
+                    if (!uninstallService.remove(manifest)) {
+                        Output.error("Stopped; provider " + name + " was not removed.");
                         return false;
                     }
                 }
                 try {
                     stateStore.rebuildIndex();
                 } catch (IOException e) {
-                    System.err.println("Packages uninstalled, but the index could not be rebuilt: "
+                    Output.error("Packages uninstalled, but the index could not be rebuilt: "
                         + e.getMessage());
                     return false;
                 }
             } else {
-                if (!confirm.test("Remove provider " + name + " and leave "
+                if (!confirm.confirm("Remove provider " + name + " and leave "
                     + manifests.size() + " package(s) orphaned?")) {
-                    System.err.println("Provider removal declined.");
+                    Output.error("Provider removal declined.");
                     return false;
                 }
             }
@@ -472,7 +477,7 @@ public final class ProvidersCommand {
             return false;
         }
         if (cmdParser.isJson()) {
-            printJson.accept(Map.of("removed", name));
+            Output.json(new RemovedProvider(name));
         } else {
             Output.info("Removed provider " + name + ".");
         }
@@ -485,7 +490,7 @@ public final class ProvidersCommand {
             options = parseProviderOptions(args, Set.of(),
                 Set.of("type", "api", "token-env"));
         } catch (IllegalArgumentException e) {
-            System.err.println(e.getMessage());
+            Output.error(e.getMessage());
             return false;
         }
         if (options.positional().size() != 1) {
@@ -493,7 +498,7 @@ public final class ProvidersCommand {
         }
         String name = options.positional().get(0);
         if (providers.get(name).isPresent()) {
-            System.err.println("Provider '" + name + "' is already configured.");
+            Output.error("Provider '" + name + "' is already configured.");
             return false;
         }
 
@@ -503,11 +508,11 @@ public final class ProvidersCommand {
                 .filter(manifest -> name.equals(manifest.provider()))
                 .toList();
         } catch (IOException e) {
-            System.err.println("Failed to read installed packages: " + e.getMessage());
+            Output.error("Failed to read installed packages: " + e.getMessage());
             return false;
         }
         if (manifests.isEmpty()) {
-            System.err.println("No installed packages reference provider '" + name + "'.");
+            Output.error("No installed packages reference provider '" + name + "'.");
             return false;
         }
 
@@ -522,21 +527,21 @@ public final class ProvidersCommand {
             }
         }
         if (types.isEmpty() || apis.isEmpty()) {
-            System.err.println("Installed manifests do not record the provider type and API.");
-            System.err.println("Pass --type and --api to recover this provider.");
+            Output.error("Installed manifests do not record the provider type and API.");
+            Output.error("Pass --type and --api to recover this provider.");
             return false;
         }
         if (types.size() > 1 || apis.size() > 1) {
-            System.err.println("Installed manifests disagree about this provider:");
-            System.err.println("  types: " + types);
-            System.err.println("  APIs:  " + apis);
+            Output.error("Installed manifests disagree about this provider:");
+            Output.error("  types: " + types);
+            Output.error("  APIs:  " + apis);
             return false;
         }
 
         String typeValue = options.values().getOrDefault("type", types.iterator().next());
         ProviderType type = ProviderType.from(typeValue).orElse(null);
         if (type == null) {
-            System.err.println("Unknown provider type: " + typeValue);
+            Output.error("Unknown provider type: " + typeValue);
             return false;
         }
         String api = options.values().getOrDefault("api", apis.iterator().next());
@@ -544,13 +549,13 @@ public final class ProvidersCommand {
         ProviderConfig config = new ProviderConfig(
             name, type.id(), url, api, options.values().get("token-env")).named(name);
         if (!config.isValid()) {
-            System.err.println("Recovered provider config is invalid.");
+            Output.error("Recovered provider config is invalid.");
             return false;
         }
 
-        if (!confirm.test("Recover provider " + name + " as " + type.id() + " (" + api
+        if (!confirm.confirm("Recover provider " + name + " as " + type.id() + " (" + api
             + ") for " + manifests.size() + " installed package(s)?")) {
-            System.err.println("Provider recovery declined.");
+            Output.error("Provider recovery declined.");
             return false;
         }
         Map<String, ProviderConfig> map = currentProviders();
@@ -559,7 +564,7 @@ public final class ProvidersCommand {
             return false;
         }
         if (cmdParser.isJson()) {
-            printJson.accept(Map.of("provider", providerEntry(config)));
+            Output.json(new ProviderResult(providerEntry(config)));
         } else {
             Output.info("Recovered provider " + name + ".");
         }
@@ -585,7 +590,7 @@ public final class ProvidersCommand {
         try {
             stateStore.saveConfig(updated);
         } catch (IOException e) {
-            System.err.println("Failed to save providers: " + e.getMessage());
+            Output.error("Failed to save providers: " + e.getMessage());
             return false;
         }
         toolConfig = updated;

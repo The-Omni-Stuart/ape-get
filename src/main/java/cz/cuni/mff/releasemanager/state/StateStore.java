@@ -17,6 +17,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.Output;
 
 // manifests are the source of truth; the index is rebuilt from them
 public final class StateStore {
@@ -213,7 +214,7 @@ public final class StateStore {
             return Optional.empty();
         }
         if (manifest.kind() != null && !AppManifest.KIND.equals(manifest.kind())) {
-            System.err.println("Ignoring foreign manifest: " + file);
+            Output.error("Ignoring foreign manifest: " + file);
             return Optional.empty();
         }
         if (!manifest.isValid()) {
@@ -227,6 +228,6 @@ public final class StateStore {
         Path quarantined = file.resolveSibling(
             file.getFileName() + ".corrupt-" + Instant.now().toEpochMilli());
         Files.move(file, quarantined, StandardCopyOption.REPLACE_EXISTING);
-        System.err.println("Warning: corrupt " + label + " moved to " + quarantined);
+        Output.error("Warning: corrupt " + label + " moved to " + quarantined);
     }
 }

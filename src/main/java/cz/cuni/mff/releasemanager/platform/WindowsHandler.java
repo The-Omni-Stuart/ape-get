@@ -12,8 +12,8 @@ import java.util.regex.Pattern;
 
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
-import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 
 // Windows installs via msiexec or an NSIS installer
@@ -68,14 +68,14 @@ public final class WindowsHandler extends PlatformHandler {
             } else if (isExe(fileName)) {
                 return installExe(assetPath, request.provider(), request.repoFullName());
             } else {
-                System.err.println("Unsupported file format: " + fileName);
+                Output.error("Unsupported file format: " + fileName);
                 return null;
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Installation error: " + e.getMessage());
+            Output.error("Installation error: " + e.getMessage());
             return null;
         }
     }
@@ -115,7 +115,7 @@ public final class WindowsHandler extends PlatformHandler {
         Path targetDir = installRoot.resolve(installName);
         if (Files.exists(targetDir)
             && isOwnedByAnotherRepo(targetDir, provider, repoFullName)) {
-            System.err.println("Refusing to overwrite " + targetDir + " owned by another release.");
+            Output.error("Refusing to overwrite " + targetDir + " owned by another release.");
             return null;
         }
         String command = String.format("\"%s\" /S /D=%s", assetPath.toString(), targetDir.toString());
@@ -154,7 +154,7 @@ public final class WindowsHandler extends PlatformHandler {
     @Override
     public boolean uninstall(Path asset) {
         if (!isAllowedUninstallPath(asset)) {
-            System.err.println("Refusing to uninstall path outside install directories: " + asset);
+            Output.error("Refusing to uninstall path outside install directories: " + asset);
             return false;
         }
         if (!Files.exists(asset)) {
@@ -169,14 +169,14 @@ public final class WindowsHandler extends PlatformHandler {
                 uninstallExe(asset);
                 return true;
             } else {
-                System.err.println("Unsupported file format: " + fileName);
+                Output.error("Unsupported file format: " + fileName);
                 return false;
             }
         } catch (InterruptedException | IOException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Uninstallation error: " + e.getMessage());
+            Output.error("Uninstallation error: " + e.getMessage());
             return false;
         }
     }
@@ -188,7 +188,7 @@ public final class WindowsHandler extends PlatformHandler {
         }
         try {
             if (asset != null && !isAllowedUninstallPath(asset)) {
-                System.err.println("Refusing to uninstall path outside install directories: " + asset);
+                Output.error("Refusing to uninstall path outside install directories: " + asset);
                 return false;
             }
             if (productInstallState(productCode) == InstallState.MISSING) {
@@ -215,7 +215,7 @@ public final class WindowsHandler extends PlatformHandler {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Uninstallation error: " + e.getMessage());
+            Output.error("Uninstallation error: " + e.getMessage());
             return false;
         }
     }
@@ -247,7 +247,7 @@ public final class WindowsHandler extends PlatformHandler {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Warning: could not read the MSI product code: " + e.getMessage());
+            Output.error("Warning: could not read the MSI product code: " + e.getMessage());
             return null;
         }
     }
@@ -287,7 +287,7 @@ public final class WindowsHandler extends PlatformHandler {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println(
+            Output.error(
                 "Warning: could not read the MSI product state: " + e.getMessage());
             return InstallState.UNKNOWN;
         }
@@ -318,7 +318,7 @@ public final class WindowsHandler extends PlatformHandler {
         if (restored == null || restored.install() == null
             || restored.install().path() == null
             || installer == null || !Files.isRegularFile(installer)) {
-            System.err.println("Rollback installer is missing: " + installer);
+            Output.error("Rollback installer is missing: " + installer);
             return false;
         }
         try {
@@ -329,7 +329,7 @@ public final class WindowsHandler extends PlatformHandler {
                     ? uninstall(Path.of(current.install().path()))
                     : uninstall(Path.of(current.install().path()), code);
                 if (!removed) {
-                    System.err.println(
+                    Output.error(
                         "Rollback aborted: the current version could not be uninstalled.");
                     return false;
                 }
@@ -356,7 +356,7 @@ public final class WindowsHandler extends PlatformHandler {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Rollback error: " + e.getMessage());
+            Output.error("Rollback error: " + e.getMessage());
             return false;
         }
     }

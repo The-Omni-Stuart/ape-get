@@ -5,6 +5,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 
+import cz.cuni.mff.releasemanager.utils.Output;
+
 /**
  * Command line parser for the application.
  * This class is responsible for parsing command line arguments and user input.
@@ -200,7 +202,7 @@ public class CmdParser {
             String input = scanner.nextLine();
             return Integer.parseInt(input);
         } catch (NumberFormatException e) {
-            System.err.println("Invalid input. Please enter a number.");
+            Output.error("Invalid input. Please enter a number.");
             return getUserInput();
         }
     }
