@@ -77,7 +77,7 @@ public abstract class PlatformHandler {
     /**
      * Re-points platform links after a backup has been restored.
      * @param manifest manifest of the restored release
-     * @param restoredPath path the backup artifact was restored to
+     * @param restoredPath path the backup artefact was restored to
      */
     public void activateRestored(AppManifest manifest, Path restoredPath) {
         // platforms without versioned installs need no extra step

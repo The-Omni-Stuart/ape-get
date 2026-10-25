@@ -22,7 +22,7 @@ public final class PathEnvironment {
      * @param pathValue raw search path
      * @param directory directory to look for
      * @param separator platform path separator
-     * @return true when the directory appears as a normalized entry
+     * @return true when the directory appears as a normalised entry
      */
     public static boolean contains(String pathValue, Path directory, String separator) {
         if (pathValue == null || directory == null) {

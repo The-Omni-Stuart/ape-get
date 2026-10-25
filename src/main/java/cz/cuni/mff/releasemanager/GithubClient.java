@@ -54,7 +54,7 @@ public class GithubClient {
 
     /**
      * Constructor for GithubClient.
-     * Initializes the HttpClient and PlatformHandler.
+     * Initialises the HttpClient and PlatformHandler.
      */
     public GithubClient() {
         this(DEFAULT_API_URL, DEFAULT_TOKEN_ENV, DEFAULT_DOWNLOAD_TIMEOUT);

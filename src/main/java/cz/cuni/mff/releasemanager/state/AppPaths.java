@@ -73,7 +73,7 @@ public record AppPaths(Path root) {
     /**
      * Converts owner/repo into a filesystem-safe directory name.
      * @param repoFullName repository in owner/name form
-     * @return sanitized owner__name
+     * @return sanitised owner__name
      */
     public static String repoDirectoryName(String repoFullName) {
         if (repoFullName == null) {

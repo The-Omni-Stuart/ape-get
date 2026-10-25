@@ -98,7 +98,7 @@ public final class BackupManager {
     public void restore(AppManifest.Backup backup, Path live) throws IOException {
         Path artifact = Path.of(backup.artifact());
         if (!Files.exists(artifact)) {
-            throw new IOException("Backup artifact is missing: " + artifact);
+            throw new IOException("Backup artefact is missing: " + artifact);
         }
         Path parent = live.toAbsolutePath().getParent();
         Files.createDirectories(parent);

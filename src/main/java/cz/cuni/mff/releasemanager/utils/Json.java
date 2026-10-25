@@ -16,9 +16,9 @@ public final class Json {
     private Json() {}
 
     /**
-     * @param value value to serialize
+     * @param value value to serialise
      * @return compact JSON
-     * @throws JsonProcessingException if the value cannot be serialized
+     * @throws JsonProcessingException if the value cannot be serialised
      */
     public static String write(Object value) throws JsonProcessingException {
         return MAPPER.writeValueAsString(value);

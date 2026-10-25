@@ -7,7 +7,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Represents a Github release.
- * This record class is used to deserialize the JSON response from the Github API for releases.
+ * This record class is used to deserialise the JSON response from the Github API for releases.
  * @param url The URL of the release.
  * @param name The name of the release.
  * @param tagName The release tag.
