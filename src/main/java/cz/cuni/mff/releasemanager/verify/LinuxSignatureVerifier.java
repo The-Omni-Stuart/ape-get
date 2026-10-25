@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
+import cz.cuni.mff.releasemanager.utils.Executables;
 
 /**
  * Verifies a detached GPG signature using the local keyring.
@@ -31,6 +32,11 @@ public final class LinuxSignatureVerifier implements SignatureVerifier {
      */
     public LinuxSignatureVerifier(Path gnupgHome) {
         this.gnupgHome = gnupgHome;
+    }
+
+    @Override
+    public List<Tool> tools() {
+        return List.of(new Tool("gpg", true, Executables.isAvailable("gpg")));
     }
 
     @Override

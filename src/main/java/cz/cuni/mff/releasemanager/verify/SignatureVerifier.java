@@ -13,6 +13,21 @@ import cz.cuni.mff.releasemanager.types.Asset;
 public interface SignatureVerifier {
 
     /**
+     * One external tool used by a verifier.
+     * @param name executable name
+     * @param required whether missing it blocks signature verification
+     * @param available whether it was found on PATH
+     */
+    record Tool(String name, boolean required, boolean available) {}
+
+    /**
+     * @return tools used by this verifier on the current platform
+     */
+    default List<Tool> tools() {
+        return List.of();
+    }
+
+    /**
      * Verifies a downloaded asset.
      * @param provider provider that supplies detached signature assets
      * @param target the selected release asset

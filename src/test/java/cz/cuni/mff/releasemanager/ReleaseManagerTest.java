@@ -1486,6 +1486,68 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteDoctorReportsMissingSignatureTool() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+        when(mockSignatureVerifier.tools()).thenReturn(List.of(
+            new SignatureVerifier.Tool("gpg", true, false),
+            new SignatureVerifier.Tool("spctl", false, false)));
+
+        String output = captureOut(() -> releaseManager.execute(new String[]{"doctor", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertFalse(root.get("healthy").asBoolean());
+        String issues = root.get("issues").toString();
+        assertTrue(issues.contains("gpg"), issues);
+        assertTrue(issues.contains("Optional"), issues);
+    }
+
+    @Test
+    void testExecuteDoctorReportsStaleMount() throws Exception {
+        setOs(Platform.OS.MAC);
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+        AppPaths paths = tempPaths();
+        Path mount = Files.createDirectories(tempDir.resolve("Volumes"));
+        Files.writeString(mount.resolve("leftover"), "data");
+        when(mockPlatformHandler.mountPoint()).thenReturn(mount);
+
+        String output = captureOut(() -> releaseManager.execute(new String[]{"doctor", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertFalse(root.get("healthy").asBoolean());
+        assertTrue(root.get("issues").toString().contains("Stale mount"),
+            root.get("issues").toString());
+    }
+
+    @Test
+    void testExecuteDoctorReportsPinnedSigners() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isJson()).thenReturn(true);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+        when(mockStateStore.scanManifests()).thenReturn(List.of(
+            withSignature(
+                manifest("user/example", "http://url", "example.exe", "/tmp/live"),
+                "FPR")));
+
+        String output = captureOut(() -> releaseManager.execute(new String[]{"doctor", "--json"}));
+
+        JsonNode root = new ObjectMapper().readTree(output);
+        assertEquals(1, root.get("pins").size());
+        assertEquals("user/example", root.get("pins").get(0).get("repo").asText());
+        assertEquals("FPR", root.get("pins").get(0).get("identity").asText());
+        assertTrue(root.get("free_bytes").asLong() > 0);
+    }
+
+    @Test
     void testExecuteListJson() throws Exception {
         Command cmd = Command.LIST;
         when(mockCmdParser.parse(any())).thenReturn(cmd);
@@ -1686,8 +1748,6 @@ class ReleaseManagerTest {
         when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
 
         assertEquals(0, releaseManager.execute(new String[]{"doctor"}));
-
-        verify(mockPlatformHandler, never()).getInstallRoot();
     }
 
     @Test

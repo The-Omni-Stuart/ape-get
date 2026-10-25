@@ -140,9 +140,16 @@ public abstract class PlatformHandler {
     public abstract String[] getFormats();
 
     /**
-     * @return Root directory where this platform installs applications.
+     * @return root directory where this platform installs applications.
      */
     public abstract Path getInstallRoot();
+
+    /**
+     * @return a temporary mount point this platform manages, or null
+     */
+    public Path mountPoint() {
+        return null;
+    }
 
     /**
      * Checks whether a path is strictly inside a root directory.

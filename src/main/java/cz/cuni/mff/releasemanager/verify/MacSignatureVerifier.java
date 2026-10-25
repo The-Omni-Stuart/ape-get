@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
+import cz.cuni.mff.releasemanager.utils.Executables;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
@@ -22,6 +23,14 @@ public final class MacSignatureVerifier implements SignatureVerifier {
     private static final Duration TIMEOUT = Duration.ofSeconds(120);
 
     private record ProcessResult(int exitCode, String output) {}
+
+    @Override
+    public List<Tool> tools() {
+        return List.of(
+            new Tool("codesign", true, Executables.isAvailable("codesign")),
+            new Tool("hdiutil", true, Executables.isAvailable("hdiutil")),
+            new Tool("spctl", false, Executables.isAvailable("spctl")));
+    }
 
     @Override
     public SignatureResult verify(

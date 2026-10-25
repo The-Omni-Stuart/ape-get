@@ -47,6 +47,7 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.types.SearchResult;
+import cz.cuni.mff.releasemanager.utils.DiskSpace;
 import cz.cuni.mff.releasemanager.utils.Json;
 import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
@@ -77,6 +78,8 @@ import cz.cuni.mff.releasemanager.verify.VerificationStatus;
  * </ul>
  */
 public class ReleaseManager {
+    private static final long MIN_FREE_BYTES = 100L * 1024 * 1024;
+
     private static ReleaseManager instance;
 
     private final CmdParser cmdParser;
@@ -2017,6 +2020,55 @@ public class ReleaseManager {
             healthy = false;
         }
 
+        List<Map<String, Object>> tools = new ArrayList<>();
+        for (SignatureVerifier.Tool tool : signatureVerifier.tools()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", tool.name());
+            entry.put("required", tool.required());
+            entry.put("available", tool.available());
+            tools.add(entry);
+            if (!tool.available()) {
+                issues.add((tool.required() ? "Signature tool missing: " : "Optional signature tool missing: ")
+                    + tool.name());
+                if (tool.required()) {
+                    healthy = false;
+                }
+            }
+        }
+
+        List<Map<String, Object>> pins = new ArrayList<>();
+        for (AppManifest manifest : manifests) {
+            if (manifest.signature() != null && manifest.signature().isVerified()) {
+                Map<String, Object> pin = new LinkedHashMap<>();
+                pin.put("repo", manifest.repo());
+                pin.put("signer", manifest.signature().signer());
+                pin.put("identity", manifest.signature().identity());
+                pins.add(pin);
+            }
+        }
+
+        Path mountPoint = platformHandler.mountPoint();
+        if (mountPoint != null && Files.isDirectory(mountPoint)) {
+            try (var entries = Files.list(mountPoint)) {
+                if (entries.findAny().isPresent()) {
+                    issues.add("Stale mount: " + mountPoint + " is not empty");
+                    healthy = false;
+                }
+            } catch (IOException e) {
+                issues.add("Stale mount: cannot read " + mountPoint + ": " + e.getMessage());
+                healthy = false;
+            }
+        }
+
+        Path installRoot = platformHandler.getInstallRoot();
+        long freeBytes = DiskSpace.usableSpace(installRoot == null ? root : installRoot);
+        if (!DiskSpace.hasAtLeast(installRoot, MIN_FREE_BYTES)) {
+            issues.add("Low disk space at " + installRoot + ": "
+                + (freeBytes < 0 ? "unknown" : freeBytes / (1024 * 1024) + " MB")
+                + " free, need " + MIN_FREE_BYTES / (1024 * 1024) + " MB");
+            healthy = false;
+        }
+
         if (os == Platform.OS.LINUX) {
             List<String> orphans = orphanCandidates();
             if (!orphans.isEmpty()) {
@@ -2033,12 +2085,25 @@ public class ReleaseManager {
             report.put("index", indexFile.toString());
             report.put("manifests", manifests.size());
             report.put("issues", issues);
+            report.put("signature_tools", tools);
+            report.put("pins", pins);
+            report.put("free_bytes", freeBytes);
             printJson(report);
         } else {
             System.out.println("State root: " + root);
             System.out.println("Config: " + configFile);
             System.out.println("Index: " + indexFile);
             System.out.println("Manifests: " + manifests.size());
+            System.out.println("Free space: "
+                + (freeBytes < 0 ? "unknown" : freeBytes / (1024 * 1024) + " MB"));
+            for (Map<String, Object> tool : tools) {
+                System.out.println("Signature tool: " + tool.get("name") + " "
+                    + (Boolean.TRUE.equals(tool.get("available")) ? "available" : "missing"));
+            }
+            for (Map<String, Object> pin : pins) {
+                System.out.println("Pinned signer: " + pin.get("repo") + " -> "
+                    + pin.get("signer") + " (" + pin.get("identity") + ")");
+            }
             for (String issue : issues) {
                 System.out.println(issue);
             }

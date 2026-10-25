@@ -192,4 +192,9 @@ public final class MacHandler extends PlatformHandler {
         return configuredRoot(Paths.get("/Applications"));
     }
 
+    @Override
+    public Path mountPoint() {
+        return MOUNT_DIR;
+    }
+
 }

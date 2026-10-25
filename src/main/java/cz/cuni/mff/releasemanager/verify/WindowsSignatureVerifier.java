@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
+import cz.cuni.mff.releasemanager.utils.Executables;
 
 /**
  * Verifies Authenticode signatures on Windows executables and MSI packages.
@@ -22,6 +23,11 @@ public final class WindowsSignatureVerifier implements SignatureVerifier {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private record Authenticode(String Status, String Signer, String Thumbprint) {}
+
+    @Override
+    public List<Tool> tools() {
+        return List.of(new Tool("pwsh", true, Executables.isAvailable("pwsh")));
+    }
 
     @Override
     public SignatureResult verify(
