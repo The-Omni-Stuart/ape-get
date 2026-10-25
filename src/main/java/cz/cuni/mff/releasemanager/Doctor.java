@@ -247,8 +247,8 @@ public final class Doctor {
         List<String> orphans = new ArrayList<>();
         try (var files = Files.list(liveRoot)) {
             List<AppManifest> manifests = stateStore.scanManifests();
-            for (Path file : files.filter(file ->
-                Files.isRegularFile(file) || Files.isSymbolicLink(file)).toList()) {
+            // Linux launchers are symlinks; other files in the bin are not ours
+            for (Path file : files.filter(Files::isSymbolicLink).toList()) {
                 String name = file.getFileName().toString();
                 boolean tracked = manifests.stream().anyMatch(manifest ->
                     FileUtils.installName(manifest.provider(), manifest.repo())

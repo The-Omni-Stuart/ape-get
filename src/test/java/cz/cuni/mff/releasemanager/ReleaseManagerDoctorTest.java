@@ -148,7 +148,8 @@ class ReleaseManagerDoctorTest extends ReleaseManagerTestSupport {
             null));
         AppPaths paths = tempPaths();
         Path bin = Files.createDirectories(paths.root().resolve("bin"));
-        Files.writeString(bin.resolve("work__owner__repo"), "data");
+        Path app = Files.writeString(paths.root().resolve("app"), "data");
+        Files.createSymbolicLink(bin.resolve("work__owner__repo"), app);
         when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
         when(mockStateStore.scanManifests()).thenReturn(List.of(withProvider(
             manifest("owner/repo", "http://url", "example.exe", "/tmp/live"),
@@ -213,14 +214,30 @@ class ReleaseManagerDoctorTest extends ReleaseManagerTestSupport {
 
     @Test
     void testExecuteDoctorFindsOrphan() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            !System.getProperty("os.name").toLowerCase().contains("win"));
         Command cmd = Command.DOCTOR;
         when(mockCmdParser.parse(any())).thenReturn(cmd);
         AppPaths paths = tempPaths();
         Path bin = Files.createDirectories(paths.root().resolve("bin"));
-        Files.writeString(bin.resolve("work__owner__repo"), "data");
+        Path app = Files.writeString(paths.root().resolve("app"), "data");
+        Files.createSymbolicLink(bin.resolve("work__owner__repo"), app);
         when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
 
         assertEquals(1, releaseManager.execute(new String[]{"doctor"}));
+    }
+
+    @Test
+    void testExecuteDoctorIgnoresUnrelatedFilesInTheInstallRoot() throws Exception {
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        Files.writeString(bin.resolve("pip"), "data");
+        Files.writeString(bin.resolve("uv"), "data");
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+
+        assertEquals(0, releaseManager.execute(new String[]{"doctor"}));
     }
 
     @Test
