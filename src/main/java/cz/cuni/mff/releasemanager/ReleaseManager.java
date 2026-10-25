@@ -1571,7 +1571,8 @@ public class ReleaseManager {
             toolConfig.backupCount(),
             toolConfig.installRoot(),
             toolConfig.requireSignature(),
-            map);
+            map,
+            toolConfig.searchAllProviders());
         try {
             stateStore.saveConfig(updated);
         } catch (IOException e) {

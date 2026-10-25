@@ -1821,6 +1821,32 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteProvidersAddPreservesSearchAllFlag() throws Exception {
+        Command cmd = Command.PROVIDERS;
+        cmd.arguments = List.of("add", "work", "https://git.example.com", "--type", "gitea");
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.loadConfig()).thenReturn(new ConfigStore.LoadResult(
+            new GrmConfig(
+                GrmConfig.KIND,
+                GrmConfig.SCHEMA_VERSION,
+                false,
+                1,
+                null,
+                false,
+                Map.of(),
+                false),
+            false,
+            null));
+
+        assertEquals(0, releaseManager.execute(new String[]{
+            "providers", "add", "work", "https://git.example.com", "--type", "gitea"}));
+
+        ArgumentCaptor<GrmConfig> captor = ArgumentCaptor.forClass(GrmConfig.class);
+        verify(mockStateStore).saveConfig(captor.capture());
+        assertFalse(captor.getValue().searchAllEnabled());
+    }
+
+    @Test
     void testExecuteProvidersAddJson() throws Exception {
         Command cmd = Command.PROVIDERS;
         cmd.arguments = List.of(
