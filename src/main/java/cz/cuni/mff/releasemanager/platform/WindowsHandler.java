@@ -11,12 +11,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import cz.cuni.mff.releasemanager.state.AppManifest;
+import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
+import cz.cuni.mff.releasemanager.utils.CommandNames;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 
-// Windows installs via msiexec or an NSIS installer
+// Windows installs via msiexec/NSIS or a portable executable shim
 public final class WindowsHandler extends PlatformHandler {
 
     private static final Pattern MSI_PRODUCT_CODE = Pattern.compile(
@@ -25,6 +27,10 @@ public final class WindowsHandler extends PlatformHandler {
     private static WindowsHandler instance;
 
     private WindowsHandler() {}
+
+    WindowsHandler(StateStore stateStore) {
+        super(stateStore);
+    }
 
     // singleton
     public static WindowsHandler getInstance() {
@@ -47,7 +53,9 @@ public final class WindowsHandler extends PlatformHandler {
             || isUnder(asset, envPath("ProgramFiles", null))
             || isUnder(asset, envPath("ProgramFiles(x86)", null))
             || isUnder(asset, envPath("ProgramData", APP_DATA_DIR))
-            || isUnder(asset, envPath("LOCALAPPDATA", "Programs"));
+            || isUnder(asset, envPath("LOCALAPPDATA", "Programs"))
+            || isUnder(asset, statePaths().root())
+            || isUnder(asset, portableBinDir());
     }
 
     private static Path envPath(String name, String child) {
@@ -60,6 +68,9 @@ public final class WindowsHandler extends PlatformHandler {
 
     @Override
     public Path install(InstallRequest request) {
+        if (request.kind().isPortable()) {
+            return installPortable(request);
+        }
         try {
             Path assetPath = request.asset();
             String fileName = assetPath.getFileName().toString();
@@ -149,6 +160,151 @@ public final class WindowsHandler extends PlatformHandler {
                 .orElseThrow(() -> new IOException(
                     "Uninstall path not found in: " + targetDir));
         }
+    }
+
+    // portable exe and APE are copied, never executed during install
+    private Path installPortable(InstallRequest request) {
+        try {
+            if (request.kind() == PackageKind.APPIMAGE) {
+                Output.error("AppImages are not supported on Windows.");
+                return null;
+            }
+            Path assetPath = request.asset();
+            if (assetPath == null || !Files.isRegularFile(assetPath)) {
+                Output.error("Installation failed: asset is missing");
+                return null;
+            }
+            if (request.assimilate()) {
+                Output.error("--assimilate is not supported on Windows.");
+                return null;
+            }
+            String command = request.command();
+            Path launcher = command == null
+                ? null
+                : launcherPath(request.provider(), request.repoFullName(), command);
+            if (command != null && launcher == null) {
+                Output.error("Installation failed: invalid command name.");
+                return null;
+            }
+            if (launcher != null && Files.exists(launcher)) {
+                if (isOwnedByAnotherRepo(
+                    launcher, request.provider(), request.repoFullName())) {
+                    Output.error(
+                        "Refusing to overwrite " + launcher + " owned by another release.");
+                    return null;
+                }
+                if (!hasManifestFor(request.provider(), request.repoFullName())) {
+                    Output.error(
+                        "Refusing to overwrite unmanaged command " + launcher + ".");
+                    return null;
+                }
+            }
+
+            String provider = request.provider() == null ? "github" : request.provider();
+            Path appDir = statePaths().appDir(provider, request.repoFullName());
+            Path versionDir = appDir.resolve("versions")
+                .resolve(sanitizeVersion(request.version()));
+            Files.createDirectories(versionDir);
+            Path target = versionDir.resolve(assetPath.getFileName());
+            FileUtils.replaceFile(assetPath, target);
+            FileUtils.removeTempDir(assetPath);
+
+            if (launcher != null) {
+                writeShim(launcher, target);
+            }
+            Output.info("Installed to: " + target);
+            if (launcher != null && !PathEnvironment.isOnPath(launcher.getParent())) {
+                Output.error("Note: " + launcher.getParent()
+                    + " is not on PATH; run " + launcher + " directly.");
+            }
+            return target;
+        } catch (IOException | IllegalArgumentException e) {
+            Output.error("Installation failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static Path portableBinDir() {
+        Path base = envPath("LOCALAPPDATA", APP_DATA_DIR);
+        if (base == null) {
+            base = Paths.get(System.getProperty("user.home"), ".local", "bin");
+            return base;
+        }
+        return base.resolve("bin");
+    }
+
+    private static void writeShim(Path launcher, Path target) throws IOException {
+        Files.createDirectories(launcher.getParent());
+        String content = "@echo off\r\n\"" + target + "\" %*\r\n";
+        Files.writeString(launcher, content);
+    }
+
+    @Override
+    public Path launcherPath(String provider, String repoFullName, String command) {
+        if (command == null || command.isBlank()) {
+            return null;
+        }
+        try {
+            return portableBinDir().resolve(CommandNames.validate(command) + ".cmd");
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public boolean uninstallPortable(AppManifest manifest) {
+        if (manifest == null || manifest.install() == null) {
+            return false;
+        }
+        try {
+            AppManifest.Uninstall uninstall = manifest.install().uninstall();
+            Path launcher = uninstall == null || uninstall.path() == null
+                ? null : Path.of(uninstall.path());
+            if (launcher != null && Files.isRegularFile(launcher)) {
+                Files.deleteIfExists(launcher);
+            }
+            if (manifest.install().desktopEntry() != null) {
+                Files.deleteIfExists(Path.of(manifest.install().desktopEntry()));
+            }
+            return true;
+        } catch (IOException e) {
+            Output.error("Failed to uninstall portable package: " + e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public void activateRestored(AppManifest manifest, Path restoredPath) {
+        if (manifest == null || manifest.install() == null || restoredPath == null
+            || !PackageKind.fromManifest(manifest.install().kind()).isPortable()) {
+            return;
+        }
+        AppManifest.Uninstall uninstall = manifest.install().uninstall();
+        if (uninstall == null || uninstall.path() == null
+            || uninstall.path().equals(manifest.install().path())) {
+            return;
+        }
+        try {
+            writeShim(Path.of(uninstall.path()), restoredPath);
+        } catch (IOException e) {
+            Output.error("Warning: could not update portable launcher: " + e.getMessage());
+        }
+    }
+
+    private static String sanitizeVersion(String version) {
+        if (version == null || version.isBlank()) {
+            return "unknown";
+        }
+        String value = version.trim()
+            .replaceAll("[^A-Za-z0-9._+-]+", "-");
+        while (value.startsWith(".") || value.startsWith("-")) {
+            value = value.substring(1);
+        }
+        value = value.replace("..", ".");
+        while (value.startsWith(".") || value.startsWith("-")) {
+            value = value.substring(1);
+        }
+        return value.isBlank() ? "unknown" : value;
     }
 
     @Override
@@ -425,7 +581,7 @@ public final class WindowsHandler extends PlatformHandler {
 
     @Override
     public String[] getFormats() {
-        return new String[] {".msi", ".exe"};
+        return new String[] {".msi", ".exe", ".ape", ".com"};
     }
 
     @Override

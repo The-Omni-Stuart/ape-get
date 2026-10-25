@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.StateStore;
+import cz.cuni.mff.releasemanager.types.RepoRef;
 
 // shared install and uninstall contract for each platform
 public abstract class PlatformHandler {
@@ -44,6 +45,21 @@ public abstract class PlatformHandler {
 
     // platforms without a stable launcher return null
     public Path launcherPath(String provider, String repoFullName) {
+        return null;
+    }
+
+    // portable packages use a user-facing command instead of a package id
+    public Path launcherPath(String provider, String repoFullName, String command) {
+        return launcherPath(provider, repoFullName);
+    }
+
+    // portable packages own their versioned files and launcher
+    public boolean uninstallPortable(AppManifest manifest) {
+        return false;
+    }
+
+    // Linux uses a .desktop entry; other platforms have no equivalent yet
+    public Path desktopEntryPath(String provider, String repoFullName, String command) {
         return null;
     }
 
@@ -120,6 +136,15 @@ public abstract class PlatformHandler {
         Path normalizedPath = path.toAbsolutePath().normalize();
         Path normalizedRoot = root.toAbsolutePath().normalize();
         return normalizedPath.startsWith(normalizedRoot) && !normalizedPath.equals(normalizedRoot);
+    }
+
+    // true when this package already has a manifest
+    protected boolean hasManifestFor(String provider, String repoFullName) {
+        try {
+            return stateStore.findManifest(new RepoRef(provider, repoFullName)).isPresent();
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     // true when another provider/repo already claims the target

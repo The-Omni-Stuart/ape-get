@@ -13,7 +13,7 @@ A multi-platform command-line tool for GitHub, Gitea/Forgejo/Codeberg, and GitLa
 - **List** and **inspect** installed releases
 - **Diagnose** state, PATH, disk space, mounts, and verification tools with `doctor`
 
-Supported formats: exe, msi, dmg, appimage
+Supported formats: AppImage, Actually Portable Executable (APE), portable Windows exe, MSI, NSIS exe, and DMG.
 
 ---
 
@@ -48,7 +48,7 @@ To build the project:
 mvn package
 ```
 
-This will produce `target/github-releases-manager-1.9.9-jar-with-dependencies.jar`
+This will produce `target/github-releases-manager-1.9.10-jar-with-dependencies.jar`
 
 
 To remove the generated files:
@@ -60,13 +60,13 @@ mvn clean
 ## Running the application
 
 ```bash
-java -jar target/github-releases-manager-1.9.9-jar-with-dependencies.jar [command] [options]
+java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar [command] [options]
 ```
 
 Example:
 
 ```bash
-java -jar target/github-releases-manager-1.9.9-jar-with-dependencies.jar list
+java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar list
 ```
 
 ## Supported commands
@@ -107,6 +107,9 @@ install codeberg:forgejo/forgejo
 install gitlab:group/subgroup/project
 install --version v1.2.3 github:owner/repo
 install --dry-run --json github:owner/repo
+install --name ff github:fastfetch-cli/fastfetch
+install --kind portable-exe github:owner/tool
+install --desktop --terminal github:owner/tool
 ```
 
 Add a custom Gitea, Forgejo, or GitLab instance:
@@ -118,10 +121,17 @@ providers add work https://git.example.com --type auto
 Provider tokens are read from the environment variable named by `token_env`; secrets are never
 stored in the config.
 
-Common flags: `--asset`, `--version`, `--dry-run`, `--json`, `--quiet`, `--yes`.
+Common flags: `--asset`, `--version`, `--kind`, `--name`, `--no-command`, `--dry-run`,
+`--desktop`, `--terminal`, `--icon`, `--assimilate`, `--json`, `--quiet`, `--yes`.
 `--json` writes one document to stdout; progress, warnings, and prompts go to stderr.
 `--yes` is required for non-interactive use; without it, confirmation prompts refuse when no TTY is
 available.
+
+Portable packages create a command in the user bin directory by default. `--name` changes it and
+`--no-command` suppresses it. Plain `.exe` assets are treated as NSIS installers; use
+`--kind portable-exe` for a portable Windows executable. `--desktop` creates a Linux application-menu entry; `--terminal`
+marks it as terminal-based and `--icon` points at an icon file. `--assimilate` converts an APE to a
+native binary using the cosmocc `assimilate` tool; it is never used unless requested.
 
 ## Running the tests
 

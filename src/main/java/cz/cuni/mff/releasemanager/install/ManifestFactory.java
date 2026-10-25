@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 
+import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
@@ -32,13 +33,26 @@ public final class ManifestFactory {
         ProviderConfig provider,
         ReleaseAssets release,
         Asset asset,
+        PackageKind kind,
+        String command,
+        boolean desktop,
         Path installed,
         VerificationResult verification,
         SignatureResult signature,
         Instant installedAt,
         List<AppManifest.Backup> backups) {
-        Path launcher = platformHandler.launcherPath(ref.provider(), ref.path());
+        Path launcher;
+        if (kind.isPortable()) {
+            launcher = command == null
+                ? null
+                : platformHandler.launcherPath(ref.provider(), ref.path(), command);
+        } else {
+            launcher = platformHandler.launcherPath(ref.provider(), ref.path());
+        }
         Path uninstallPath = launcher == null ? installed : launcher;
+        Path desktopEntry = desktop
+            ? platformHandler.desktopEntryPath(ref.provider(), ref.path(), command)
+            : null;
         return new AppManifest(
             AppManifest.KIND,
             AppManifest.SCHEMA_VERSION,
@@ -53,9 +67,11 @@ public final class ManifestFactory {
                     ? verification.expected()
                     : null),
             new AppManifest.Install(
-                installKind(asset.name()),
+                kind.manifestName(),
                 installed.toString(),
                 paths.appDir(ref.provider(), ref.path()).toString(),
+                command,
+                desktopEntry == null ? null : desktopEntry.toString(),
                 new AppManifest.Uninstall(
                     uninstallPath.toString(), List.of(),
                     platformHandler.productCode(installed))),
@@ -74,19 +90,6 @@ public final class ManifestFactory {
     }
 
     public static String installKind(String fileName) {
-        String name = fileName.toLowerCase(Locale.ROOT);
-        if (name.endsWith(".appimage")) {
-            return "appimage";
-        }
-        if (name.endsWith(".msi")) {
-            return "msi";
-        }
-        if (name.endsWith(".exe")) {
-            return "exe";
-        }
-        if (name.endsWith(".dmg")) {
-            return "dmg";
-        }
-        return "unknown";
+        return PackageKind.fromAssetName(fileName).manifestName();
     }
 }

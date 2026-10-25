@@ -89,7 +89,23 @@ public record AppManifest(
     public record Asset(String name, String url, String sha256) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Install(String kind, String path, String root, Uninstall uninstall) {}
+    public record Install(
+        String kind,
+        String path,
+        String root,
+        String command,
+        String desktopEntry,
+        Uninstall uninstall
+    ) {
+        public Install(String kind, String path, String root, Uninstall uninstall) {
+            this(kind, path, root, null, null, uninstall);
+        }
+
+        public Install(
+            String kind, String path, String root, String command, Uninstall uninstall) {
+            this(kind, path, root, command, null, uninstall);
+        }
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Uninstall(

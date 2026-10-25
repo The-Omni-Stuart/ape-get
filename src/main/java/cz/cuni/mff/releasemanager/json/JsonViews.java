@@ -17,7 +17,9 @@ public final class JsonViews {
         @JsonProperty("installed_at") Instant installedAt,
         @JsonProperty("updated_at") Instant updatedAt,
         @JsonProperty("install_path") String installPath,
-        String asset) {}
+        String asset,
+        String kind,
+        String command) {}
 
     public record AppList(List<AppView> apps) {}
 
@@ -60,7 +62,10 @@ public final class JsonViews {
         @JsonProperty("product_code") String productCode,
         VerificationView verification,
         SignatureView signature,
-        List<BackupView> backups) {}
+        List<BackupView> backups,
+        String kind,
+        String command,
+        @JsonProperty("desktop_entry") String desktopEntry) {}
 
     public record InstallPlan(
         @JsonProperty("dry_run") boolean dryRun,
@@ -70,7 +75,9 @@ public final class JsonViews {
         String version,
         String asset,
         String source,
-        String launcher) {}
+        String launcher,
+        String kind,
+        String command) {}
 
     public record ReleaseResult(
         String provider,
@@ -78,7 +85,9 @@ public final class JsonViews {
         String version,
         String asset,
         String path,
-        String launcher) {}
+        String launcher,
+        String kind,
+        String command) {}
 
     public record InstalledResult(ReleaseResult installed) {}
 

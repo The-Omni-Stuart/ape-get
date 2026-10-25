@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.install;
 import java.io.IOException;
 import java.nio.file.Path;
 
+import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.StateStore;
@@ -20,14 +21,21 @@ public final class UninstallService {
     }
 
     public boolean remove(AppManifest manifest) {
-        AppManifest.Uninstall uninstall = manifest.install().uninstall();
-        String uninstallPath = uninstall != null && uninstall.path() != null
-            ? uninstall.path()
-            : manifest.install().path();
-        String productCode = uninstall == null ? null : uninstall.productCode();
-        boolean removed = productCode == null || productCode.isBlank()
-            ? platformHandler.uninstall(Path.of(uninstallPath))
-            : platformHandler.uninstall(Path.of(uninstallPath), productCode);
+        boolean portable = PackageKind.fromManifest(
+            manifest.install().kind()).isPortable();
+        boolean removed;
+        if (portable) {
+            removed = platformHandler.uninstallPortable(manifest);
+        } else {
+            AppManifest.Uninstall uninstall = manifest.install().uninstall();
+            String uninstallPath = uninstall != null && uninstall.path() != null
+                ? uninstall.path()
+                : manifest.install().path();
+            String productCode = uninstall == null ? null : uninstall.productCode();
+            removed = productCode == null || productCode.isBlank()
+                ? platformHandler.uninstall(Path.of(uninstallPath))
+                : platformHandler.uninstall(Path.of(uninstallPath), productCode);
+        }
         if (!removed) {
             Output.error("Failed to uninstall " + manifest.repo() + ".");
             return false;

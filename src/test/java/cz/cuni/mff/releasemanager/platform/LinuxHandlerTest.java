@@ -13,14 +13,14 @@ import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import cz.cuni.mff.releasemanager.state.AppManifest;
+import cz.cuni.mff.releasemanager.state.AppPaths;
+import cz.cuni.mff.releasemanager.state.StateStore;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import cz.cuni.mff.releasemanager.state.AppManifest;
-import cz.cuni.mff.releasemanager.state.AppPaths;
-import cz.cuni.mff.releasemanager.state.StateStore;
 
 @EnabledOnOs(OS.LINUX)
 class LinuxHandlerTest {
@@ -158,6 +158,92 @@ class LinuxHandlerTest {
         assertEquals(Paths.get("versions/v1.0.0"),
             Files.readSymbolicLink(appDir().resolve("current")));
         assertEquals("one", Files.readString(bin.resolve("github__owner__repo")));
+    }
+
+
+    @Test
+    void installsPortableWithUserCommand() throws Exception {
+        Path asset = Files.writeString(tempDir.resolve("Tool-1.2.3.AppImage"), "payload");
+
+        Path installed = handler.install(new InstallRequest(
+            asset, "github", "owner/repo", "v1.2.3", PackageKind.APPIMAGE, "tool", false));
+
+        Path launcher = bin.resolve("tool");
+        assertEquals(installed, appDir().resolve("versions/v1.2.3/Tool-1.2.3.AppImage"));
+        assertTrue(Files.isSymbolicLink(launcher));
+        assertEquals("payload", Files.readString(launcher));
+        assertEquals(launcher, handler.launcherPath("github", "owner/repo", "tool"));
+    }
+
+    @Test
+    void installsApeWithMagic() throws Exception {
+        Path asset = Files.writeString(tempDir.resolve("tool"), "MZqFpD='payload");
+
+        Path installed = handler.install(new InstallRequest(
+            asset, "github", "owner/tool", "v1.2.3", PackageKind.APE, "tool", false));
+
+        assertEquals("MZqFpD='payload", Files.readString(installed));
+        assertEquals("MZqFpD='payload", Files.readString(bin.resolve("tool")));
+    }
+
+    @Test
+    void noCommandLeavesNoLauncher() throws Exception {
+        Path asset = Files.writeString(tempDir.resolve("tool.AppImage"), "payload");
+
+        handler.install(new InstallRequest(
+            asset, "github", "owner/tool", "v1.2.3", PackageKind.APPIMAGE, null, false));
+
+        assertFalse(Files.exists(bin.resolve("github__owner__tool")));
+        assertFalse(Files.exists(bin.resolve("tool")));
+    }
+
+
+
+    @Test
+    void refusesToOverwriteUnmanagedCommand() throws Exception {
+        Files.createDirectories(bin);
+        Path existing = Files.writeString(bin.resolve("tool"), "#!/bin/sh\n");
+        Path asset = Files.writeString(tempDir.resolve("tool.AppImage"), "payload");
+
+        assertNull(handler.install(new InstallRequest(
+            asset, "github", "owner/tool", "v1.2.3", PackageKind.APPIMAGE, "tool", false)));
+        assertEquals("#!/bin/sh\n", Files.readString(existing));
+    }
+
+    @Test
+    void createsOptionalDesktopEntry() throws Exception {
+        Path asset = Files.writeString(tempDir.resolve("tool.AppImage"), "payload");
+        handler.install(new InstallRequest(
+            asset, "github", "owner/tool", "v1.2.3", PackageKind.APPIMAGE,
+            "tool", false, true, null, true));
+
+        Path entry = handler.desktopEntryPath("github", "owner/tool", "tool");
+        assertTrue(Files.isRegularFile(entry));
+        String content = Files.readString(entry);
+        assertTrue(content.contains("Name=tool"), content);
+        assertTrue(content.contains("Exec=\"" + bin.resolve("tool") + "\""), content);
+        assertTrue(content.contains("Terminal=true"), content);
+    }
+
+    @Test
+    void uninstallPortableRemovesLauncherAndRoot() throws Exception {
+        Path asset = Files.writeString(tempDir.resolve("tool.AppImage"), "payload");
+        Path installed = handler.install(new InstallRequest(
+            asset, "github", "owner/repo", "v1.2.3", PackageKind.APPIMAGE, "tool", false));
+        AppManifest manifest = new AppManifest(
+            AppManifest.KIND, AppManifest.SCHEMA_VERSION,
+            "github", "owner/repo", "v1.2.3", 1L,
+            new AppManifest.Asset("tool.AppImage", "url", null),
+            new AppManifest.Install("appimage", installed.toString(), appDir().toString(),
+                "tool", new AppManifest.Uninstall(bin.resolve("tool").toString(),
+                    List.of(), null)),
+            new AppManifest.Verification("unknown", "none", null, null, null),
+            List.of(), Instant.now(), Instant.now());
+
+        assertTrue(handler.uninstallPortable(manifest));
+        assertFalse(Files.exists(bin.resolve("tool"), LinkOption.NOFOLLOW_LINKS));
+        assertTrue(Files.exists(appDir()),
+            "application state is removed by UninstallService after the manifest");
     }
 
     @Test

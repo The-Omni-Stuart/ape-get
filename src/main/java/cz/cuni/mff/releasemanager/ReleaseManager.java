@@ -24,6 +24,7 @@ import cz.cuni.mff.releasemanager.install.InstallComponents;
 import cz.cuni.mff.releasemanager.install.InstallReporter;
 import cz.cuni.mff.releasemanager.install.InstallService;
 import cz.cuni.mff.releasemanager.install.ManifestFactory;
+import cz.cuni.mff.releasemanager.install.PackagePlanner;
 import cz.cuni.mff.releasemanager.install.PlatformInstaller;
 import cz.cuni.mff.releasemanager.install.ReleaseDownloader;
 import cz.cuni.mff.releasemanager.install.ReleaseFetcher;
@@ -236,7 +237,8 @@ public class ReleaseManager {
                 new TrustGateFactory(
                     cmdParser, toolConfig, verifier, signatureVerifier, confirmer),
                 new BackupService(os, toolConfig, backupManager, platformHandler),
-                new PlatformInstaller(platformHandler)));
+                new PlatformInstaller(platformHandler)),
+            new PackagePlanner(os, cmdParser));
     }
 
     // built per call so it follows the live state store and platform
@@ -311,6 +313,13 @@ public class ReleaseManager {
         out.println("  --allow-signer-change - accept a changed signer after confirmation");
         out.println("  --provider <name> - use a configured provider for search");
         out.println("  --asset <name|index> - choose a release asset non-interactively");
+        out.println("  --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg");
+        out.println("  --name <command> - command name for a portable package");
+        out.println("  --no-command - install without creating a command");
+        out.println("  --desktop - create a desktop entry (Linux)");
+        out.println("  --terminal - run the desktop entry in a terminal");
+        out.println("  --icon <path> - icon for the desktop entry");
+        out.println("  --assimilate - convert an APE with the cosmocc assimilate tool");
         out.println("  --version <tag> - install or update to a specific release");
         out.println("  --dry-run - show what would happen without changing anything");
         out.println("  --json - machine-readable output");

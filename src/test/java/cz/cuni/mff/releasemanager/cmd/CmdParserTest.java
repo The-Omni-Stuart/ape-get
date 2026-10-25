@@ -2,14 +2,14 @@ package cz.cuni.mff.releasemanager.cmd;
 
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 
 class CmdParserTest {
 
@@ -256,6 +256,33 @@ class CmdParserTest {
         assertEquals(Command.INSTALL, result);
         assertEquals("owner/repo", result.argument);
         assertEquals("v1.2.3", cmdParser.getVersion());
+    }
+
+
+    @Test
+    void testParsePortableOptions() {
+        Command result = cmdParser.parse(new String[] {
+            "install", "owner/repo", "--kind", "portable-exe",
+            "--name", "tool", "--assimilate", "--desktop", "--terminal",
+            "--icon", "tool.png"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("portable-exe", cmdParser.getKind());
+        assertEquals("tool", cmdParser.getCommandName());
+        assertEquals("tool.png", cmdParser.getIcon());
+        assertTrue(cmdParser.isAssimilate());
+        assertTrue(cmdParser.isDesktop());
+        assertTrue(cmdParser.isTerminal());
+        assertFalse(cmdParser.isNoCommand());
+    }
+
+    @Test
+    void testParseNoCommand() {
+        Command result = cmdParser.parse(new String[] {
+            "install", "owner/repo", "--no-command"});
+
+        assertEquals(Command.INSTALL, result);
+        assertTrue(cmdParser.isNoCommand());
     }
 
     @Test

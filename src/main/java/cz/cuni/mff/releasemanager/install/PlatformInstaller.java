@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.install;
 import java.nio.file.Path;
 
 import cz.cuni.mff.releasemanager.platform.InstallRequest;
+import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
@@ -15,11 +16,21 @@ public final class PlatformInstaller {
         this.platformHandler = platformHandler;
     }
 
-    public Path install(Path downloaded, RepoRef ref, String version) {
+    public Path install(
+        Path downloaded,
+        RepoRef ref,
+        String version,
+        PackageKind kind,
+        String command,
+        boolean assimilate,
+        boolean desktop,
+        String icon,
+        boolean terminal) {
         Path installed = null;
         try {
-            installed = platformHandler.install(
-                new InstallRequest(downloaded, ref.provider(), ref.path(), version));
+            installed = platformHandler.install(new InstallRequest(
+                downloaded, ref.provider(), ref.path(), version,
+                kind, command, assimilate, desktop, icon, terminal));
         } finally {
             if (!downloaded.equals(installed)) {
                 StagedAsset.discard(downloaded);

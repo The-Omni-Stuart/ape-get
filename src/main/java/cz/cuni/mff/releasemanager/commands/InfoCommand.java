@@ -60,6 +60,15 @@ public final class InfoCommand {
         Output.data("Install state: " + platformHandler.installState(manifest)
             .name().toLowerCase(Locale.ROOT));
         Output.data("Asset: " + manifest.asset().name());
+        if (manifest.install().kind() != null) {
+            Output.data("Kind: " + manifest.install().kind());
+        }
+        if (manifest.install().command() != null) {
+            Output.data("Command: " + manifest.install().command());
+        }
+        if (manifest.install().desktopEntry() != null) {
+            Output.data("Desktop entry: " + manifest.install().desktopEntry());
+        }
         Output.data("Checksum: " + ManifestViews.describeVerification(manifest.verification()));
         Output.data("Signature: " + ManifestViews.describePinnedSignature(manifest.signature()));
         if (manifest.install().uninstall() != null) {

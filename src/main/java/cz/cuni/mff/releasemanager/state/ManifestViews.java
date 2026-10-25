@@ -10,6 +10,7 @@ import cz.cuni.mff.releasemanager.json.JsonViews.AssetView;
 import cz.cuni.mff.releasemanager.json.JsonViews.BackupView;
 import cz.cuni.mff.releasemanager.json.JsonViews.SignatureView;
 import cz.cuni.mff.releasemanager.json.JsonViews.VerificationView;
+import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 
 // json and text views of an installed app
@@ -29,7 +30,9 @@ public final class ManifestViews {
             manifest.installedAt(),
             manifest.updatedAt(),
             manifest.install() == null ? null : manifest.install().path(),
-            manifest.asset() == null ? null : manifest.asset().name());
+            manifest.asset() == null ? null : manifest.asset().name(),
+            manifest.install() == null ? null : manifest.install().kind(),
+            manifest.install() == null ? null : manifest.install().command());
     }
 
     public AppInfo infoEntry(AppManifest manifest) {
@@ -42,6 +45,12 @@ public final class ManifestViews {
 
         AppManifest.Install install = manifest.install();
         AppManifest.Uninstall uninstall = install == null ? null : install.uninstall();
+        boolean noCommandPortable = install != null && install.command() == null
+            && PackageKind.fromManifest(install.kind()).isPortable()
+            && uninstall != null && install.path() != null
+            && install.path().equals(uninstall.path());
+        String launcher = uninstall == null || noCommandPortable
+            ? null : uninstall.path();
 
         VerificationView verification = manifest.verification() == null
             ? new VerificationView(null, null, null, null, null)
@@ -84,11 +93,14 @@ public final class ManifestViews {
             asset,
             manifest.releaseId(),
             install == null ? null : install.root(),
-            uninstall == null ? null : uninstall.path(),
+            launcher,
             uninstall == null ? null : uninstall.productCode(),
             verification,
             signature,
-            backups);
+            backups,
+            install == null ? null : install.kind(),
+            install == null ? null : install.command(),
+            install == null ? null : install.desktopEntry());
     }
 
     public static String describeVerification(AppManifest.Verification verification) {

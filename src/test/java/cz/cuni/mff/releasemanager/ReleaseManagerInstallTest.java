@@ -6,16 +6,8 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.platform.InstallRequest;
@@ -27,6 +19,13 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class ReleaseManagerInstallTest extends ReleaseManagerTestSupport {
 
@@ -139,7 +138,7 @@ class ReleaseManagerInstallTest extends ReleaseManagerTestSupport {
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
         when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(versioned);
-        when(mockPlatformHandler.launcherPath("github", "user/example"))
+        when(mockPlatformHandler.launcherPath("github", "user/example", "example"))
             .thenReturn(Path.of("/home/user/.local/bin/example"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "github:user/example"}));
@@ -150,10 +149,13 @@ class ReleaseManagerInstallTest extends ReleaseManagerTestSupport {
         assertEquals("v1.2.3", request.getValue().version());
         assertEquals("github", request.getValue().provider());
         assertEquals("user/example", request.getValue().repoFullName());
+        assertEquals("example", request.getValue().command());
 
         ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
         verify(mockStateStore).saveManifest(captor.capture());
         assertEquals(versioned.toString(), captor.getValue().install().path());
+        assertEquals("appimage", captor.getValue().install().kind());
+        assertEquals("example", captor.getValue().install().command());
         assertEquals(Path.of("/home/user/.local/bin/example").toString(),
             captor.getValue().install().uninstall().path());
     }

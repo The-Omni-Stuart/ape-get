@@ -7,6 +7,7 @@ import java.util.List;
 
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
+import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.provider.ProviderResolver;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
@@ -27,16 +28,19 @@ public final class InstallService {
     private final ManifestStore manifests;
     private final ProviderResolver resolveProvider;
     private final InstallComponents components;
+    private final PackagePlanner planner;
 
     public InstallService(
         CmdParser cmdParser,
         ManifestStore manifests,
         ProviderResolver resolveProvider,
-        InstallComponents components) {
+        InstallComponents components,
+        PackagePlanner planner) {
         this.cmdParser = cmdParser;
         this.manifests = manifests;
         this.resolveProvider = resolveProvider;
         this.components = components;
+        this.planner = planner;
     }
 
     public boolean install(Command command) {
@@ -65,12 +69,30 @@ public final class InstallService {
             Output.error("Failed to retrieve the release.");
             return false;
         }
-        Asset asset = components.chooser().choose(release.installable());
+        PackageKind requested;
+        try {
+            requested = planner.requestedKind();
+        } catch (IllegalArgumentException e) {
+            Output.error(e.getMessage());
+            return false;
+        }
+        List<Asset> candidates = planner.candidates(
+            cmdParser.getAsset() == null ? release.installable() : release.all(),
+            requested, cmdParser.getAsset() != null);
+        if (candidates.isEmpty()) {
+            Output.error("No compatible package found for this platform.");
+            return false;
+        }
+        Asset asset = components.chooser().choose(candidates);
         if (asset == null) {
             return false;
         }
+        PackagePlan plan = planner.plan(ref, asset, requested, null);
+        if (plan == null) {
+            return false;
+        }
         if (cmdParser.isDryRun()) {
-            components.reporter().printPlan("install", ref, release, asset);
+            components.reporter().printPlan("install", ref, release, plan);
             return true;
         }
         Path downloaded = components.downloader().download(provider, asset);
@@ -91,19 +113,26 @@ public final class InstallService {
         if (!gate.isSignerAllowed(previous, signature, downloaded, "install")) {
             return false;
         }
+        plan = confirmPlan(ref, plan, downloaded, previous);
+        if (plan == null) {
+            return false;
+        }
         Path installed = components.platform().install(
-            downloaded, ref, release.version());
+            downloaded, ref, release.version(),
+            plan.kind(), plan.command(), cmdParser.isAssimilate(),
+            cmdParser.isDesktop(), cmdParser.getIcon(), cmdParser.isTerminal());
         if (installed == null) {
             Output.error("Installation failed.");
             return false;
         }
         AppManifest manifest = components.manifestFactory().create(
-            ref, provider.config(), release, asset, installed, verification,
-            signature, Instant.now(), List.of());
+            ref, provider.config(), release, asset, plan.kind(), plan.command(),
+            cmdParser.isDesktop(), installed, verification, signature,
+            Instant.now(), List.of());
         if (!manifests.save(manifest)) {
             return false;
         }
-        components.reporter().installed(ref, release, asset, installed);
+        components.reporter().installed(ref, release, plan, installed);
         return true;
     }
 
@@ -133,13 +162,26 @@ public final class InstallService {
         if (latest == null) {
             return false;
         }
-        List<Asset> assets = latest.installable();
+        PackageKind requested;
+        try {
+            requested = planner.requestedKind();
+        } catch (IllegalArgumentException e) {
+            Output.error(e.getMessage());
+            return false;
+        }
+        List<Asset> assets = planner.candidates(
+            cmdParser.getAsset() == null ? latest.installable() : latest.all(),
+            requested, cmdParser.getAsset() != null);
         if (assets.isEmpty()) {
-            Output.error("No asset found.");
+            Output.error("No compatible package found for this platform.");
             return false;
         }
         Asset newAsset = components.chooser().chooseForUpdate(assets, previous);
         if (newAsset == null) {
+            return false;
+        }
+        PackagePlan plan = planner.plan(ref, newAsset, requested, previous);
+        if (plan == null) {
             return false;
         }
         if (previous.asset().url().equals(newAsset.url())) {
@@ -147,7 +189,7 @@ public final class InstallService {
             return true;
         }
         if (cmdParser.isDryRun()) {
-            components.reporter().printPlan("update", ref, latest, newAsset);
+            components.reporter().printPlan("update", ref, latest, plan);
             return true;
         }
         Path downloaded = components.downloader().download(provider, newAsset);
@@ -168,6 +210,12 @@ public final class InstallService {
         if (!gate.isSignerAllowed(previous, signature, downloaded, "update")) {
             return false;
         }
+        plan = confirmPlan(ref, plan, downloaded, previous);
+        if (plan == null) {
+            return false;
+        }
+        boolean desktop = cmdParser.isDesktop()
+            || previous.install().desktopEntry() != null;
         List<AppManifest.Backup> backupList;
         try {
             backupList = components.backups().forUpdate(previous);
@@ -176,18 +224,34 @@ public final class InstallService {
             StagedAsset.discard(downloaded);
             return false;
         }
-        Path installed = components.platform().install(downloaded, ref, latest.version());
+        Path installed = components.platform().install(
+            downloaded, ref, latest.version(),
+            plan.kind(), plan.command(), cmdParser.isAssimilate(),
+            cmdParser.isDesktop(), cmdParser.getIcon(), cmdParser.isTerminal());
         if (installed == null) {
             Output.error("Installation failed.");
             return false;
         }
         AppManifest updated = components.manifestFactory().create(
-            ref, provider.config(), latest, newAsset, installed, verification,
-            signature, previous.installedAt(), backupList);
+            ref, provider.config(), latest, newAsset, plan.kind(), plan.command(),
+            desktop, installed, verification, signature,
+            previous.installedAt(), backupList);
         if (!manifests.save(updated)) {
             return false;
         }
-        components.reporter().updated(ref, latest, newAsset, installed);
+        components.reporter().updated(ref, latest, plan, installed);
         return true;
+    }
+
+    private PackagePlan confirmPlan(
+        RepoRef ref, PackagePlan plan, Path downloaded, AppManifest previous) {
+        PackageKind actual = planner.confirmAfterDownload(plan, downloaded);
+        if (actual == null) {
+            return null;
+        }
+        if (actual == plan.kind()) {
+            return plan;
+        }
+        return planner.plan(ref, plan.asset(), actual, previous);
     }
 }

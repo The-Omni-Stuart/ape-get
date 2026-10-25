@@ -28,8 +28,17 @@ public final class InstallReporter {
     }
 
     public void printPlan(
-        String action, RepoRef ref, ReleaseAssets release, Asset asset) {
-        Path launcher = platformHandler.launcherPath(ref.provider(), ref.path());
+        String action, RepoRef ref, ReleaseAssets release, PackagePlan plan) {
+        Asset asset = plan.asset();
+        Path launcher;
+        if (plan.kind().isPortable()) {
+            launcher = plan.command() == null
+                ? null
+                : platformHandler.launcherPath(
+                    ref.provider(), ref.path(), plan.command());
+        } else {
+            launcher = platformHandler.launcherPath(ref.provider(), ref.path());
+        }
         if (cmdParser.isJson()) {
             Output.json(new InstallPlan(
                 true,
@@ -39,7 +48,9 @@ public final class InstallReporter {
                 release.version(),
                 asset.name(),
                 asset.url(),
-                launcher == null ? null : launcher.toString()));
+                launcher == null ? null : launcher.toString(),
+                plan.kind().manifestName(),
+                plan.command()));
             return;
         }
         Output.data("Dry run: would " + action + " " + ref.display()
@@ -53,18 +64,18 @@ public final class InstallReporter {
     }
 
     public void installed(
-        RepoRef ref, ReleaseAssets release, Asset asset, Path installed) {
+        RepoRef ref, ReleaseAssets release, PackagePlan plan, Path installed) {
         if (cmdParser.isJson()) {
-            Output.json(new InstalledResult(result(ref, release, asset, installed)));
+            Output.json(new InstalledResult(result(ref, release, plan, installed)));
         } else {
             Output.info("Installation successful.");
         }
     }
 
     public void updated(
-        RepoRef ref, ReleaseAssets release, Asset asset, Path installed) {
+        RepoRef ref, ReleaseAssets release, PackagePlan plan, Path installed) {
         if (cmdParser.isJson()) {
-            Output.json(new UpdatedResult(result(ref, release, asset, installed)));
+            Output.json(new UpdatedResult(result(ref, release, plan, installed)));
         } else {
             Output.info("Successfully updated.");
         }
@@ -80,15 +91,25 @@ public final class InstallReporter {
     }
 
     private ReleaseResult result(
-        RepoRef ref, ReleaseAssets release, Asset asset, Path installed) {
-        Path launcher = platformHandler.launcherPath(ref.provider(), ref.path());
+        RepoRef ref, ReleaseAssets release, PackagePlan plan, Path installed) {
+        Path launcher;
+        if (plan.kind().isPortable()) {
+            launcher = plan.command() == null
+                ? null
+                : platformHandler.launcherPath(
+                    ref.provider(), ref.path(), plan.command());
+        } else {
+            launcher = platformHandler.launcherPath(ref.provider(), ref.path());
+        }
         return new ReleaseResult(
             ref.provider(),
             ref.path(),
             release.version(),
-            asset.name(),
+            plan.asset().name(),
             installed == null ? null : installed.toString(),
-            launcher == null ? null : launcher.toString());
+            launcher == null ? null : launcher.toString(),
+            plan.kind().manifestName(),
+            plan.command());
     }
 
     private static String versionLabel(ReleaseAssets release) {

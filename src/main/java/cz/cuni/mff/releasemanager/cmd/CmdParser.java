@@ -24,6 +24,13 @@ public class CmdParser {
     private String provider;
     private String asset;
     private String version;
+    private String kind;
+    private String commandName;
+    private boolean noCommand;
+    private boolean assimilate;
+    private boolean desktop;
+    private boolean terminal;
+    private String icon;
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -42,6 +49,13 @@ public class CmdParser {
         provider = null;
         asset = null;
         version = null;
+        kind = null;
+        commandName = null;
+        noCommand = false;
+        assimilate = false;
+        desktop = false;
+        terminal = false;
+        icon = null;
         List<String> filtered = new ArrayList<>(args.length);
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -74,6 +88,29 @@ public class CmdParser {
                     return usage("Missing value for --version");
                 }
                 version = args[++i];
+            } else if ("--kind".equals(arg)) {
+                if (i + 1 >= args.length) {
+                    return usage("Missing value for --kind");
+                }
+                kind = args[++i];
+            } else if ("--name".equals(arg)) {
+                if (i + 1 >= args.length) {
+                    return usage("Missing value for --name");
+                }
+                commandName = args[++i];
+            } else if ("--no-command".equals(arg)) {
+                noCommand = true;
+            } else if ("--assimilate".equals(arg)) {
+                assimilate = true;
+            } else if ("--desktop".equals(arg)) {
+                desktop = true;
+            } else if ("--terminal".equals(arg)) {
+                terminal = true;
+            } else if ("--icon".equals(arg)) {
+                if (i + 1 >= args.length) {
+                    return usage("Missing value for --icon");
+                }
+                icon = args[++i];
             } else {
                 filtered.add(arg);
             }
@@ -169,6 +206,55 @@ public class CmdParser {
      */
     public String getVersion() {
         return version;
+    }
+
+    /**
+     * @return package kind from --kind, or null for auto
+     */
+    public String getKind() {
+        return kind;
+    }
+
+    /**
+     * @return command name from --name, or null
+     */
+    public String getCommandName() {
+        return commandName;
+    }
+
+    /**
+     * @return true when --no-command was supplied
+     */
+    public boolean isNoCommand() {
+        return noCommand;
+    }
+
+    /**
+     * @return true when --assimilate was supplied
+     */
+    public boolean isAssimilate() {
+        return assimilate;
+    }
+
+    /**
+     * @return true when --desktop was supplied
+     */
+    public boolean isDesktop() {
+        return desktop;
+    }
+
+    /**
+     * @return true when --terminal was supplied
+     */
+    public boolean isTerminal() {
+        return terminal;
+    }
+
+    /**
+     * @return icon path from --icon, or null
+     */
+    public String getIcon() {
+        return icon;
     }
 
     /**
