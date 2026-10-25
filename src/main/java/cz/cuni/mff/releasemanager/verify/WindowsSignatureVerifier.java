@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 
 /**
  * Verifies Authenticode signatures on Windows executables and MSI packages.
@@ -40,8 +41,8 @@ public final class WindowsSignatureVerifier implements SignatureVerifier {
 
         Process process;
         try {
-            process = new ProcessBuilder(
-                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
+            process = ChildEnvironment.sanitize(new ProcessBuilder(
+                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script))
                 .redirectErrorStream(true)
                 .start();
         } catch (IOException e) {

@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Set;
 
+import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
@@ -52,7 +53,7 @@ public final class MacHandler extends PlatformHandler {
 
             stagingDir = Files.createTempDirectory(targetDir, ".ape-get-staging-");
             Path stagedApp = stagingDir.resolve(app.getFileName());
-            Process copyProcess = new ProcessBuilder()
+            Process copyProcess = process()
                 .command("ditto", app.toString(), stagedApp.toString())
                 .inheritIO()
                 .start();
@@ -95,6 +96,10 @@ public final class MacHandler extends PlatformHandler {
      * @throws IOException
      * @throws InterruptedException
      */
+    private static ProcessBuilder process(String... command) {
+        return ChildEnvironment.sanitize(new ProcessBuilder(command));
+    }
+
     private void mount(Path asset) throws IOException, InterruptedException {
         Files.createDirectories(MOUNT_DIR);
         Files.setPosixFilePermissions(MOUNT_DIR, Set.of(
@@ -106,7 +111,7 @@ public final class MacHandler extends PlatformHandler {
                 PosixFilePermission.OTHERS_READ,
                 PosixFilePermission.OTHERS_EXECUTE
         ));
-        Process process = new ProcessBuilder()
+        Process process = process()
                 .command("hdiutil", "attach", "-nobrowse", "-mountpoint",
                     MOUNT_DIR.toAbsolutePath().toString(), 
                     asset.toString())
@@ -143,7 +148,7 @@ public final class MacHandler extends PlatformHandler {
      * @throws InterruptedException
      */
     private void detach() throws IOException, InterruptedException {
-        Process process = new ProcessBuilder()
+        Process process = process()
                 .command("hdiutil", "detach", MOUNT_DIR.toString(), "-force")
                 .inheritIO()
                 .start();

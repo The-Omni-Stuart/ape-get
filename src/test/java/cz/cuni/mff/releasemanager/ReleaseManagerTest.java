@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -32,6 +33,7 @@ import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
+import cz.cuni.mff.releasemanager.provider.SearchService;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
@@ -113,6 +115,10 @@ class ReleaseManagerTest {
         Field backupField = ReleaseManager.class.getDeclaredField("backupManager");
         backupField.setAccessible(true);
         backupField.set(releaseManager, mockBackupManager);
+
+        Field searchField = ReleaseManager.class.getDeclaredField("searchService");
+        searchField.setAccessible(true);
+        searchField.set(releaseManager, new SearchService());
 
         setOs(Platform.OS.LINUX);
 
@@ -246,6 +252,7 @@ class ReleaseManagerTest {
         Command cmd = Command.SEARCH;
         cmd.argument = "example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getProvider()).thenReturn("github");
 
         var repo = new Repo("user/example", "Example repo");
         var searchResult = Optional.of(new SearchResult(List.of(repo)));
@@ -254,6 +261,95 @@ class ReleaseManagerTest {
 
         assertEquals(0, releaseManager.execute(new String[] {"search", "example"}));
 
+        verify(mockGithubClient).searchRepoByName("example");
+    }
+
+    @Test
+    void testExecuteSearchUsesProviderOption() {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getProvider()).thenReturn("github");
+        when(mockGithubClient.searchRepoByName("example")).thenReturn(Optional.of(
+            new SearchResult(List.of(new Repo("user/example", "Example repo")))));
+
+        assertEquals(0, releaseManager.execute(
+            new String[]{"search", "example", "--provider", "github"}));
+        verify(mockGithubClient).searchRepoByName("example");
+    }
+
+    @Test
+    void testExecuteSearchUnknownProviderFails() {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getProvider()).thenReturn("work");
+
+        assertEquals(1, releaseManager.execute(
+            new String[]{"search", "example", "--provider", "work"}));
+        verify(mockGithubClient, never()).searchRepoByName(any());
+    }
+
+    @Test
+    void testExecuteSearchAllProviders() throws Exception {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getProvider()).thenReturn("all");
+
+        SearchService service = mock(SearchService.class);
+        when(service.searchAll(any(), eq("example"), any())).thenReturn(List.of(
+            new SearchService.ProviderResult(
+                "github", List.of(new Repo("a/b", "A")), null),
+            new SearchService.ProviderResult("codeberg", List.of(), "down")));
+        Field field = ReleaseManager.class.getDeclaredField("searchService");
+        field.setAccessible(true);
+        field.set(releaseManager, service);
+
+        assertEquals(0, releaseManager.execute(
+            new String[]{"search", "example", "--provider", "all"}));
+        verify(service).searchAll(any(), eq("example"), any());
+    }
+
+    @Test
+    void testExecuteSearchDefaultsToAllProviders() throws Exception {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        SearchService service = mock(SearchService.class);
+        when(service.searchAll(any(), eq("example"), any())).thenReturn(List.of(
+            new SearchService.ProviderResult(
+                "github", List.of(new Repo("a/b", "A")), null)));
+        Field field = ReleaseManager.class.getDeclaredField("searchService");
+        field.setAccessible(true);
+        field.set(releaseManager, service);
+
+        assertEquals(0, releaseManager.execute(new String[]{"search", "example"}));
+        verify(service).searchAll(any(), eq("example"), any());
+    }
+
+    @Test
+    void testExecuteSearchDefaultsToGithubWhenAllDisabled() throws Exception {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.loadConfig()).thenReturn(new ConfigStore.LoadResult(
+            new GrmConfig(
+                GrmConfig.KIND,
+                GrmConfig.SCHEMA_VERSION,
+                false,
+                1,
+                null,
+                false,
+                Map.of(),
+                false),
+            false,
+            null));
+        when(mockGithubClient.searchRepoByName("example")).thenReturn(Optional.of(
+            new SearchResult(List.of(new Repo("user/example", "Example repo")))));
+
+        assertEquals(0, releaseManager.execute(new String[]{"search", "example"}));
         verify(mockGithubClient).searchRepoByName("example");
     }
 
@@ -982,6 +1078,7 @@ class ReleaseManagerTest {
         Command cmd = Command.SEARCH;
         cmd.argument = "example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getProvider()).thenReturn("github");
         when(mockGithubClient.searchRepoByName("example")).thenReturn(Optional.empty());
 
         assertEquals(1, releaseManager.execute(new String[]{"search", "example"}));

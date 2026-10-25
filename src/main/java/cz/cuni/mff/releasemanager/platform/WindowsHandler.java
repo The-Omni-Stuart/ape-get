@@ -13,6 +13,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import cz.cuni.mff.releasemanager.state.AppManifest;
+import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
@@ -90,7 +91,7 @@ public final class WindowsHandler extends PlatformHandler {
      * @throws InterruptedException
      */
     private Path installMsi(Path assetPath) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder()
+        Process process = process()
             .command("msiexec", "/i", assetPath.toString(), "/qn", "/norestart")
             .inheritIO()
             .start();
@@ -130,7 +131,7 @@ public final class WindowsHandler extends PlatformHandler {
             return null;
         }
         String command = String.format("\"%s\" /S /D=%s", assetPath.toString(), targetDir.toString());
-        Process process = new ProcessBuilder("cmd.exe", "/c", command)
+        Process process = process("cmd.exe", "/c", command)
             .inheritIO()
             .start();
         int exitCode = process.waitFor();
@@ -202,7 +203,7 @@ public final class WindowsHandler extends PlatformHandler {
                 System.err.println("Refusing to uninstall path outside install directories: " + asset);
                 return false;
             }
-            Process process = new ProcessBuilder(
+            Process process = process(
                 "msiexec", "/x", productCode, "/qn", "/norestart")
                 .inheritIO()
                 .start();
@@ -297,9 +298,13 @@ public final class WindowsHandler extends PlatformHandler {
         }
     }
 
+    private static ProcessBuilder process(String... command) {
+        return ChildEnvironment.sanitize(new ProcessBuilder(command));
+    }
+
     private static String runPowerShell(String script)
         throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(
+        Process process = process(
             "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
             .redirectErrorStream(true)
             .start();
@@ -322,7 +327,7 @@ public final class WindowsHandler extends PlatformHandler {
      * @throws InterruptedException
      */
     private void uninstallExe(Path asset) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(asset.toString(), "/S")
+        Process process = process(asset.toString(), "/S")
             .inheritIO()
             .start();
 
@@ -349,7 +354,7 @@ public final class WindowsHandler extends PlatformHandler {
      * @throws InterruptedException
      */
     private void uninstallMsi(Path asset) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder()
+        Process process = process()
             .command("msiexec", "/x", asset.toString(), "/qn", "/norestart")
             .inheritIO()
             .start();

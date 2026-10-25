@@ -69,6 +69,28 @@ class GithubClientTest {
     }
 
     @Test
+    void sendsGitHubTokenFromEnvironment() throws Exception {
+        assumeTrue(System.getenv("PATH") != null);
+        GithubClient tokenClient = new GithubClient("https://api.github.com", "PATH");
+        Field clientField = GithubClient.class.getDeclaredField("client");
+        clientField.setAccessible(true);
+        clientField.set(tokenClient, mockHttpClient);
+
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("{\"items\":[]}");
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+            .thenReturn(mockResponse);
+
+        tokenClient.searchRepoByName("token-test");
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), eq(HttpResponse.BodyHandlers.ofString()));
+        assertEquals("Bearer " + System.getenv("PATH"),
+            captor.getValue().headers().firstValue("Authorization").orElse(null));
+    }
+
+    @Test
     void searchRepoByName_returnsSearchResultOnSuccess() throws Exception {
         String repoName = "testrepo";
         String json = """

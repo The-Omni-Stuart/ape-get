@@ -7,6 +7,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
+
 /**
  * Built-in provider instances plus user-defined ones from config.
  */
@@ -44,6 +46,9 @@ public final class ProviderRegistry {
             }
         }
         this.providers = Map.copyOf(merged);
+        for (ProviderConfig config : this.providers.values()) {
+            ChildEnvironment.register(config.tokenEnv());
+        }
     }
 
     public static Map<String, ProviderConfig> builtIns() {

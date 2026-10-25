@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
@@ -105,7 +106,7 @@ public final class MacSignatureVerifier implements SignatureVerifier {
 
     private static ProcessResult run(String... command)
         throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(command)
+        Process process = ChildEnvironment.sanitize(new ProcessBuilder(command))
             .redirectErrorStream(true)
             .start();
         String output = new String(

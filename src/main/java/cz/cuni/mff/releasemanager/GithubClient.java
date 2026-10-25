@@ -40,6 +40,7 @@ import cz.cuni.mff.releasemanager.utils.FileUtils;
 public class GithubClient {
 
     private static final String DEFAULT_API_URL = "https://api.github.com";
+    private static final String DEFAULT_TOKEN_ENV = "GRM_GITHUB_TOKEN";
     private static final String ACCEPT_JSON_HEADER = "application/vnd.github.v3+json";
     private static final String ACCEPT_STREAM_HEADER = "application/octet-stream";
     private static final String RESULT_COUNT = "5";
@@ -49,28 +50,36 @@ public class GithubClient {
     private final PlatformHandler platformHandler;
     private final Duration downloadTimeout;
     private final String apiBase;
+    private final String token;
 
     /**
      * Constructor for GithubClient.
      * Initializes the HttpClient and PlatformHandler.
      */
     public GithubClient() {
-        this(DEFAULT_API_URL, DEFAULT_DOWNLOAD_TIMEOUT);
+        this(DEFAULT_API_URL, DEFAULT_TOKEN_ENV, DEFAULT_DOWNLOAD_TIMEOUT);
     }
 
     public GithubClient(String apiBase) {
-        this(apiBase, DEFAULT_DOWNLOAD_TIMEOUT);
+        this(apiBase, DEFAULT_TOKEN_ENV, DEFAULT_DOWNLOAD_TIMEOUT);
+    }
+
+    public GithubClient(String apiBase, String tokenEnv) {
+        this(apiBase, tokenEnv, DEFAULT_DOWNLOAD_TIMEOUT);
     }
 
     GithubClient(Duration downloadTimeout) {
-        this(DEFAULT_API_URL, downloadTimeout);
+        this(DEFAULT_API_URL, DEFAULT_TOKEN_ENV, downloadTimeout);
     }
 
-    GithubClient(String apiBase, Duration downloadTimeout) {
+    GithubClient(String apiBase, String tokenEnv, Duration downloadTimeout) {
         this.apiBase = apiBase.endsWith("/")
             ? apiBase.substring(0, apiBase.length() - 1)
             : apiBase;
         this.downloadTimeout = downloadTimeout;
+        String value = tokenEnv == null || tokenEnv.isBlank()
+            ? null : System.getenv(tokenEnv);
+        this.token = value == null || value.isBlank() ? null : value;
         client = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
             .version(HttpClient.Version.HTTP_2)
@@ -172,10 +181,10 @@ public class GithubClient {
     }
 
     private void downloadToFile(String url, Path destination) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest request = authorized(HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Accept", ACCEPT_STREAM_HEADER)
-            .timeout(downloadTimeout)
+            .timeout(downloadTimeout))
             .build();
         CompletableFuture<HttpResponse<Path>> future =
             client.sendAsync(request, HttpResponse.BodyHandlers.ofFile(destination));
@@ -227,11 +236,18 @@ public class GithubClient {
      * @throws IOException
      * @throws InterruptedException
      */
+    private HttpRequest.Builder authorized(HttpRequest.Builder builder) {
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        return builder;
+    }
+
     private Optional<String> request(URI uri) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest request = authorized(HttpRequest.newBuilder()
             .uri(uri)
             .header("Accept", ACCEPT_JSON_HEADER)
-            .timeout(API_TIMEOUT)
+            .timeout(API_TIMEOUT))
             .build();
         HttpResponse<String> response;
         try {

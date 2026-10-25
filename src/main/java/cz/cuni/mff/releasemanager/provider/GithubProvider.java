@@ -5,6 +5,7 @@ import java.nio.file.Path;
 
 import cz.cuni.mff.releasemanager.GithubClient;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.types.SearchResult;
 
 /**
  * GitHub API provider implementation.
@@ -31,6 +32,12 @@ public final class GithubProvider implements ReleaseProvider {
     @Override
     public Path download(Asset asset) throws IOException, InterruptedException {
         return githubClient.downloadAsset(asset);
+    }
+
+    @Override
+    public SearchResult search(String query) throws IOException, InterruptedException {
+        return githubClient.searchRepoByName(query)
+            .orElse(new SearchResult(java.util.List.of()));
     }
 
     @Override

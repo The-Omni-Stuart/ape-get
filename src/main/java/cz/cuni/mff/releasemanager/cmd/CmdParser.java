@@ -16,6 +16,7 @@ public class CmdParser {
     private boolean assumeYes;
     private boolean requireSignature;
     private boolean allowSignerChange;
+    private String provider;
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -28,8 +29,10 @@ public class CmdParser {
         assumeYes = false;
         requireSignature = false;
         allowSignerChange = false;
+        provider = null;
         List<String> filtered = new ArrayList<>(args.length);
-        for (String arg : args) {
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
             if ("--strict".equals(arg)) {
                 strict = true;
             } else if ("--yes".equals(arg)) {
@@ -38,6 +41,11 @@ public class CmdParser {
                 requireSignature = true;
             } else if ("--allow-signer-change".equals(arg)) {
                 allowSignerChange = true;
+            } else if ("--provider".equals(arg)) {
+                if (i + 1 >= args.length) {
+                    return usage("Missing value for --provider");
+                }
+                provider = args[++i];
             } else {
                 filtered.add(arg);
             }
@@ -112,6 +120,13 @@ public class CmdParser {
      */
     public boolean isAllowSignerChange() {
         return allowSignerChange;
+    }
+
+    /**
+     * @return provider name from --provider, or null
+     */
+    public String getProvider() {
+        return provider;
     }
 
     /**

@@ -19,7 +19,8 @@ public record GrmConfig(
     @JsonProperty("backup_count") int backupCount,
     @JsonProperty("install_root") String installRoot,
     @JsonProperty("require_signature") boolean requireSignature,
-    Map<String, ProviderConfig> providers
+    Map<String, ProviderConfig> providers,
+    @JsonProperty("search_all_providers") Boolean searchAllProviders
 ) {
     public static final String KIND = "grm.config";
     public static final int SCHEMA_VERSION = 1;
@@ -43,11 +44,29 @@ public record GrmConfig(
         boolean requireSignature
     ) {
         this(kind, schemaVersion, strictVerification, backupCount, installRoot,
-            requireSignature, Map.of());
+            requireSignature, Map.of(), true);
+    }
+
+    public GrmConfig(
+        String kind,
+        int schemaVersion,
+        boolean strictVerification,
+        int backupCount,
+        String installRoot,
+        boolean requireSignature,
+        Map<String, ProviderConfig> providers
+    ) {
+        this(kind, schemaVersion, strictVerification, backupCount, installRoot,
+            requireSignature, providers, true);
     }
 
     public static GrmConfig defaults() {
-        return new GrmConfig(KIND, SCHEMA_VERSION, false, 1, null, false, Map.of());
+        return new GrmConfig(KIND, SCHEMA_VERSION, false, 1, null, false, Map.of(), true);
+    }
+
+    @JsonIgnore
+    public boolean searchAllEnabled() {
+        return !Boolean.FALSE.equals(searchAllProviders);
     }
 
     @JsonIgnore

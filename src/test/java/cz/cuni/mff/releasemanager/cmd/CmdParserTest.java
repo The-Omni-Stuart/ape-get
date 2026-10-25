@@ -31,6 +31,16 @@ class CmdParserTest {
     }
 
     @Test
+    void testParseProviderOption() {
+        Command result = cmdParser.parse(new String[]{
+            "--provider", "work", "search", "two", "words"});
+
+        assertEquals(Command.SEARCH, result);
+        assertEquals("two words", result.argument);
+        assertEquals("work", cmdParser.getProvider());
+    }
+
+    @Test
     void testParseProvidersKeepsSubcommandArguments() {
         Command result = cmdParser.parse(new String[]{
             "providers", "add", "work", "https://git.example.com", "--type", "gitea"});

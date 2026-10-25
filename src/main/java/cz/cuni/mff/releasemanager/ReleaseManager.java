@@ -6,6 +6,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -23,6 +24,7 @@ import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.GithubProvider;
+import cz.cuni.mff.releasemanager.provider.GitLabProvider;
 import cz.cuni.mff.releasemanager.provider.GiteaProvider;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
 import cz.cuni.mff.releasemanager.provider.ProviderDetector;
@@ -30,6 +32,7 @@ import cz.cuni.mff.releasemanager.provider.ProviderRegistry;
 import cz.cuni.mff.releasemanager.provider.ProviderType;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
+import cz.cuni.mff.releasemanager.provider.SearchService;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.BackupManager;
@@ -41,6 +44,7 @@ import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.RepoRef;
+import cz.cuni.mff.releasemanager.types.SearchResult;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;
 import cz.cuni.mff.releasemanager.verify.SignatureStatus;
@@ -82,6 +86,7 @@ public class ReleaseManager {
     private Platform.OS os = Platform.detectPlatform().getOS();
     private GrmConfig toolConfig = GrmConfig.defaults();
     private ProviderRegistry providers = new ProviderRegistry();
+    private SearchService searchService = new SearchService();
 
     private ReleaseManager() {
         cmdParser = new CmdParser();
@@ -307,14 +312,10 @@ public class ReleaseManager {
             case GITHUB -> new GithubProvider(
                 "github".equals(config.name())
                     ? githubClient
-                    : new GithubClient(config.resolvedApi()),
+                    : new GithubClient(config.resolvedApi(), config.tokenEnv()),
                 config);
             case GITEA -> new GiteaProvider(config);
-            case GITLAB -> {
-                System.err.println(
-                    "Provider type '" + config.type() + "' is not implemented yet.");
-                yield null;
-            }
+            case GITLAB -> new GitLabProvider(config);
         };
     }
 
@@ -348,22 +349,108 @@ public class ReleaseManager {
      * @param command the command containing the search term
      */
     private boolean search(Command command) {
-        var searchResult = githubClient.searchRepoByName(command.argument);
-        if (searchResult.isEmpty()) {
+        if (!loadSearchConfig()) {
             return false;
         }
-        var items = searchResult.get().items();
+        String providerName = cmdParser.getProvider();
+        if (providerName == null || providerName.isBlank()) {
+            providerName = toolConfig.searchAllEnabled() ? "all" : "github";
+        }
+
+        if ("all".equalsIgnoreCase(providerName)) {
+            List<ReleaseProvider> adapters = new ArrayList<>();
+            for (ProviderConfig config : providers.all()) {
+                ReleaseProvider provider = resolveProvider(config.name());
+                if (provider != null) {
+                    adapters.add(provider);
+                }
+            }
+            adapters.sort(java.util.Comparator.comparing(provider -> provider.config().name()));
+            if (adapters.isEmpty()) {
+                System.err.println("No providers are configured.");
+                return false;
+            }
+            System.out.println("Searching " + adapters.size() + " provider(s)...");
+            return printSearchResults(searchService.searchAll(
+                adapters, command.argument, Duration.ofSeconds(10)));
+        }
+
+        SearchResult result;
+        if ("github".equalsIgnoreCase(providerName)) {
+            var searchResult = githubClient.searchRepoByName(command.argument);
+            if (searchResult.isEmpty()) {
+                return false;
+            }
+            result = searchResult.get();
+        } else {
+            ReleaseProvider provider = resolveProvider(providerName);
+            if (provider == null) {
+                return false;
+            }
+            try {
+                result = provider.search(command.argument);
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                System.err.println("Search failed: " + e.getMessage());
+                return false;
+            }
+        }
+        List<Repo> items = result.items() == null ? List.of() : result.items();
         if (items.isEmpty()) {
             System.out.println("No results found.");
             return true;
         }
         System.out.println("Found " + items.size() + " repositories.");
+        String prefix = "github".equalsIgnoreCase(providerName) ? "" : providerName + ":";
         for (Repo repo : items) {
-            System.out.println(repo.fullName() + ": " + repo.description());
+            System.out.println(prefix + repo.fullName() + ": " + repo.description());
         }
         System.out.println("To install a release, use the 'install' command followed by the repository name.");
         return true;
     }
+
+    private boolean loadSearchConfig() {
+        try {
+            toolConfig = stateStore.loadConfig().config();
+            providers = new ProviderRegistry(toolConfig.providers());
+            return true;
+        } catch (IOException e) {
+            System.err.println("Failed to read config: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean printSearchResults(List<SearchService.ProviderResult> results) {
+        int hits = 0;
+        int succeeded = 0;
+        for (SearchService.ProviderResult result : results) {
+            if (result.error() != null) {
+                System.err.println("Warning: " + result.provider() + ": " + result.error());
+                continue;
+            }
+            succeeded++;
+            for (Repo repo : result.repos()) {
+                System.out.println(result.provider() + ":" + repo.fullName() + ": "
+                    + (repo.description() == null ? "" : repo.description()));
+                hits++;
+            }
+        }
+        if (succeeded == 0) {
+            System.err.println("All provider searches failed.");
+            return false;
+        }
+        if (hits == 0) {
+            System.out.println("No results found.");
+            return true;
+        }
+        System.out.println("Found " + hits + " repositories across "
+            + succeeded + " provider(s).");
+        System.out.println("Use provider:owner/repo to install one of them.");
+        return true;
+    }
+
     /**
      * Installs the latest release of a specified GitHub repository.
      * If multiple assets are found, the user is prompted to select one.
@@ -1801,6 +1888,7 @@ public class ReleaseManager {
         out.println("  --strict - fail when a checksum is missing or unusable");
         out.println("  --require-signature - fail when no verified signature is available");
         out.println("  --allow-signer-change - accept a changed signer after confirmation");
+        out.println("  --provider <name> - use a configured provider for search");
         out.println("  --yes - assume yes for confirmation prompts");
     }
 }

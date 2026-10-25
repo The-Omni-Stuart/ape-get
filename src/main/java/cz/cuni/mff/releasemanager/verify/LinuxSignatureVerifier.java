@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 
 /**
  * Verifies a detached GPG signature using the local keyring.
@@ -66,7 +67,7 @@ public final class LinuxSignatureVerifier implements SignatureVerifier {
         Path log = Files.createTempFile("grm-gpg-", ".log");
         Process process;
         try {
-            process = new ProcessBuilder(command)
+            process = ChildEnvironment.sanitize(new ProcessBuilder(command))
                 .redirectErrorStream(true)
                 .redirectOutput(log.toFile())
                 .start();

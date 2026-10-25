@@ -2,9 +2,11 @@ package cz.cuni.mff.releasemanager.provider;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -19,6 +21,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cz.cuni.mff.releasemanager.platform.AssetSelector;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.types.Asset;
+import cz.cuni.mff.releasemanager.types.Repo;
+import cz.cuni.mff.releasemanager.types.SearchResult;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
@@ -131,6 +135,33 @@ public final class GiteaProvider implements ReleaseProvider {
     }
 
     @Override
+    public SearchResult search(String query) throws IOException, InterruptedException {
+        String url = config.resolvedApi() + "/repos/search?q="
+            + URLEncoder.encode(query, StandardCharsets.UTF_8) + "&limit=5";
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+            .header("Accept", "application/json")
+            .header("User-Agent", "ape-get")
+            .timeout(API_TIMEOUT)
+            .GET();
+        token().ifPresent(value -> builder.header("Authorization", "token " + value));
+
+        HttpResponse<String> response = client.send(
+            builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new IOException(
+                "Gitea search returned " + response.statusCode());
+        }
+        GiteaSearch result = MAPPER.readValue(response.body(), GiteaSearch.class);
+        List<Repo> repos = result.data() == null
+            ? List.of()
+            : result.data().stream()
+                .filter(repo -> repo.fullName() != null)
+                .map(repo -> new Repo(repo.fullName(), repo.description()))
+                .toList();
+        return new SearchResult(repos);
+    }
+
+    @Override
     public void discardAsset(Path assetPath) {
         if (assetPath == null) {
             return;
@@ -172,6 +203,15 @@ public final class GiteaProvider implements ReleaseProvider {
         boolean draft,
         boolean prerelease,
         List<GiteaAsset> assets
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record GiteaSearch(List<GiteaRepo> data) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record GiteaRepo(
+        @JsonProperty("full_name") String fullName,
+        String description
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)

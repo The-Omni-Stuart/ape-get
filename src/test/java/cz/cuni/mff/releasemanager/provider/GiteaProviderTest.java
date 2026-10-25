@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.sun.net.httpserver.HttpServer;
 
@@ -23,6 +24,7 @@ import cz.cuni.mff.releasemanager.types.Asset;
 class GiteaProviderTest {
 
     private HttpServer server;
+    private final AtomicReference<String> authorization = new AtomicReference<>();
 
     @AfterEach
     void stopServer() {
@@ -59,7 +61,7 @@ class GiteaProviderTest {
         startServer("", json.formatted(arm, 0, x86, 0));
 
         ProviderConfig config = new ProviderConfig(
-            "gitea", "https://example.invalid", apiBase(), null);
+            "gitea", "https://example.invalid", apiBase(), "PATH");
         GiteaProvider provider = new GiteaProvider(config, HttpClient.newHttpClient());
 
         ReleaseAssets release = provider.latest("owner/repo");
@@ -70,6 +72,33 @@ class GiteaProviderTest {
         assertEquals(1, release.installable().size());
         assertEquals(architecture == Platform.Architecture.ARM_64 ? arm : x86,
             release.installable().get(0).name());
+        assertEquals("token " + System.getenv("PATH"), authorization.get());
+    }
+
+    @Test
+    @Timeout(60)
+    void searchesRepositories() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/repos/search", exchange -> {
+            byte[] bytes = """
+                { "data": [ { "full_name": "owner/repo", "description": "desc" } ] }
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+
+        ProviderConfig config = new ProviderConfig(
+            "gitea", "https://example.invalid", apiBase(), null);
+        GiteaProvider provider = new GiteaProvider(config, HttpClient.newHttpClient());
+
+        var result = provider.search("hello");
+
+        assertEquals(1, result.items().size());
+        assertEquals("owner/repo", result.items().get(0).fullName());
+        assertEquals("desc", result.items().get(0).description());
     }
 
     @Test
@@ -103,6 +132,7 @@ class GiteaProviderTest {
         // Replace the placeholder port now that the ephemeral port is known.
         String body = json.replace("127.0.0.1:0", "127.0.0.1:" + port);
         server.createContext("/api/v1/repos/owner/repo/releases", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
