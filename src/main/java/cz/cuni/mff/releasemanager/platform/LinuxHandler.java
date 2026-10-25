@@ -16,10 +16,7 @@ import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 import cz.cuni.mff.releasemanager.utils.Output;
 
-/**
- * Handles installation and uninstallation on Linux using versioned directories
- * and a stable launcher symlink in the install root.
- */
+// Linux installs live in versioned dirs behind a stable launcher symlink
 public final class LinuxHandler extends PlatformHandler {
 
     private static final Set<PosixFilePermission> EXECUTABLE = Set.of(
@@ -39,19 +36,12 @@ public final class LinuxHandler extends PlatformHandler {
         super(stateStore);
     }
 
-    /**
-     * @return  Singleton instance of LinuxHandler.
-     */
+    // singleton
     public static LinuxHandler getInstance() {
         if (instance == null) {
             instance = new LinuxHandler();
         }
         return instance;
-    }
-
-    @Override
-    public Path install(Path assetPath, String repoFullName) {
-        return install(new InstallRequest(assetPath, "github", repoFullName, null));
     }
 
     @Override
@@ -63,7 +53,7 @@ public final class LinuxHandler extends PlatformHandler {
                 return null;
             }
             String repoFullName = request.repoFullName();
-            Path launcher = launcherPath(repoFullName);
+            Path launcher = launcherPath(request.provider(), repoFullName);
             if (launcher == null) {
                 System.err.println("Installation failed: invalid repository name");
                 return null;
@@ -73,7 +63,8 @@ public final class LinuxHandler extends PlatformHandler {
                 return null;
             }
             if (Files.exists(launcher, LinkOption.NOFOLLOW_LINKS)
-                && isOwnedByAnotherRepo(launcher, repoFullName)) {
+                && isOwnedByAnotherRepo(
+                    launcher, request.provider(), repoFullName)) {
                 System.err.println(
                     "Refusing to overwrite " + launcher + " owned by another release.");
                 return null;
@@ -108,11 +99,11 @@ public final class LinuxHandler extends PlatformHandler {
     }
 
     @Override
-    public Path launcherPath(String repoFullName) {
+    public Path launcherPath(String provider, String repoFullName) {
         if (repoFullName == null || repoFullName.isBlank()) {
             return null;
         }
-        return getInstallDir().resolve(FileUtils.getInstallName(repoFullName, null));
+        return getInstallDir().resolve(FileUtils.installName(provider, repoFullName));
     }
 
     @Override
@@ -133,7 +124,7 @@ public final class LinuxHandler extends PlatformHandler {
             }
             replaceSymlink(appDir.resolve("current"),
                 Paths.get("versions").resolve(versionDir.getFileName().toString()));
-            Path launcher = launcherPath(manifest.repo());
+            Path launcher = launcherPath(manifest.provider(), manifest.repo());
             if (launcher != null) {
                 replaceSymlink(launcher,
                     appDir.resolve("current").resolve(restored.getFileName()));
@@ -176,10 +167,7 @@ public final class LinuxHandler extends PlatformHandler {
         return getInstallDir();
     }
 
-    /**
-     * @param version release tag
-     * @return a single safe path segment for the version directory
-     */
+    // one safe path segment for the version directory
     static String sanitizeVersion(String version) {
         if (version == null || version.isBlank()) {
             return "unknown";

@@ -57,8 +57,8 @@ class LinuxNativeInstallTest {
         assertEquals("#!/bin/sh\necho native\n", Files.readString(installed));
         assertFalse(Files.exists(asset));
 
-        Path launcher = handler.launcherPath("owner/native");
-        assertEquals(tempDir.resolve("bin").resolve("owner__native"), launcher);
+        Path launcher = handler.launcherPath("github", "owner/native");
+        assertEquals(tempDir.resolve("bin").resolve("github__owner__native"), launcher);
         assertTrue(Files.isSymbolicLink(launcher));
         assertEquals("#!/bin/sh\necho native\n", Files.readString(launcher));
 

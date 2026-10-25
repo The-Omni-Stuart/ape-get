@@ -72,10 +72,10 @@ class SearchServiceTest {
             new SearchResult(List.of(new Repo("a/b", "A"))));
 
         List<SearchService.ProviderResult> results = new SearchService().searchAll(
-            List.of(slow, fast), "q", Duration.ofMillis(100));
+            List.of(fast, slow), "q", Duration.ofMillis(500));
 
-        assertEquals("timed out", results.get(0).error());
-        assertNotNull(results.get(1).repos());
-        assertTrue(results.get(1).error() == null);
+        assertTrue(results.get(0).error() == null);
+        assertNotNull(results.get(0).repos());
+        assertEquals("timed out", results.get(1).error());
     }
 }

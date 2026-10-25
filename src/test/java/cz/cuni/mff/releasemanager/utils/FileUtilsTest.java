@@ -1,16 +1,12 @@
 package cz.cuni.mff.releasemanager.utils;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -22,47 +18,6 @@ public class FileUtilsTest {
 
     private static final String TEST_FILE = "TestFile123.txt";
     private static final String TEST_DIR = "tempTestDir";
-
-    @Test
-    public void testSaveInputStreamToFile() throws IOException {
-        String content = "Hello, world!";
-        InputStream stream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
-        Path savedPath = FileUtils.saveInputStreamToFile(stream, TEST_FILE);
-
-        assertNotNull(savedPath);
-        assertTrue(Files.exists(savedPath));
-        assertTrue(savedPath.getParent().startsWith(Paths.get(System.getProperty("java.io.tmpdir"))));
-        assertEquals(content, Files.readString(savedPath));
-
-        Files.deleteIfExists(savedPath);
-        Files.deleteIfExists(savedPath.getParent());
-    }
-
-    @Test
-    public void testSaveInputStreamToFile_throwsOnEmptyStream() {
-        InputStream stream = new ByteArrayInputStream(new byte[0]);
-
-        assertThrows(IOException.class, () -> FileUtils.saveInputStreamToFile(stream, TEST_FILE));
-    }
-
-    @Test
-    public void testSaveInputStreamToFile_throwsWhenReadFails() {
-        InputStream stream = new InputStream() {
-            @Override
-            public int read() throws IOException {
-                throw new IOException("boom");
-            }
-        };
-
-        assertThrows(IOException.class, () -> FileUtils.saveInputStreamToFile(stream, TEST_FILE));
-    }
-
-    @Test
-    public void testSaveInputStreamToFile_rejectsPathTraversal() {
-        InputStream stream = new ByteArrayInputStream(new byte[] {1});
-
-        assertThrows(IOException.class, () -> FileUtils.saveInputStreamToFile(stream, "../escape"));
-    }
 
     @Test
     public void testCopyRecursively() throws IOException {
@@ -183,37 +138,26 @@ public class FileUtilsTest {
     }
 
     @Test
-    public void testGetInstallName_usesRepoAndIsNeverEmpty() {
-        assertEquals("ip7z__7zip",
-            FileUtils.getInstallName("ip7z/7zip", Path.of("7z2408-x64.exe")));
-        assertEquals("keepassxreboot__keepassxc",
-            FileUtils.getInstallName("keepassxreboot/keepassxc", Path.of("KeePassXC-2.7.9.AppImage")));
-        assertFalse(FileUtils.getInstallName("/", Path.of("!!!")).isBlank());
-        assertFalse("con".equals(FileUtils.getInstallName("owner/CON", Path.of("x.exe"))));
+    public void testInstallName_alwaysIncludesProvider() {
+        assertEquals("github__owner__repo", FileUtils.installName("github", "owner/repo"));
+        assertEquals("gitlab__owner__repo", FileUtils.installName("gitlab", "owner/repo"));
+        assertEquals("gitlab__group__sub__project",
+            FileUtils.installName("gitlab", "group/sub/project"));
     }
 
     @Test
-    public void testGetShortCut_withAlphaPrefix() {
-        Path file = Paths.get("Release_v1.0.txt");
-        String shortcut = FileUtils.getShortCut(file);
-
-        assertEquals("release", shortcut);
+    public void testInstallName_isNeverEmpty() {
+        assertEquals("github__ip7z__7zip",
+            FileUtils.installName("github", "ip7z/7zip"));
+        assertFalse(FileUtils.installName("github", "/").isBlank());
+        assertFalse(FileUtils.installName(null, "CON").isBlank());
     }
 
     @Test
-    public void testGetShortCut_withoutAlphaPrefix() {
-        Path file = Paths.get("123file.txt");
-        String shortcut = FileUtils.getShortCut(file);
-
-        assertEquals("", shortcut);
-    }
-
-    @Test
-    public void testGetShortCut_emptyFileName() {
-        Path file = Paths.get("");
-        String shortcut = FileUtils.getShortCut(file);
-
-        assertEquals("", shortcut);
+    public void testInstallName_separatesUnderscoreLookalikes() {
+        assertNotEquals(
+            FileUtils.installName("gitlab", "a/b__c"),
+            FileUtils.installName("gitlab", "a__b/c"));
     }
 
     @Test

@@ -9,9 +9,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * One configured provider instance.
- */
+// one configured provider instance
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ProviderConfig(
     @JsonIgnore String name,
@@ -38,6 +36,10 @@ public record ProviderConfig(
         if (providerType.isEmpty() || !isHttps(url)) {
             return false;
         }
+        if (tokenEnv != null && !tokenEnv.isBlank()
+            && !tokenEnv.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            return false;
+        }
         return api == null || api.isBlank() || isHttps(api);
     }
 
@@ -55,6 +57,23 @@ public record ProviderConfig(
             case GITEA -> base + "/api/v1";
             case GITLAB -> base + "/api/v4";
         };
+    }
+
+    // only send the token to hosts that belong to this provider
+    @JsonIgnore
+    public boolean allowsTokenFor(String downloadUrl) {
+        String host = hostOf(downloadUrl);
+        return host != null
+            && (host.equals(hostOf(resolvedApi())) || host.equals(hostOf(url)));
+    }
+
+    private static String hostOf(String value) {
+        try {
+            String host = value == null ? null : URI.create(value).getHost();
+            return host == null ? null : host.toLowerCase(Locale.ROOT);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     @JsonIgnore

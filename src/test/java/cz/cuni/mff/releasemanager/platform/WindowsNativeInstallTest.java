@@ -64,10 +64,10 @@ class WindowsNativeInstallTest {
 
         run(fixture, "makensis", "install.nsi");
 
-        Path installed = handler.install(installer, "owner/native");
+        Path installed = handler.install(new InstallRequest(installer, "github", "owner/native", null));
 
         assertNotNull(installed);
-        Path target = tempDir.resolve("ProgramFiles").resolve("owner__native");
+        Path target = tempDir.resolve("ProgramFiles").resolve("github__owner__native");
         assertTrue(Files.isRegularFile(target.resolve("app.exe")));
         assertTrue(Files.isRegularFile(target.resolve("uninst.exe")));
 
@@ -109,7 +109,8 @@ class WindowsNativeInstallTest {
         run(fixture, "candle", "test.wxs");
         run(fixture, "light", "-sval", "test.wixobj", "-out", "test.msi");
 
-        Path installed = handler.install(fixture.resolve("test.msi"), "owner/msi");
+        Path installed = handler.install(new InstallRequest(
+            fixture.resolve("test.msi"), "github", "owner/msi", null));
 
         assertNotNull(installed);
         String programFiles = System.getenv("ProgramFiles");
@@ -138,7 +139,7 @@ class WindowsNativeInstallTest {
     void rollsBackMsiByReinstallingTheCachedInstaller() throws Exception {
         Path fixture = Files.createDirectories(tempDir.resolve("rollback"));
         Path v1 = buildMsi(fixture, "v1", "1.0.0.0");
-        Path cachedV1 = handler.install(v1, "owner/msi");
+        Path cachedV1 = handler.install(new InstallRequest(v1, "github", "owner/msi", null));
         assertNotNull(cachedV1);
         String codeV1 = handler.productCode(cachedV1);
         assertNotNull(codeV1);
@@ -149,7 +150,7 @@ class WindowsNativeInstallTest {
         AppManifest restored = msiManifest(cachedV1, codeV1, "1.0.0.0");
 
         Path v2 = buildMsi(fixture, "v2", "2.0.0.0");
-        Path cachedV2 = handler.install(v2, "owner/msi");
+        Path cachedV2 = handler.install(new InstallRequest(v2, "github", "owner/msi", null));
         assertNotNull(cachedV2);
         String codeV2 = handler.productCode(cachedV2);
         assertNotNull(codeV2);
@@ -225,8 +226,9 @@ class WindowsNativeInstallTest {
             version,
             1L,
             new AppManifest.Asset(
-                cachedInstaller.getFileName().toString(), "https://example.invalid",
-                null, null),
+                cachedInstaller.getFileName().toString(),
+                "https://example.invalid",
+                null),
             new AppManifest.Install(
                 "msi",
                 cachedInstaller.toString(),

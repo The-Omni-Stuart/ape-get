@@ -27,7 +27,7 @@ class PlatformHandlerTest {
         }
 
         @Override
-        public Path install(Path asset, String repoFullName) {
+        public Path install(InstallRequest request) {
             return null;
         }
 
@@ -82,7 +82,7 @@ class PlatformHandlerTest {
             repo,
             "1.0.0",
             1L,
-            new AppManifest.Asset("file.zip", "https://example.com/file", null, null),
+            new AppManifest.Asset("file.zip", "https://example.com/file", null),
             new AppManifest.Install(
                 "zip",
                 installPath,
@@ -111,8 +111,10 @@ class PlatformHandlerTest {
         stateStore.saveManifest(manifest(
             "owner/repo1", target.resolve("uninstall.exe").toString()));
 
-        assertTrue(handler.isOwnedByAnotherRepo(target, "owner/repo2"));
-        assertFalse(handler.isOwnedByAnotherRepo(target, "owner/repo1"));
+        assertTrue(handler.isOwnedByAnotherRepo(target, "github", "owner/repo2"));
+        assertFalse(handler.isOwnedByAnotherRepo(target, "github", "owner/repo1"));
+        // the same repository on another provider is a different install
+        assertTrue(handler.isOwnedByAnotherRepo(target, "gitlab", "owner/repo1"));
     }
 
     @Test

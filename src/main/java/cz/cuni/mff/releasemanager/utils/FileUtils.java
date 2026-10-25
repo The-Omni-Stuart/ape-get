@@ -1,7 +1,6 @@
 package cz.cuni.mff.releasemanager.utils;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -13,51 +12,10 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Locale;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-/**
- * Utility class for file operations.
- */
+// file operations shared by installers, backups, and providers
 public class FileUtils {
-    /**
-     * Saves an InputStream to a file with the given filename in a temporary directory.
-     * @param stream
-     * @param filename
-     * @return path to the saved file
-     * @throws IOException if the filename is invalid, the copy fails, or the file is empty
-    */
-    public static Path saveInputStreamToFile(InputStream stream, String filename) throws IOException {
-        Path destination = createTempFilePath(filename);
-        Path dir = destination.getParent();
-        try {
-            Files.copy(stream, destination, StandardCopyOption.REPLACE_EXISTING);
-            if (Files.size(destination) == 0) {
-                throw new IOException("Downloaded file is empty: " + filename);
-            }
-            return destination.toAbsolutePath();
-        } catch (IOException e) {
-            try {
-                Files.deleteIfExists(destination);
-            } catch (IOException ignored) {
-                // preserve the original failure
-            }
-            try {
-                Files.deleteIfExists(dir);
-            } catch (IOException ignored) {
-                // preserve the original failure
-            }
-            throw e;
-        }
-    }
-
-    /**
-     * Creates a temporary directory and a validated destination path inside it.
-     * The file itself is not created.
-     * @param filename asset filename
-     * @return destination path
-     * @throws IOException if the filename is invalid
-     */
+    // temp directory plus a validated filename inside it
     public static Path createTempFilePath(String filename) throws IOException {
         validateFilename(filename);
         Path dir = Files.createTempDirectory("github-release-manager-");
@@ -82,25 +40,21 @@ public class FileUtils {
             throw new IOException("Invalid filename: " + filename, e);
         }
     }
-    /**
-     * Derives a stable, non-empty install name from a repository, falling back to the asset name.
-     * @param repoFullName Repository in owner/name form, or null.
-     * @param asset Downloaded asset path, used only as a fallback.
-     * @return a safe install name
-     */
-    public static String getInstallName(String repoFullName, Path asset) {
-        String base = repoFullName == null ? "" : repoFullName.replace("/", "__");
-        if (base.isBlank()) {
-            String fileName = asset == null ? "" : asset.getFileName().toString();
-            int dot = fileName.lastIndexOf('.');
-            base = dot > 0 ? fileName.substring(0, dot) : fileName;
-        }
+    // provider-qualified install name; a hash separates "__" lookalike paths
+    public static String installName(String provider, String repoFullName) {
+        String qualified = provider == null || provider.isBlank()
+            ? repoFullName
+            : provider + "__" + repoFullName;
+        String base = qualified == null ? "" : qualified.replace("/", "__");
         String name = base.toLowerCase(Locale.ROOT)
             .replaceAll("[^a-z0-9._-]+", "-")
             .replaceAll("^[._-]+|[._-]+$", "")
             .replaceAll("-{2,}", "-");
         if (name.isBlank() || isReservedWindowsName(name)) {
             name = "app-" + Integer.toUnsignedString(base.hashCode(), 16);
+        }
+        if (repoFullName != null && repoFullName.contains("__")) {
+            name += "--" + Integer.toUnsignedString(qualified.hashCode(), 16);
         }
         return name;
     }
@@ -112,23 +66,7 @@ public class FileUtils {
         };
     }
 
-    /**
-     * Creates a short name for the given file
-     * @param file Path to the file
-     * @return Path to the short name
-     */
-    public static String getShortCut(Path file) {
-        String fileName = file.getFileName().toString();
-        Pattern pattern = Pattern.compile("^[A-Za-z]+");
-        Matcher matcher = pattern.matcher(fileName);
-
-        return matcher.find() ? matcher.group().toLowerCase() : "";
-    }
-
-    /**
-     * Removes the parent temporary directory if it is empty.
-     * @param file Path to the file
-     */
+    // delete the parent when it is empty
     public static void removeTempDir(Path file) {
         try {
             Path dir = file.getParent();
@@ -145,12 +83,7 @@ public class FileUtils {
         }
     }
 
-    /**
-     * Replaces a target file with a staged file, keeping a temporary backup for rollback.
-     * @param source staged file
-     * @param target live file
-     * @throws IOException if the replace or restore fails
-     */
+    // swap in the staged file, restoring the old one on failure
     public static void replaceFile(Path source, Path target) throws IOException {
         Path parent = target.toAbsolutePath().getParent();
         Path backup = null;
@@ -186,12 +119,7 @@ public class FileUtils {
         }
     }
 
-    /**
-     * Replaces a target directory with a staged directory, keeping a temporary backup for rollback.
-     * @param source staged directory
-     * @param target live directory
-     * @throws IOException if the swap or restore fails
-     */
+    // swap in the staged directory, restoring the old one on failure
     public static void replaceDirectory(Path source, Path target) throws IOException {
         Path parent = target.toAbsolutePath().getParent();
         Path backup = parent.resolve(
@@ -230,12 +158,7 @@ public class FileUtils {
         }
     }
 
-    /**
-     * Copies a directory tree without following symbolic links.
-     * @param source source directory
-     * @param target target directory
-     * @throws IOException if any entry cannot be copied
-     */
+    // copy a tree without following symlinks
     public static void copyRecursively(Path source, Path target) throws IOException {
         Files.walkFileTree(source, new SimpleFileVisitor<>() {
             @Override
@@ -258,11 +181,7 @@ public class FileUtils {
         });
     }
 
-    /**
-     * Deletes a file or directory tree without following symbolic links.
-     * @param path Path to delete
-     * @throws IOException if any entry cannot be deleted
-     */
+    // delete a tree without following symlinks
     public static void deleteRecursively(Path path) throws IOException {
         Files.walkFileTree(path, new SimpleFileVisitor<>() {
             @Override

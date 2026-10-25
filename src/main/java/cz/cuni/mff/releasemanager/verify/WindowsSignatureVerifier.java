@@ -1,12 +1,10 @@
 package cz.cuni.mff.releasemanager.verify;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -14,10 +12,9 @@ import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.Executables;
+import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 
-/**
- * Verifies Authenticode signatures on Windows executables and MSI packages.
- */
+// verifies Authenticode signatures on .exe and .msi files
 public final class WindowsSignatureVerifier implements SignatureVerifier {
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -45,27 +42,24 @@ public final class WindowsSignatureVerifier implements SignatureVerifier {
             + " [pscustomobject]@{ Status = $s.Status.ToString();"
             + " Signer = $signer; Thumbprint = $thumb } | ConvertTo-Json -Compress";
 
-        Process process;
+        ProcessRunner.Result result;
         try {
-            process = ChildEnvironment.sanitize(new ProcessBuilder(
-                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script))
-                .redirectErrorStream(true)
-                .start();
+            result = ProcessRunner.run(ChildEnvironment.sanitize(new ProcessBuilder(
+                "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)), TIMEOUT);
         } catch (IOException e) {
             return SignatureResult.unavailable(target.name(), "pwsh is not available");
         }
 
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (!process.waitFor(TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-            process.destroyForcibly();
-            return SignatureResult.error(target.name(), "Authenticode verification timed out");
+        if (result.timedOut()) {
+            return SignatureResult.error(
+                target.name(), "Authenticode verification timed out");
         }
-
+        String output = result.output();
         Authenticode authenticode = parse(output);
         if (authenticode == null || authenticode.Status() == null) {
             return SignatureResult.error(
                 target.name(),
-                "unexpected Authenticode output (exit " + process.exitValue() + "): "
+                "unexpected Authenticode output (exit " + result.exitCode() + "): "
                     + output.strip());
         }
         return switch (authenticode.Status()) {

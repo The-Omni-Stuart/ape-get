@@ -18,9 +18,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
-/**
- * Reads and writes grm_manifest.json files and rebuilds grm_index.json.
- */
+// manifests are the source of truth; the index is rebuilt from them
 public final class StateStore {
     public enum RecoveryKind {
         RESTORE_MANIFEST,
@@ -45,21 +43,12 @@ public final class StateStore {
         return configStore.load();
     }
 
-    /**
-     * Persists tool configuration.
-     * @param config configuration to write
-     * @throws IOException if the file cannot be written
-     */
+    // persist tool config atomically
     public void saveConfig(GrmConfig config) throws IOException {
         configStore.save(config);
     }
 
-    /**
-     * Scans application directories for valid manifests. Foreign files with a
-     * different kind are ignored; corrupt files are quarantined.
-     * @return valid manifests sorted by repo
-     * @throws IOException if the applications directory cannot be read
-     */
+    // all valid manifests; foreign kinds are ignored, corrupt files quarantined
     public List<AppManifest> scanManifests() throws IOException {
         Path appsDir = paths.applicationsDir();
         if (!Files.exists(appsDir)) {
@@ -82,12 +71,7 @@ public final class StateStore {
             .findFirst();
     }
 
-    /**
-     * Finds index entries that need an unsafe recovery decision.
-     * @param index current index
-     * @param manifests currently valid manifests
-     * @return ordered recovery issues
-     */
+    // index entries with no matching manifest, or with a snapshot worth restoring
     public List<RecoveryIssue> findRecoveryIssues(
         GrmIndex index, List<AppManifest> manifests) {
         if (index == null || index.apps() == null) {
@@ -135,7 +119,8 @@ public final class StateStore {
         return issues;
     }
 
-    private static String manifestKey(String provider, String repo) {
+    // provider and repo together identify an install; a missing provider means legacy GitHub
+    public static String manifestKey(String provider, String repo) {
         return (provider == null ? "github" : provider) + "\u0000" + repo;
     }
 
@@ -156,11 +141,7 @@ public final class StateStore {
             paths.manifestFile(manifest.provider(), manifest.repo()));
     }
 
-    /**
-     * Deletes the per-application state directory, including backups.
-     * @param ref application reference
-     * @throws IOException if the directory cannot be removed
-     */
+    // remove the app directory, including backups
     public void deleteApplicationState(RepoRef ref) throws IOException {
         Path dir = paths.appDir(ref.provider(), ref.path());
         if (Files.exists(dir)) {
@@ -168,26 +149,14 @@ public final class StateStore {
         }
     }
 
-    /**
-     * Rebuilds the derived index from all valid manifests.
-     * @return the new index
-     * @throws IOException if manifests cannot be read or the index cannot be written
-     */
+    // rewrite the index from the current manifests
     public GrmIndex rebuildIndex() throws IOException {
         List<AppManifest> manifests = scanManifests();
         List<GrmIndex.Entry> entries = new ArrayList<>();
         for (AppManifest manifest : manifests) {
-            Path manifestFile = paths.manifestFile(manifest.provider(), manifest.repo());
-            String relative = paths.root()
-                .relativize(manifestFile)
-                .toString()
-                .replace('\\', '/');
             entries.add(new GrmIndex.Entry(
                 manifest.repo(),
-                manifest.version(),
-                manifest.installedAt(),
                 manifest.install().path(),
-                relative,
                 manifest,
                 manifest.provider()));
         }
@@ -200,11 +169,7 @@ public final class StateStore {
         return index;
     }
 
-    /**
-     * Loads the derived index. A corrupt index is quarantined and treated as absent.
-     * @return index when present and valid
-     * @throws IOException if the index cannot be read or moved aside
-     */
+    // a corrupt index is quarantined and treated as absent
     public Optional<GrmIndex> loadIndex() throws IOException {
         Path file = paths.indexFile();
         if (!Files.exists(file)) {

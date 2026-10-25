@@ -7,9 +7,7 @@ import java.util.Objects;
 
 import cz.cuni.mff.releasemanager.platform.Platform;
 
-/**
- * Platform-specific application data paths.
- */
+// platform-specific state directory
 public record AppPaths(Path root) {
     public static final String APP_DIR = "github-release-manager";
 
@@ -17,9 +15,7 @@ public record AppPaths(Path root) {
         root = Objects.requireNonNull(root, "root").toAbsolutePath().normalize();
     }
 
-    /**
-     * @return paths for the current platform
-     */
+    // state dir for the machine we are running on
     public static AppPaths forCurrentPlatform() {
         return forPlatform(
             Platform.detectPlatform().getOS(),
@@ -56,10 +52,6 @@ public record AppPaths(Path root) {
         return root.resolve("applications");
     }
 
-    public Path downloadsDir() {
-        return root.resolve("downloads");
-    }
-
     public Path appDir(String provider, String repoFullName) {
         return applicationsDir()
             .resolve(sanitize(provider))
@@ -70,11 +62,7 @@ public record AppPaths(Path root) {
         return appDir(provider, repoFullName).resolve("grm_manifest.json");
     }
 
-    /**
-     * Converts owner/repo into a filesystem-safe directory name.
-     * @param repoFullName repository in owner/name form
-     * @return sanitised owner__name
-     */
+    // owner/repo -> owner__repo, with a hash when the name itself contains "__"
     public static String repoDirectoryName(String repoFullName) {
         if (repoFullName == null) {
             throw new IllegalArgumentException("Repository name is required");
@@ -92,6 +80,11 @@ public record AppPaths(Path root) {
                 name.append("__");
             }
             name.append(sanitize(segment));
+        }
+        // "a/b__c" and "a__b/c" both join to a__b__c, so disambiguate the rare case
+        if (repoFullName.contains("__")) {
+            name.append("--").append(Integer.toUnsignedString(
+                repoFullName.hashCode(), 16));
         }
         return name.toString();
     }

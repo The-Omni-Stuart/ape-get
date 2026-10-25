@@ -13,9 +13,7 @@ import java.util.UUID;
 
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
-/**
- * Creates, prunes, and restores versioned backups for installed applications.
- */
+// versioned backups for installed apps
 public final class BackupManager {
     private final AppPaths paths;
 
@@ -50,7 +48,6 @@ public final class BackupManager {
                 artifact.toString(),
                 live.toString(),
                 Instant.now(),
-                manifest.install().kind(),
                 backupManifest.toString());
         } catch (IOException | RuntimeException e) {
             FileUtils.deleteRecursively(backupDir);
@@ -58,13 +55,7 @@ public final class BackupManager {
         }
     }
 
-    /**
-     * Creates a backup and prunes older ones according to retention.
-     * @param manifest current manifest
-     * @param keep number of backups to retain, including the new one
-     * @return retained backups
-     * @throws IOException if the backup cannot be created or pruned
-     */
+    // create a backup, then drop the oldest until keep remain
     public List<AppManifest.Backup> createAndPrune(AppManifest manifest, int keep)
         throws IOException {
         List<AppManifest.Backup> current = manifest.backups() == null

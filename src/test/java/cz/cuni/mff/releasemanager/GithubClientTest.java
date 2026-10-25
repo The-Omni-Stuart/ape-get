@@ -141,7 +141,7 @@ class GithubClientTest {
     }
 
     @Test
-    void getLatestReleaseAssets_returnsAssetsOnSuccess() throws Exception {
+    void getLatestRelease_returnsAssetsOnSuccess() throws Exception {
         String repoFullName = "owner/repo";
         String json = """
             {
@@ -158,7 +158,7 @@ class GithubClientTest {
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
                 .thenReturn(mockResponse);
 
-        List<Asset> assets = githubClient.getLatestReleaseAssets(repoFullName);
+        List<Asset> assets = githubClient.getLatestRelease(repoFullName).installable();
 
         assertEquals(2, assets.size());
         assertEquals("file1.exe", assets.get(0).name());
@@ -168,8 +168,8 @@ class GithubClientTest {
     }
 
     @Test
-    void getLatestReleaseAssets_returnsEmptyForInvalidRepoName() {
-        List<Asset> assets = githubClient.getLatestReleaseAssets("invalidRepoName");
+    void getLatestRelease_returnsEmptyForInvalidRepoName() {
+        List<Asset> assets = githubClient.getLatestRelease("invalidRepoName").installable();
         assertTrue(assets.isEmpty());
     }
 
@@ -230,7 +230,7 @@ class GithubClientTest {
     }
 
     @Test
-    void getLatestReleaseAssets_ignoresChecksumAndSignatureFiles() throws Exception {
+    void getLatestRelease_ignoresChecksumAndSignatureFiles() throws Exception {
         String json = """
             {
               "assets": [
@@ -248,7 +248,7 @@ class GithubClientTest {
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
             .thenReturn(mockResponse);
 
-        List<Asset> assets = githubClient.getLatestReleaseAssets("owner/repo");
+        List<Asset> assets = githubClient.getLatestRelease("owner/repo").installable();
 
         assertEquals(1, assets.size());
         assertEquals("Example-1.0.AppImage", assets.get(0).name());
@@ -285,6 +285,61 @@ class GithubClientTest {
                 "empty.bin");
 
             assertThrows(IOException.class, () -> client.downloadAsset(asset));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void downloadAsset_reportsForbiddenWithoutBlamingTheRateLimit() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/forbidden", exchange -> {
+            byte[] body = "{\"message\":\"Forbidden\"}"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(403, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            GithubClient client = new GithubClient(Duration.ofSeconds(5));
+            Asset asset = new Asset(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/forbidden",
+                "app.bin");
+
+            IOException error = assertThrows(
+                IOException.class, () -> client.downloadAsset(asset));
+
+            assertTrue(error.getMessage().contains("403"), error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void downloadAsset_reportsRateLimitWhenTheHeaderSaysSo() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/limited", exchange -> {
+            exchange.getResponseHeaders().add("X-RateLimit-Remaining", "0");
+            exchange.getResponseHeaders().add("X-RateLimit-Reset", "0");
+            byte[] body = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(403, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            GithubClient client = new GithubClient(Duration.ofSeconds(5));
+            Asset asset = new Asset(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/limited",
+                "app.bin");
+
+            IOException error = assertThrows(
+                IOException.class, () -> client.downloadAsset(asset));
+
+            assertTrue(error.getMessage().contains("Rate limit"), error.getMessage());
         } finally {
             server.stop(0);
         }

@@ -1,14 +1,12 @@
 package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,10 +14,9 @@ import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 
-/**
- * WindowsHandler is responsible for handling the installation and uninstallation of applications on Windows systems.
- */
+// Windows installs via msiexec or an NSIS installer
 public final class WindowsHandler extends PlatformHandler {
 
     private static final Pattern MSI_PRODUCT_CODE = Pattern.compile(
@@ -29,9 +26,7 @@ public final class WindowsHandler extends PlatformHandler {
 
     private WindowsHandler() {}
 
-    /**
-     * @return  Singleton instance of WindowsHandler.
-     */
+    // singleton
     public static WindowsHandler getInstance() {
         if (instance == null) {
             instance = new WindowsHandler();
@@ -64,13 +59,14 @@ public final class WindowsHandler extends PlatformHandler {
     }
 
     @Override
-    public Path install(Path assetPath, String repoFullName) {
+    public Path install(InstallRequest request) {
         try {
+            Path assetPath = request.asset();
             String fileName = assetPath.getFileName().toString();
-            if (fileName.endsWith(".msi")) {
-                return installMsi(assetPath);
-            } else if (fileName.endsWith(".exe")) {
-                return installExe(assetPath, repoFullName);
+            if (isMsi(fileName)) {
+                return installMsi(assetPath, request.provider(), request.repoFullName());
+            } else if (isExe(fileName)) {
+                return installExe(assetPath, request.provider(), request.repoFullName());
             } else {
                 System.err.println("Unsupported file format: " + fileName);
                 return null;
@@ -84,14 +80,9 @@ public final class WindowsHandler extends PlatformHandler {
         }
     }
 
-    /**
-     * Installs the MSI asset.
-     * @param assetPath Path to the asset to install.
-     * @return Path to the installed application which is then used for uninstallation.
-     * @throws IOException
-     * @throws InterruptedException
-     */
-    private Path installMsi(Path assetPath) throws IOException, InterruptedException {
+    // caches the MSI under the provider-qualified install name for uninstall and rollback
+    private Path installMsi(Path assetPath, String provider, String repoFullName)
+        throws IOException, InterruptedException {
         Process process = process()
             .command("msiexec", "/i", assetPath.toString(), "/qn", "/norestart")
             .inheritIO()
@@ -102,7 +93,8 @@ public final class WindowsHandler extends PlatformHandler {
             throw new IOException("Installation failed with exit code: " + exitCode);
         }
 
-        Path targetDir = getInstallerStorage();
+        Path targetDir = getInstallerStorage()
+            .resolve(FileUtils.installName(provider, repoFullName));
         Files.createDirectories(targetDir);
         Path target = targetDir.resolve(assetPath.getFileName());
         Files.move(assetPath, target, StandardCopyOption.REPLACE_EXISTING);
@@ -112,22 +104,17 @@ public final class WindowsHandler extends PlatformHandler {
         return target;
     }
 
-    /**
-     * Installs the EXE asset.
-     * @param assetPath Path to the asset to install.
-     * @param repoFullName Repository in owner/name form.
-     * @return Path to the uninstallation file.
-     * @throws IOException
-     * @throws InterruptedException
-     */
-    private Path installExe(Path assetPath, String repoFullName) throws IOException, InterruptedException {
-        String installName = FileUtils.getInstallName(repoFullName, assetPath);
+    // NSIS installer with /D= must be the last argument and stays unquoted
+    private Path installExe(Path assetPath, String provider, String repoFullName)
+        throws IOException, InterruptedException {
+        String installName = FileUtils.installName(provider, repoFullName);
         Path installRoot = getInstallRoot();
         if (installRoot == null) {
             throw new IOException("Cannot determine the Windows install root.");
         }
         Path targetDir = installRoot.resolve(installName);
-        if (Files.exists(targetDir) && isOwnedByAnotherRepo(targetDir, repoFullName)) {
+        if (Files.exists(targetDir)
+            && isOwnedByAnotherRepo(targetDir, provider, repoFullName)) {
             System.err.println("Refusing to overwrite " + targetDir + " owned by another release.");
             return null;
         }
@@ -148,23 +135,20 @@ public final class WindowsHandler extends PlatformHandler {
         return uninstallPath;
     }
 
-    /**
-     * Finds the uninstallation file in the target directory.
-     * @param targetDir Path to the target directory.
-     * @return Path to the uninstallation file.
-     * @throws IOException
-     */
+    // first uninstall*.exe anywhere under the install directory
     private Path findUninstallPath(Path targetDir) throws IOException {
-        return Files.walk(targetDir)
-            .filter(path -> {
-                String fileName = path.getFileName().toString();
-                if (!Files.isDirectory(path)) {
-                    return fileName.contains("uninst") && fileName.endsWith(".exe");
-                }
-                return false;
-            })
-            .findFirst()
-            .orElseThrow(() ->new IOException("Uninstall path not found in: " + targetDir.toString()));
+        try (var paths = Files.walk(targetDir)) {
+            return paths
+                .filter(path -> !Files.isDirectory(path))
+                .filter(path -> {
+                    String fileName = path.getFileName().toString();
+                    return fileName.toLowerCase(Locale.ROOT).contains("uninst")
+                        && isExe(fileName);
+                })
+                .findFirst()
+                .orElseThrow(() -> new IOException(
+                    "Uninstall path not found in: " + targetDir));
+        }
     }
 
     @Override
@@ -178,10 +162,10 @@ public final class WindowsHandler extends PlatformHandler {
         }
         try {
             String fileName = asset.getFileName().toString();
-            if (fileName.endsWith(".msi")) {
+            if (isMsi(fileName)) {
                 uninstallMsi(asset);
                 return true;
-            } else if (fileName.endsWith(".exe")) {
+            } else if (isExe(fileName)) {
                 uninstallExe(asset);
                 return true;
             } else {
@@ -377,34 +361,33 @@ public final class WindowsHandler extends PlatformHandler {
         }
     }
 
+    static boolean isMsi(String fileName) {
+        return fileName.toLowerCase(Locale.ROOT).endsWith(".msi");
+    }
+
+    static boolean isExe(String fileName) {
+        return fileName.toLowerCase(Locale.ROOT).endsWith(".exe");
+    }
+
     private static ProcessBuilder process(String... command) {
         return ChildEnvironment.sanitize(new ProcessBuilder(command));
     }
 
     private static String runPowerShell(String script)
         throws IOException, InterruptedException {
-        Process process = process(
-            "pwsh", "-NoProfile", "-NonInteractive", "-Command", script)
-            .redirectErrorStream(true)
-            .start();
-        String output = new String(
-            process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (!process.waitFor(60, TimeUnit.SECONDS)) {
-            process.destroyForcibly();
+        ProcessRunner.Result result = ProcessRunner.run(
+            process("pwsh", "-NoProfile", "-NonInteractive", "-Command", script),
+            Duration.ofSeconds(60));
+        if (result.timedOut()) {
             throw new IOException("PowerShell timed out");
         }
-        if (process.exitValue() != 0) {
-            throw new IOException(output.strip());
+        if (result.exitCode() != 0) {
+            throw new IOException(result.output().strip());
         }
-        return output;
+        return result.output();
     }
 
-    /**
-     * Uninstalls the EXE asset.
-     * @param asset Path to the asset to uninstall.
-     * @throws IOException
-     * @throws InterruptedException
-     */
+    // run the NSIS uninstaller and wait for it to remove itself
     private void uninstallExe(Path asset) throws IOException, InterruptedException {
         Process process = process(asset.toString(), "/S")
             .inheritIO()
@@ -426,12 +409,7 @@ public final class WindowsHandler extends PlatformHandler {
         }
     }
 
-    /**
-     * Uninstalls the MSI asset.
-     * @param asset Path to the asset to uninstall.
-     * @throws IOException
-     * @throws InterruptedException
-     */
+    // msiexec /x by cached file
     private void uninstallMsi(Path asset) throws IOException, InterruptedException {
         Process process = process()
             .command("msiexec", "/x", asset.toString(), "/qn", "/norestart")

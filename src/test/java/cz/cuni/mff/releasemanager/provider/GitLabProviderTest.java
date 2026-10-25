@@ -6,12 +6,12 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.sun.net.httpserver.HttpServer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.AfterEach;
@@ -26,6 +26,7 @@ class GitLabProviderTest {
     private HttpServer server;
     private final AtomicReference<String> requestedPath = new AtomicReference<>();
     private final AtomicReference<String> privateToken = new AtomicReference<>();
+    private final AtomicReference<String> downloadToken = new AtomicReference<>();
 
     @AfterEach
     void stopServer() {
@@ -165,6 +166,53 @@ class GitLabProviderTest {
         }
     }
 
+    @Test
+    @Timeout(60)
+    void sendsTokenToDownloadsFromTheProviderHost() throws Exception {
+        startServer("payload", releaseJson("app.bin"));
+        ProviderConfig config = new ProviderConfig(
+            "gitlab", "https://gitlab.example", apiBase(), "PATH");
+        GitLabProvider provider = new GitLabProvider(config, HttpClient.newHttpClient());
+        Asset asset = new Asset(
+            "http://127.0.0.1:" + server.getAddress().getPort() + "/download/file", "app.bin");
+
+        Path downloaded = provider.download(asset);
+        try {
+            assertEquals(System.getenv("PATH"), downloadToken.get());
+        } finally {
+            provider.discardAsset(downloaded);
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    void doesNotSendTokenToForeignDownloadHosts() throws Exception {
+        startServer("payload", releaseJson("app.bin"));
+        ProviderConfig config = new ProviderConfig(
+            "gitlab", "https://gitlab.example", apiBase(), "PATH");
+        GitLabProvider provider = new GitLabProvider(config, HttpClient.newHttpClient());
+        Asset asset = new Asset(
+            "http://localhost:" + server.getAddress().getPort() + "/download/file", "app.bin");
+
+        Path downloaded = provider.download(asset);
+        try {
+            assertEquals("payload", Files.readString(downloaded));
+            assertNull(downloadToken.get());
+        } finally {
+            provider.discardAsset(downloaded);
+        }
+    }
+
+    private static String releaseJson(String name) {
+        return """
+            [ { "tag_name": "v1", "upcoming_release": false,
+                "assets": { "links": [
+                  { "name": "%s", "url": "https://example.invalid/file",
+                    "direct_asset_url": "http://127.0.0.1:0/download/file" }
+                ] } } ]
+            """.formatted(name);
+    }
+
     private void startServer(String payload, String json) throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         int port = server.getAddress().getPort();
@@ -179,6 +227,7 @@ class GitLabProviderTest {
             exchange.close();
         });
         server.createContext("/download/file", exchange -> {
+            downloadToken.set(exchange.getRequestHeaders().getFirst("PRIVATE-TOKEN"));
             byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, bytes.length);
             exchange.getResponseBody().write(bytes);

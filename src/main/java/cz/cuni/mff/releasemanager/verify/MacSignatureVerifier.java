@@ -1,28 +1,23 @@
 package cz.cuni.mff.releasemanager.verify;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.Executables;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 
-/**
- * Verifies the code signature on the application bundle inside a macOS disk image.
- */
+// verifies the code signature on the app bundle inside a DMG
 public final class MacSignatureVerifier implements SignatureVerifier {
     private static final Duration TIMEOUT = Duration.ofSeconds(120);
-
-    private record ProcessResult(int exitCode, String output) {}
 
     @Override
     public List<Tool> tools() {
@@ -45,7 +40,7 @@ public final class MacSignatureVerifier implements SignatureVerifier {
         Path mount = Files.createTempDirectory("grm-verify-");
         boolean attached = false;
         try {
-            ProcessResult attach = run("hdiutil", "attach", "-nobrowse", "-readonly",
+            ProcessRunner.Result attach = run("hdiutil", "attach", "-nobrowse", "-readonly",
                 "-mountpoint", mount.toString(), downloaded.toString());
             if (attach.exitCode() != 0) {
                 return SignatureResult.error(
@@ -59,14 +54,14 @@ public final class MacSignatureVerifier implements SignatureVerifier {
                     target.name(), "codesign", "no application bundle found");
             }
 
-            ProcessResult verify = run(
+            ProcessRunner.Result verify = run(
                 "codesign", "--verify", "--deep", "--strict", app.get().toString());
             if (verify.exitCode() != 0) {
                 return SignatureResult.invalid(
                     target.name(), "codesign", firstLine(verify.output()));
             }
 
-            ProcessResult details = run(
+            ProcessRunner.Result details = run(
                 "codesign", "-dv", "--verbose=4", app.get().toString());
             String team = value(details.output(), "TeamIdentifier=");
             if (team != null && team.equalsIgnoreCase("not set")) {
@@ -75,7 +70,7 @@ public final class MacSignatureVerifier implements SignatureVerifier {
             String authority = value(details.output(), "Authority=");
             Boolean notarized = null;
             try {
-                ProcessResult assessment = run(
+                ProcessRunner.Result assessment = run(
                     "spctl", "--assess", "--type", "execute", "--verbose=2",
                     app.get().toString());
                 notarized = assessment.exitCode() == 0;
@@ -113,18 +108,10 @@ public final class MacSignatureVerifier implements SignatureVerifier {
         }
     }
 
-    private static ProcessResult run(String... command)
+    private static ProcessRunner.Result run(String... command)
         throws IOException, InterruptedException {
-        Process process = ChildEnvironment.sanitize(new ProcessBuilder(command))
-            .redirectErrorStream(true)
-            .start();
-        String output = new String(
-            process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (!process.waitFor(TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-            process.destroyForcibly();
-            return new ProcessResult(-1, "timed out");
-        }
-        return new ProcessResult(process.exitValue(), output);
+        return ProcessRunner.run(
+            ChildEnvironment.sanitize(new ProcessBuilder(command)), TIMEOUT);
     }
 
     private static void runQuietly(String... command) {

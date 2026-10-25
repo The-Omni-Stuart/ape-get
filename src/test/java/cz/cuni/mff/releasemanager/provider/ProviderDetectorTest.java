@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -69,6 +70,16 @@ class ProviderDetectorTest {
 
         assertThrows(IOException.class,
             () -> new ProviderDetector(HttpClient.newHttpClient()).detect(base));
+    }
+
+    @Test
+    void rejectsAMalformedUrlWithAClearMessage() {
+        IOException error = assertThrows(IOException.class,
+            () -> new ProviderDetector(HttpClient.newHttpClient())
+                .detect("https://exa mple.com"));
+
+        assertTrue(error.getMessage().contains("Invalid provider URL"),
+            error.getMessage());
     }
 
     @Test

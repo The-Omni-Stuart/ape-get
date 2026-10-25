@@ -122,30 +122,7 @@ jobs:
           cache: maven
 
       - name: Install Windows tooling
-        shell: pwsh
-        run: |
-          $nsisDir = 'C:\Program Files (x86)\NSIS'
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            choco install nsis -y --no-progress
-            if (Test-Path (Join-Path $nsisDir 'makensis.exe')) { break }
-            Start-Sleep -Seconds 15
-          }
-          if (!(Test-Path (Join-Path $nsisDir 'makensis.exe'))) {
-            throw "makensis.exe not found in $nsisDir"
-          }
-
-          $wixDir = 'C:\Program Files (x86)\WiX Toolset v3.14\bin'
-          if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
-            $candle = Get-ChildItem 'C:\Program Files (x86)' -Filter candle.exe -Recurse `
-              -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($candle) { $wixDir = $candle.DirectoryName }
-          }
-          if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
-            throw "WiX candle.exe not found"
-          }
-
-          $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-          $wixDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        uses: ./.github/actions/windows-tooling
 
       - name: Build jar
         shell: pwsh
@@ -325,6 +302,7 @@ jobs:
       - name: Publish to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then

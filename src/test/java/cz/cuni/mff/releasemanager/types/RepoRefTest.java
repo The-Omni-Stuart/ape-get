@@ -29,8 +29,6 @@ class RepoRefTest {
 
         assertEquals("gitlab", ref.provider());
         assertEquals("group/sub/project", ref.path());
-        assertEquals("group/sub", ref.namespace());
-        assertEquals("project", ref.repoName());
     }
 
     @Test

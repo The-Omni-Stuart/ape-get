@@ -76,7 +76,7 @@ java -jar target/github-releases-manager-1.9.9-jar-with-dependencies.jar list
 | Command | Description |
 | --- | --- |
 | `search <query>` | Search all configured providers |
-| `install <repo>` | Install the latest release |
+| `install <repo>` | Install the latest release (refuses an already-tracked repo; use `update`) |
 | `install --version <tag> <repo>` | Install a specific release |
 | `install --asset <name\|index> <repo>` | Choose an asset non-interactively |
 | `update <repo>` | Update an installed release |

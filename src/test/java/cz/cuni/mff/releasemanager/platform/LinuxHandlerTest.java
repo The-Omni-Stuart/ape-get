@@ -56,10 +56,10 @@ class LinuxHandlerTest {
         assertTrue(Files.isRegularFile(versionFile));
         assertEquals(Paths.get("versions/v1.2.3"),
             Files.readSymbolicLink(appDir().resolve("current")));
-        Path launcher = bin.resolve("owner__repo");
+        Path launcher = bin.resolve("github__owner__repo");
         assertTrue(Files.isSymbolicLink(launcher));
         assertEquals("payload", Files.readString(launcher));
-        assertEquals(launcher, handler.launcherPath("owner/repo"));
+        assertEquals(launcher, handler.launcherPath("github", "owner/repo"));
     }
 
     @Test
@@ -71,7 +71,7 @@ class LinuxHandlerTest {
         Path installed = handler.install(new InstallRequest(second, "github", "owner/repo", "v2.0.0"));
 
         assertEquals("two", Files.readString(installed));
-        assertEquals("two", Files.readString(bin.resolve("owner__repo")));
+        assertEquals("two", Files.readString(bin.resolve("github__owner__repo")));
         assertTrue(Files.isRegularFile(
             appDir().resolve("versions/v1.0.0/app-1.AppImage")));
         assertEquals(Paths.get("versions/v2.0.0"),
@@ -88,7 +88,7 @@ class LinuxHandlerTest {
             new InstallRequest(second, "github", "owner/repo", "v1.0.0"));
 
         assertEquals("two", Files.readString(installed));
-        assertEquals("two", Files.readString(bin.resolve("owner__repo")));
+        assertEquals("two", Files.readString(bin.resolve("github__owner__repo")));
     }
 
     @Test
@@ -118,7 +118,7 @@ class LinuxHandlerTest {
     void uninstallRemovesTheLauncherOnly() throws Exception {
         Path asset = Files.writeString(tempDir.resolve("app.AppImage"), "payload");
         Path installed = handler.install(new InstallRequest(asset, "github", "owner/repo", "v1.0.0"));
-        Path launcher = bin.resolve("owner__repo");
+        Path launcher = bin.resolve("github__owner__repo");
 
         assertTrue(handler.uninstall(launcher));
 
@@ -141,13 +141,13 @@ class LinuxHandlerTest {
             "owner/repo",
             "v1.0.0",
             1L,
-            new AppManifest.Asset("app.AppImage", "https://example.com/app", null, null),
+            new AppManifest.Asset("app.AppImage", "https://example.com/app", null),
             new AppManifest.Install(
                 "appimage",
                 restored.toString(),
                 appDir().toString(),
                 new AppManifest.Uninstall(
-                    bin.resolve("owner__repo").toString(), List.of(), null)),
+                    bin.resolve("github__owner__repo").toString(), List.of(), null)),
             new AppManifest.Verification("unknown", "none", null, null, null),
             List.of(),
             Instant.parse("2026-01-01T00:00:00Z"),
@@ -157,15 +157,27 @@ class LinuxHandlerTest {
 
         assertEquals(Paths.get("versions/v1.0.0"),
             Files.readSymbolicLink(appDir().resolve("current")));
-        assertEquals("one", Files.readString(bin.resolve("owner__repo")));
+        assertEquals("one", Files.readString(bin.resolve("github__owner__repo")));
+    }
+
+    @Test
+    void sameRepositoryOnAnotherProviderGetsItsOwnLauncher() throws Exception {
+        Path first = Files.writeString(tempDir.resolve("one.AppImage"), "one");
+        Path second = Files.writeString(tempDir.resolve("two.AppImage"), "two");
+
+        handler.install(new InstallRequest(first, "github", "owner/repo", "v1.0.0"));
+        handler.install(new InstallRequest(second, "gitlab", "owner/repo", "v2.0.0"));
+
+        assertEquals("one", Files.readString(bin.resolve("github__owner__repo")));
+        assertEquals("two", Files.readString(bin.resolve("gitlab__owner__repo")));
     }
 
     @Test
     void refusesToReplaceAnUnmanagedLauncherDirectory() throws Exception {
         Path asset = Files.writeString(tempDir.resolve("app.AppImage"), "payload");
-        Files.createDirectories(bin.resolve("owner__repo"));
+        Files.createDirectories(bin.resolve("github__owner__repo"));
 
         assertNull(handler.install(new InstallRequest(asset, "github", "owner/repo", "v1.0.0")));
-        assertTrue(Files.isDirectory(bin.resolve("owner__repo")));
+        assertTrue(Files.isDirectory(bin.resolve("github__owner__repo")));
     }
 }

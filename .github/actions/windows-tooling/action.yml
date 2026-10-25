@@ -1,0 +1,32 @@
+name: Windows tooling
+description: Install NSIS and WiX for native installer builds and tests
+
+runs:
+  using: composite
+  steps:
+    - name: Install NSIS and WiX
+      shell: pwsh
+      run: |
+        $nsisDir = 'C:\Program Files (x86)\NSIS'
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+          choco install nsis -y --no-progress
+          if (Test-Path (Join-Path $nsisDir 'makensis.exe')) { break }
+          Start-Sleep -Seconds 15
+        }
+        if (!(Test-Path (Join-Path $nsisDir 'makensis.exe'))) {
+          throw "makensis.exe not found in $nsisDir"
+        }
+
+        $wixDir = 'C:\Program Files (x86)\WiX Toolset v3.14\bin'
+        if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
+          $candle = Get-ChildItem 'C:\Program Files (x86)' -Filter candle.exe -Recurse `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($candle) { $wixDir = $candle.DirectoryName }
+        }
+        if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
+          throw "WiX candle.exe not found"
+        }
+
+        $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        $wixDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        Write-Host "nsis=$nsisDir wix=$wixDir"

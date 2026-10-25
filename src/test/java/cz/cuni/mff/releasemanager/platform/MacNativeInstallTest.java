@@ -71,7 +71,7 @@ class MacNativeInstallTest {
         run(tempDir, "hdiutil", "create", "-volname", "TestApp",
             "-srcfolder", payload.toString(), "-ov", "-format", "UDZO", dmg.toString());
 
-        Path installed = handler.install(dmg, "owner/native");
+        Path installed = handler.install(new InstallRequest(dmg, "github", "owner/native", null));
 
         assertNotNull(installed);
         assertEquals(tempDir.resolve("Applications").resolve("TestApp.app"), installed);
@@ -86,7 +86,7 @@ class MacNativeInstallTest {
     @Timeout(600)
     void backsUpAndRestoresTheApplicationBundle() throws Exception {
         Path v1 = dmgWithMarker("v1", "v1");
-        Path installed = handler.install(v1, "owner/native");
+        Path installed = handler.install(new InstallRequest(v1, "github", "owner/native", null));
         assertNotNull(installed);
         assertTrue(Files.readString(
             installed.resolve("Contents/MacOS/TestApp")).contains("echo v1"));
@@ -99,7 +99,7 @@ class MacNativeInstallTest {
         assertTrue(Files.isDirectory(Path.of(created.get(0).artifact())));
 
         Path v2 = dmgWithMarker("v2", "v2");
-        Path updated = handler.install(v2, "owner/native");
+        Path updated = handler.install(new InstallRequest(v2, "github", "owner/native", null));
         assertNotNull(updated);
         assertTrue(Files.readString(
             updated.resolve("Contents/MacOS/TestApp")).contains("echo v2"));
@@ -151,7 +151,9 @@ class MacNativeInstallTest {
             "1.0.0",
             1L,
             new AppManifest.Asset(
-                "TestApp.dmg", "https://example.invalid/TestApp.dmg", null, null),
+                "TestApp.dmg",
+                "https://example.invalid/TestApp.dmg",
+                null),
             new AppManifest.Install(
                 "dmg",
                 installed.toString(),

@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.state;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +44,13 @@ class AppPathsTest {
             () -> AppPaths.repoDirectoryName("owner"));
         assertThrows(IllegalArgumentException.class,
             () -> AppPaths.repoDirectoryName("owner//repo"));
+    }
+
+    @Test
+    void keepsUnderscoreLookalikeNamesApart() {
+        assertNotEquals(
+            AppPaths.repoDirectoryName("a/b__c"),
+            AppPaths.repoDirectoryName("a__b/c"));
     }
 
     @Test

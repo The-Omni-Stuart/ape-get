@@ -2,9 +2,7 @@ package cz.cuni.mff.releasemanager.types;
 
 import java.util.regex.Pattern;
 
-/**
- * A repository path on a configured provider: {@code provider:owner/repo}.
- */
+// provider:owner/repo reference with validation
 public record RepoRef(String provider, String path) {
     private static final Pattern PROVIDER_NAME =
         Pattern.compile("[a-z0-9][a-z0-9._-]*");
@@ -32,12 +30,7 @@ public record RepoRef(String provider, String path) {
         }
     }
 
-    /**
-     * Parses {@code provider:owner/repo}. The provider is required.
-     * @param value command argument
-     * @return parsed reference
-     * @throws IllegalArgumentException if the value is malformed or has no provider
-     */
+    // parses provider:owner/repo; the provider is required
     public static RepoRef parse(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Repository name is required");
@@ -51,14 +44,6 @@ public record RepoRef(String provider, String path) {
         return new RepoRef(
             value.substring(0, colon).toLowerCase(java.util.Locale.ROOT),
             value.substring(colon + 1));
-    }
-
-    public String repoName() {
-        return path.substring(path.lastIndexOf('/') + 1);
-    }
-
-    public String namespace() {
-        return path.substring(0, path.lastIndexOf('/'));
     }
 
     public String display() {

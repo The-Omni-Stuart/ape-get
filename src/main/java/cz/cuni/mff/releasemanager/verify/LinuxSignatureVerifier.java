@@ -1,23 +1,19 @@
 package cz.cuni.mff.releasemanager.verify;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.Executables;
+import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 
-/**
- * Verifies a detached GPG signature using the local keyring.
- */
+// verifies detached GPG signatures with the local keyring
 public final class LinuxSignatureVerifier implements SignatureVerifier {
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
@@ -70,38 +66,29 @@ public final class LinuxSignatureVerifier implements SignatureVerifier {
         command.add(signature.toString());
         command.add(artifact.toString());
 
-        Path log = Files.createTempFile("grm-gpg-", ".log");
-        Process process;
+        ProcessRunner.Result result;
         try {
-            process = ChildEnvironment.sanitize(new ProcessBuilder(command))
-                .redirectErrorStream(true)
-                .redirectOutput(log.toFile())
-                .start();
+            result = ProcessRunner.run(
+                ChildEnvironment.sanitize(new ProcessBuilder(command)), TIMEOUT);
         } catch (IOException e) {
-            Files.deleteIfExists(log);
             return SignatureResult.unavailable(target.name(), "gpg is not installed");
         }
 
-        try {
-            if (!process.waitFor(TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                return SignatureResult.error(target.name(), "gpg timed out");
-            }
-            String output = Files.readString(log, StandardCharsets.UTF_8);
-            if (process.exitValue() != 0) {
-                return SignatureResult.invalid(target.name(), "gpg", failureDetail(output));
-            }
-
-            String fingerprint = statusValue(output, "VALIDSIG");
-            String signer = statusSigner(output);
-            if (fingerprint == null) {
-                return SignatureResult.invalid(
-                    target.name(), "gpg", "gpg reported no valid signature");
-            }
-            return SignatureResult.verified(target.name(), "gpg", signer, fingerprint);
-        } finally {
-            Files.deleteIfExists(log);
+        if (result.timedOut()) {
+            return SignatureResult.error(target.name(), "gpg timed out");
         }
+        if (result.exitCode() != 0) {
+            return SignatureResult.invalid(
+                target.name(), "gpg", failureDetail(result.output()));
+        }
+
+        String fingerprint = statusValue(result.output(), "VALIDSIG");
+        String signer = statusSigner(result.output());
+        if (fingerprint == null) {
+            return SignatureResult.invalid(
+                target.name(), "gpg", "gpg reported no valid signature");
+        }
+        return SignatureResult.verified(target.name(), "gpg", signer, fingerprint);
     }
 
     private static String statusValue(String output, String status) {

@@ -7,10 +7,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * Rebuildable index of installed applications. The index carries a full
- * manifest snapshot so a lost manifest can be restored.
- */
+// rebuildable index; each entry carries a manifest snapshot for recovery
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record GrmIndex(
     String kind,
@@ -20,10 +17,6 @@ public record GrmIndex(
 ) {
     public static final String KIND = "grm.index";
     public static final int SCHEMA_VERSION = 1;
-
-    public static GrmIndex empty() {
-        return new GrmIndex(KIND, SCHEMA_VERSION, Instant.now(), List.of());
-    }
 
     @JsonIgnore
     public boolean isValid() {
@@ -36,22 +29,12 @@ public record GrmIndex(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Entry(
         String repo,
-        String version,
-        @JsonProperty("installed_at") Instant installedAt,
         @JsonProperty("install_path") String installPath,
-        String manifest,
         AppManifest snapshot,
         String provider
     ) {
-        public Entry(
-            String repo,
-            String version,
-            Instant installedAt,
-            String installPath,
-            String manifest,
-            AppManifest snapshot
-        ) {
-            this(repo, version, installedAt, installPath, manifest, snapshot,
+        public Entry(String repo, String installPath, AppManifest snapshot) {
+            this(repo, installPath, snapshot,
                 snapshot == null ? null : snapshot.provider());
         }
     }

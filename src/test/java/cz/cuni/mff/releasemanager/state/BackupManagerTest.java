@@ -26,7 +26,7 @@ class BackupManagerTest {
             "owner/repo",
             "1.0.0",
             1L,
-            new AppManifest.Asset(live.getFileName().toString(), "https://example.com/file", null, null),
+            new AppManifest.Asset(live.getFileName().toString(), "https://example.com/file", null),
             new AppManifest.Install(
                 kind,
                 live.toString(),

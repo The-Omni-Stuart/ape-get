@@ -7,9 +7,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * Per-application manifest and source of truth for an installed release.
- */
+// per-app record of one installed release
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record AppManifest(
     String kind,
@@ -88,7 +86,7 @@ public record AppManifest(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Asset(String name, String url, Long size, String sha256) {}
+    public record Asset(String name, String url, String sha256) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Install(String kind, String path, String root, Uninstall uninstall) {}
@@ -135,7 +133,6 @@ public record AppManifest(
         String artifact,
         @JsonProperty("install_path") String installPath,
         @JsonProperty("created_at") Instant createdAt,
-        String kind,
         String manifest
     ) {}
 }

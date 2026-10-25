@@ -14,7 +14,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -30,13 +29,9 @@ import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Release;
 import cz.cuni.mff.releasemanager.types.SearchResult;
-import cz.cuni.mff.releasemanager.utils.FileUtils;
+import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
-/**
- * This class is responsible for interacting with the Github API.
- * It provides methods to search for repositories, get the latest release assets,
- * and install those assets.
- */
+// GitHub API calls and asset downloads
 public class GithubClient {
 
     private static final String DEFAULT_API_URL = "https://api.github.com";
@@ -52,16 +47,9 @@ public class GithubClient {
     private final String apiBase;
     private final String token;
 
-    /**
-     * Constructor for GithubClient.
-     * Initialises the HttpClient and PlatformHandler.
-     */
+    // default github.com endpoint with the standard token variable
     public GithubClient() {
         this(DEFAULT_API_URL, DEFAULT_TOKEN_ENV, DEFAULT_DOWNLOAD_TIMEOUT);
-    }
-
-    public GithubClient(String apiBase) {
-        this(apiBase, DEFAULT_TOKEN_ENV, DEFAULT_DOWNLOAD_TIMEOUT);
     }
 
     public GithubClient(String apiBase, String tokenEnv) {
@@ -88,11 +76,7 @@ public class GithubClient {
         platformHandler = Platform.getPlatformHandler();
     }
 
-    /**
-     * Searches for repositories by name using the Github API.
-     * @param name The name of the repository to search for.
-     * @return An Optional containing the SearchResult if found, otherwise empty.
-     */
+    // search repositories by name
     public Optional<SearchResult> searchRepoByName(String name) {
         String query = URLEncoder.encode(name, StandardCharsets.UTF_8);
         String url = apiBase + "/search/repositories?q=" + query + "&per_page=" + RESULT_COUNT;
@@ -111,20 +95,7 @@ public class GithubClient {
         }
     }
 
-    /**
-     * Retrieves the latest release assets for a given repository.
-     * @param repoFullName The full name of the repository (owner/repo).
-     * @return A list of installable Asset objects.
-     */
-    public List<Asset> getLatestReleaseAssets(String repoFullName) {
-        return getLatestRelease(repoFullName).installable();
-    }
-
-    /**
-     * Retrieves all latest release assets, including checksums and signatures.
-     * @param repoFullName The full name of the repository (owner/repo).
-     * @return all assets and the installable subset
-     */
+    // latest release with all assets and the installable subset
     public ReleaseAssets getLatestRelease(String repoFullName) {
         String[] parts = repoFullName.split("/");
         if (parts.length != 2) {
@@ -137,12 +108,7 @@ public class GithubClient {
         return fetchRelease(url, "No releases found for this repository.");
     }
 
-    /**
-     * Retrieves a specific release by tag.
-     * @param repoFullName The full name of the repository (owner/repo).
-     * @param tag Release tag name.
-     * @return all assets and the installable subset
-     */
+    // one release by tag
     public ReleaseAssets getRelease(String repoFullName, String tag) {
         String[] parts = repoFullName.split("/");
         if (parts.length != 2) {
@@ -181,28 +147,15 @@ public class GithubClient {
         }
     }
 
-    /**
-     * Downloads the asset to a temporary file without installing it.
-     * @param asset The asset to download.
-     * @return The path to the downloaded file.
-     * @throws IOException if the download fails.
-     * @throws InterruptedException if the download is interrupted.
-     */
+    // downloads to a temp file; the caller owns the file until it is installed
     public Path downloadAsset(Asset asset) throws IOException, InterruptedException {
-        Path destination = FileUtils.createTempFilePath(asset.name());
+        Path destination = StagedAsset.create(asset.name());
         try {
             downloadToFile(asset.url(), destination);
-            if (Files.size(destination) == 0) {
-                throw new IOException("Downloaded file is empty: " + asset.name());
-            }
+            StagedAsset.requireContent(destination, asset.name());
             return destination;
         } catch (IOException | InterruptedException | RuntimeException e) {
-            try {
-                Files.deleteIfExists(destination);
-            } catch (IOException ignored) {
-                // best-effort cleanup
-            }
-            FileUtils.removeTempDir(destination);
+            StagedAsset.discard(destination);
             throw e;
         }
     }
@@ -221,11 +174,6 @@ public class GithubClient {
             handleResponseCode(response);
         } catch (TimeoutException e) {
             future.cancel(true);
-            try {
-                Files.deleteIfExists(destination);
-            } catch (IOException ignored) {
-                // best-effort cleanup
-            }
             throw new IOException(
                 "Download timed out after " + downloadTimeout.toMillis() + " ms", e);
         } catch (ExecutionException e) {
@@ -240,29 +188,11 @@ public class GithubClient {
         }
     }
 
-    /**
-     * Removes a staged download that will not be installed.
-     * @param assetPath The downloaded asset.
-     */
     public void discardAsset(Path assetPath) {
-        if (assetPath == null) {
-            return;
-        }
-        try {
-            Files.deleteIfExists(assetPath);
-        } catch (IOException ignored) {
-            // best-effort cleanup of the staged download
-        }
-        FileUtils.removeTempDir(assetPath);
+        StagedAsset.discard(assetPath);
     }
 
-    /**
-     * Requests the given URI and returns the response body as a string.
-     * @param uri The URI to request.
-     * @return Optional containing the response body as a string.
-     * @throws IOException
-     * @throws InterruptedException
-     */
+    // adds the bearer token when one is configured
     private HttpRequest.Builder authorized(HttpRequest.Builder builder) {
         if (token != null) {
             builder.header("Authorization", "Bearer " + token);
@@ -270,6 +200,7 @@ public class GithubClient {
         return builder;
     }
 
+    // GET as JSON; 4xx is turned into an IOException
     private Optional<String> request(URI uri) throws IOException, InterruptedException {
         HttpRequest request = authorized(HttpRequest.newBuilder()
             .uri(uri)
@@ -289,19 +220,19 @@ public class GithubClient {
         return Optional.of(response.body());
     }
 
-    /**
-     * Handles the response code from the HTTP request. Used for logging.
-     * @param response The HTTP response.
-     * @throws IOException
-     */
+    // 403 is a rate limit only when GitHub says the remaining quota is zero
     private void handleResponseCode(HttpResponse<?> response) throws IOException {
         int statusCode = response.statusCode();
         if (statusCode >= 400) {
             String body = errorBody(response);
             switch (statusCode) {
                 case 403 -> {
-                    handleRateLimit(response.headers());
-                    throw new IOException("Rate limit exceeded. Try again later.");
+                    if (response.headers()
+                        .firstValueAsLong("X-RateLimit-Remaining").orElse(-1) == 0) {
+                        handleRateLimit(response.headers());
+                        throw new IOException("Rate limit exceeded. Try again later.");
+                    }
+                    throw new IOException("HTTP Error 403: " + body);
                 }
                 case 404 -> throw new IOException("Resource not found: " + body);
                 default -> throw new IOException("HTTP Error " + statusCode + ": " + body);
@@ -324,10 +255,7 @@ public class GithubClient {
         return body == null ? "" : body.toString();
     }
 
-    /**
-     * Handles the rate limit response from the Github API. Used for logging.
-     * @param headers The HTTP headers from the response.
-     */
+    // logs the quota reset time so the user knows when to retry
     private void handleRateLimit(HttpHeaders headers) {
         long remaining = headers.firstValueAsLong("X-RateLimit-Remaining").orElse(0);
         long resetTime = headers.firstValueAsLong("X-RateLimit-Reset").orElse(0);
@@ -336,12 +264,7 @@ public class GithubClient {
             remaining, new Date(resetTime * 1000));
     }
 
-    /**
-     * Finds suitable assets in the JSON response from the Github API.
-     * @param json The JSON response.
-     * @return A list of Asset objects.
-     * @throws IOException
-     */
+    // keep assets for this platform and architecture
     private List<Asset> filterInstallable(List<Asset> assets) {
         return AssetSelector.installable(
             assets,
@@ -349,12 +272,7 @@ public class GithubClient {
             Platform.detectPlatform().getArchitecture());
     }
 
-    /**
-     * Converts the JSON string to a SearchResult object.
-     * @param json The JSON string.
-     * @return The SearchResult object.
-     * @throws IOException
-     */
+    // parse the search response
     private SearchResult getSearchResult(String json) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         return mapper.readValue(json, SearchResult.class);

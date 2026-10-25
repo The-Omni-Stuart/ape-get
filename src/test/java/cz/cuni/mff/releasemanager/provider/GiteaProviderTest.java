@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.sun.net.httpserver.HttpServer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +25,8 @@ class GiteaProviderTest {
 
     private HttpServer server;
     private final AtomicReference<String> authorization = new AtomicReference<>();
+    private final AtomicReference<String> downloadAuthorization =
+        new AtomicReference<>();
 
     @AfterEach
     void stopServer() {
@@ -154,6 +156,52 @@ class GiteaProviderTest {
         }
     }
 
+    @Test
+    @Timeout(60)
+    void sendsTokenToDownloadsFromTheProviderHost() throws Exception {
+        startServer("payload", releaseJson("app.bin"));
+        ProviderConfig config = new ProviderConfig(
+            "gitea", "https://example.invalid", apiBase(), "PATH");
+        GiteaProvider provider = new GiteaProvider(config, HttpClient.newHttpClient());
+        Asset asset = new Asset(
+            "http://127.0.0.1:" + server.getAddress().getPort() + "/download/file", "app.bin");
+
+        Path downloaded = provider.download(asset);
+        try {
+            assertEquals("token " + System.getenv("PATH"), downloadAuthorization.get());
+        } finally {
+            provider.discardAsset(downloaded);
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    void doesNotSendTokenToForeignDownloadHosts() throws Exception {
+        startServer("payload", releaseJson("app.bin"));
+        ProviderConfig config = new ProviderConfig(
+            "gitea", "https://example.invalid", apiBase(), "PATH");
+        GiteaProvider provider = new GiteaProvider(config, HttpClient.newHttpClient());
+        // localhost resolves to the same test server but is not the provider host
+        Asset asset = new Asset(
+            "http://localhost:" + server.getAddress().getPort() + "/download/file", "app.bin");
+
+        Path downloaded = provider.download(asset);
+        try {
+            assertEquals("payload", Files.readString(downloaded));
+            assertNull(downloadAuthorization.get());
+        } finally {
+            provider.discardAsset(downloaded);
+        }
+    }
+
+    private static String releaseJson(String name) {
+        return """
+            [ { "id": 1, "tag_name": "v1", "draft": false, "prerelease": false,
+                "assets": [ { "name": "%s",
+                  "browser_download_url": "http://127.0.0.1:0/download/file" } ] } ]
+            """.formatted(name);
+    }
+
     private void startServer(String payload, String json) throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         int port = server.getAddress().getPort();
@@ -169,6 +217,8 @@ class GiteaProviderTest {
         });
         for (String path : List.of("/download/arm", "/download/x86", "/download/file")) {
             server.createContext(path, exchange -> {
+                downloadAuthorization.set(
+                    exchange.getRequestHeaders().getFirst("Authorization"));
                 byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(200, bytes.length);
                 exchange.getResponseBody().write(bytes);

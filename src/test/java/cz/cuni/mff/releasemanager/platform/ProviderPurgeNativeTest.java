@@ -105,7 +105,8 @@ class ProviderPurgeNativeTest {
             1L,
             new AppManifest.Asset(
                 "app" + (kind.equals("dmg") ? ".dmg" : ".exe"),
-                "https://example.invalid/app", null, null),
+                "https://example.invalid/app",
+                null),
             new AppManifest.Install(
                 kind,
                 installPath.toString(),

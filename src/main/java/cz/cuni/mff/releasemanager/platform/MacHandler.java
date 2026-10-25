@@ -6,14 +6,14 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
-/**
- * MacHandler is responsible for handling the installation and uninstallation of applications on macOS systems.
- */
+// macOS installs: mount the DMG, copy the bundle, detach
 public final class MacHandler extends PlatformHandler {
 
     private static MacHandler instance;
@@ -22,9 +22,7 @@ public final class MacHandler extends PlatformHandler {
 
     private MacHandler() {}
 
-    /**
-     * @return  Singleton instance of MacHandler.
-     */
+    // singleton
     public static MacHandler getInstance() {
         if (instance == null) {
             instance = new MacHandler();
@@ -33,20 +31,21 @@ public final class MacHandler extends PlatformHandler {
     }
 
     @Override
-    public Path install(Path asset, String repoFullName) {
+    public Path install(InstallRequest request) {
         boolean mounted = false;
         Path stagingDir = null;
         try {
+            Path asset = request.asset();
             mount(asset);
             mounted = true;
 
             Path targetDir = getInstallRoot();
             Files.createDirectories(targetDir);
 
-            String appName = FileUtils.getShortCut(asset);
-            Path app = findAppInMountDir(appName);
+            Path app = findAppInMountDir(asset.getFileName().toString());
             Path target = targetDir.resolve(app.getFileName());
-            if (Files.exists(target) && isOwnedByAnotherRepo(target, repoFullName)) {
+            if (Files.exists(target)
+                && isOwnedByAnotherRepo(target, request.provider(), request.repoFullName())) {
                 System.err.println("Refusing to overwrite " + target + " owned by another release.");
                 return null;
             }
@@ -90,16 +89,12 @@ public final class MacHandler extends PlatformHandler {
         }
     }
 
-    /**
-     * Mounts the asset to a mount directory.
-     * @param asset Path to the asset.
-     * @throws IOException
-     * @throws InterruptedException
-     */
+    // process builder with provider tokens stripped
     private static ProcessBuilder process(String... command) {
         return ChildEnvironment.sanitize(new ProcessBuilder(command));
     }
 
+    // mount the DMG on a private mount point
     private void mount(Path asset) throws IOException, InterruptedException {
         Files.createDirectories(MOUNT_DIR);
         Files.setPosixFilePermissions(MOUNT_DIR, Set.of(
@@ -123,30 +118,36 @@ public final class MacHandler extends PlatformHandler {
         }
     }
 
-    /**
-     * Finds the downloaded application in the mount directory.
-     * @param appName Name of the application.
-     * @return Path to the application.
-     * @throws IOException
-     */
-    private Path findAppInMountDir(String appName) throws IOException {
-        return Files.walk(MOUNT_DIR)
-            .filter(path -> {
-                String fileName = path.getFileName().toString();
-                if (!Files.isDirectory(path)) {
-                    return fileName.equalsIgnoreCase(appName);
-                }
-                return fileName.substring(0, fileName.length() - 4).equalsIgnoreCase(appName);
-            })
-            .findFirst()
-            .orElseThrow(() -> new IOException("Error finding app."));
+    // DMG names usually include the version, so exact name is only a hint
+    private Path findAppInMountDir(String dmgName) throws IOException {
+        try (var paths = Files.walk(MOUNT_DIR, 2)) {
+            List<Path> apps = paths
+                .filter(Files::isDirectory)
+                .filter(path -> path.getFileName().toString()
+                    .toLowerCase(Locale.ROOT).endsWith(".app"))
+                .toList();
+            return chooseApp(apps, dmgName);
+        }
     }
 
-    /**
-     * Detaches the mounted application.
-     * @throws IOException
-     * @throws InterruptedException
-     */
+    static Path chooseApp(List<Path> entries, String dmgName) throws IOException {
+        String expected = dmgName.toLowerCase(Locale.ROOT).endsWith(".dmg")
+            ? dmgName.substring(0, dmgName.length() - 4) + ".app"
+            : dmgName + ".app";
+        List<Path> apps = entries.stream()
+            .filter(path -> path.getFileName().toString()
+                .toLowerCase(Locale.ROOT).endsWith(".app"))
+            .toList();
+        for (Path app : apps) {
+            if (app.getFileName().toString().equalsIgnoreCase(expected)) {
+                return app;
+            }
+        }
+        return apps.stream().findFirst()
+            .orElseThrow(() -> new IOException("No .app bundle found"));
+    }
+
+    // force-detach the image
     private void detach() throws IOException, InterruptedException {
         Process process = process()
                 .command("hdiutil", "detach", MOUNT_DIR.toString(), "-force")

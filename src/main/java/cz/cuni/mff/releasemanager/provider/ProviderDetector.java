@@ -10,9 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Detects the provider type and API base from an instance URL.
- */
+// detects the provider type and API base from an instance URL
 public final class ProviderDetector {
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
@@ -31,16 +29,15 @@ public final class ProviderDetector {
         this.client = client;
     }
 
-    /**
-     * Probes the instance for a known API layout.
-     * @param url instance base URL
-     * @return detected type and API base
-     * @throws IOException if no single provider type can be determined
-     * @throws InterruptedException if a probe is interrupted
-     */
+    // probes the instance for one unambiguous API layout
     public Detected detect(String url) throws IOException, InterruptedException {
         String base = stripTrailingSlash(url);
-        String host = URI.create(base).getHost();
+        String host;
+        try {
+            host = URI.create(base).getHost();
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid provider URL: " + url, e);
+        }
         if (host == null) {
             throw new IOException("Invalid provider URL: " + url);
         }
