@@ -24,7 +24,9 @@ public record AppManifest(
     List<Backup> backups,
     @JsonProperty("installed_at") Instant installedAt,
     @JsonProperty("updated_at") Instant updatedAt,
-    Signature signature
+    Signature signature,
+    @JsonProperty("provider_type") String providerType,
+    @JsonProperty("provider_api") String providerApi
 ) {
     public static final String KIND = "grm.manifest";
     public static final int SCHEMA_VERSION = 1;
@@ -41,10 +43,29 @@ public record AppManifest(
         Verification verification,
         List<Backup> backups,
         Instant installedAt,
+        Instant updatedAt,
+        Signature signature
+    ) {
+        this(kind, schemaVersion, provider, repo, version, releaseId, asset, install,
+            verification, backups, installedAt, updatedAt, signature, null, null);
+    }
+
+    public AppManifest(
+        String kind,
+        int schemaVersion,
+        String provider,
+        String repo,
+        String version,
+        Long releaseId,
+        Asset asset,
+        Install install,
+        Verification verification,
+        List<Backup> backups,
+        Instant installedAt,
         Instant updatedAt
     ) {
         this(kind, schemaVersion, provider, repo, version, releaseId, asset, install,
-            verification, backups, installedAt, updatedAt, null);
+            verification, backups, installedAt, updatedAt, null, null, null);
     }
 
     @JsonIgnore

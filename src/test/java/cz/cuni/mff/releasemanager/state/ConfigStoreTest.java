@@ -120,6 +120,25 @@ class ConfigStoreTest {
     }
 
     @Test
+    void savesProviderConfig() throws Exception {
+        GrmConfig config = new GrmConfig(
+            GrmConfig.KIND,
+            GrmConfig.SCHEMA_VERSION,
+            false,
+            1,
+            null,
+            false,
+            java.util.Map.of("work", new ProviderConfig(
+                "gitea", "https://git.example.com", null, null)));
+
+        store().save(config);
+
+        ProviderConfig work = store().load().config().providers().get("work");
+        assertEquals("gitea", work.type());
+        assertEquals("https://git.example.com/api/v1", work.resolvedApi());
+    }
+
+    @Test
     void leavesNoTemporaryFileAfterWrite() throws Exception {
         AppPaths paths = new AppPaths(tempDir);
         store().load();

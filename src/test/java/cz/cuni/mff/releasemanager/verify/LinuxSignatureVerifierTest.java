@@ -23,7 +23,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import cz.cuni.mff.releasemanager.GithubClient;
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 
 @EnabledOnOs(OS.LINUX)
@@ -36,7 +36,7 @@ class LinuxSignatureVerifierTest {
     private Path artifact;
     private Asset target;
     private Asset signatureAsset;
-    private GithubClient githubClient;
+    private ReleaseProvider provider;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -49,17 +49,17 @@ class LinuxSignatureVerifierTest {
         target = new Asset("https://example.invalid/app.AppImage", "app.AppImage");
         signatureAsset = new Asset(
             "https://example.invalid/app.AppImage.sig", "app.AppImage.sig");
-        githubClient = mock(GithubClient.class);
+        provider = mock(ReleaseProvider.class);
     }
 
     @Test
     @Timeout(120)
     void verifiesDetachedSignature() throws Exception {
         Path signature = sign(artifact);
-        when(githubClient.downloadAsset(signatureAsset)).thenReturn(signature);
+        when(provider.download(signatureAsset)).thenReturn(signature);
 
-        SignatureResult result = new LinuxSignatureVerifier(githubClient, gnupgHome)
-            .verify(target, List.of(target, signatureAsset), artifact);
+        SignatureResult result = new LinuxSignatureVerifier(gnupgHome)
+            .verify(provider, target, List.of(target, signatureAsset), artifact);
 
         assertEquals(SignatureStatus.VERIFIED, result.status());
         assertEquals(fingerprint(), result.identity());
@@ -71,10 +71,10 @@ class LinuxSignatureVerifierTest {
     void rejectsTamperedArtifact() throws Exception {
         Path signature = sign(artifact);
         Files.writeString(artifact, "tampered");
-        when(githubClient.downloadAsset(signatureAsset)).thenReturn(signature);
+        when(provider.download(signatureAsset)).thenReturn(signature);
 
-        SignatureResult result = new LinuxSignatureVerifier(githubClient, gnupgHome)
-            .verify(target, List.of(target, signatureAsset), artifact);
+        SignatureResult result = new LinuxSignatureVerifier(gnupgHome)
+            .verify(provider, target, List.of(target, signatureAsset), artifact);
 
         assertEquals(SignatureStatus.INVALID, result.status());
         assertFalse(result.allowsInstall(false));
@@ -82,11 +82,11 @@ class LinuxSignatureVerifierTest {
 
     @Test
     void reportsMissingSignature() throws Exception {
-        SignatureResult result = new LinuxSignatureVerifier(githubClient, gnupgHome)
-            .verify(target, List.of(target), artifact);
+        SignatureResult result = new LinuxSignatureVerifier(gnupgHome)
+            .verify(provider, target, List.of(target), artifact);
 
         assertEquals(SignatureStatus.MISSING, result.status());
-        verify(githubClient, never()).downloadAsset(any());
+        verify(provider, never()).download(any());
     }
 
     private void generateKey() throws Exception {

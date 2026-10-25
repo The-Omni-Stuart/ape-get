@@ -53,6 +53,18 @@ public final class ConfigStore {
         return new LoadResult(defaults, false, quarantined);
     }
 
+    /**
+     * Writes configuration atomically.
+     * @param config configuration to persist
+     * @throws IOException if the file cannot be written
+     */
+    public void save(GrmConfig config) throws IOException {
+        if (config == null || !config.isValid()) {
+            throw new IllegalArgumentException("Invalid configuration");
+        }
+        StateJson.write(paths.configFile(), config);
+    }
+
     private Path quarantine(Path file) throws IOException {
         Path quarantined = file.resolveSibling(
             file.getFileName() + ".corrupt-" + Instant.now().toEpochMilli());

@@ -300,21 +300,10 @@ public class GithubClient {
      * @throws IOException
      */
     private List<Asset> filterInstallable(List<Asset> assets) {
-        String[] formats = platformHandler.getFormats();
-        List<Asset> matchingFormat = assets.stream()
-            .filter(asset -> asset != null && asset.name() != null)
-            .filter(asset -> {
-                String name = asset.name().toLowerCase(Locale.ROOT);
-                for (String format : formats) {
-                    if (name.endsWith(format)) {
-                        return true;
-                    }
-                }
-                return false;
-            })
-            .toList();
-        return AssetSelector.preferArchitecture(
-            matchingFormat, Platform.detectPlatform().getArchitecture());
+        return AssetSelector.installable(
+            assets,
+            platformHandler.getFormats(),
+            Platform.detectPlatform().getArchitecture());
     }
 
     /**

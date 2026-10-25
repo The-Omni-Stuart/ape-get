@@ -15,7 +15,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import cz.cuni.mff.releasemanager.GithubClient;
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 
 class AssetVerifierTest {
@@ -27,8 +27,8 @@ class AssetVerifierTest {
     @TempDir
     Path tempDir;
 
-    private final GithubClient githubClient = mock(GithubClient.class);
-    private final AssetVerifier verifier = new AssetVerifier(githubClient);
+    private final ReleaseProvider provider = mock(ReleaseProvider.class);
+    private final AssetVerifier verifier = new AssetVerifier();
 
     private Path downloadedHello() throws Exception {
         Path downloaded = tempDir.resolve("file.txt");
@@ -47,27 +47,27 @@ class AssetVerifierTest {
         Asset target = new Asset("url", "file.txt");
         Asset checksum = new Asset("url", "file.txt.sha256");
         Path checksumPath = checksumFile(HELLO + "  file.txt\n");
-        when(githubClient.downloadAsset(checksum)).thenReturn(checksumPath);
+        when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(
+        VerificationResult result = verifier.verify(provider, 
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.VERIFIED, result.status());
         assertTrue(result.allowsInstall(true));
-        verify(githubClient).discardAsset(checksumPath);
+        verify(provider).discardAsset(checksumPath);
     }
 
     @Test
     void reportsMissingChecksumAsset() throws Exception {
         Asset target = new Asset("url", "file.txt");
 
-        VerificationResult result = verifier.verify(
+        VerificationResult result = verifier.verify(provider, 
             target, List.of(target), downloadedHello());
 
         assertEquals(VerificationStatus.MISSING, result.status());
         assertTrue(result.allowsInstall(false));
         assertFalse(result.allowsInstall(true));
-        verifyNoInteractions(githubClient);
+        verifyNoInteractions(provider);
     }
 
     @Test
@@ -75,9 +75,9 @@ class AssetVerifierTest {
         Asset target = new Asset("url", "file.txt");
         Asset checksum = new Asset("url", "file.txt.sha256");
         Path checksumPath = checksumFile(OTHER + "  file.txt\n");
-        when(githubClient.downloadAsset(checksum)).thenReturn(checksumPath);
+        when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(
+        VerificationResult result = verifier.verify(provider, 
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.MISMATCH, result.status());
@@ -91,9 +91,9 @@ class AssetVerifierTest {
         Asset target = new Asset("url", "file.txt");
         Asset checksum = new Asset("url", "SHA256SUMS");
         Path checksumPath = checksumFile(OTHER + "  other.txt\n");
-        when(githubClient.downloadAsset(checksum)).thenReturn(checksumPath);
+        when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(
+        VerificationResult result = verifier.verify(provider, 
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.UNKNOWN_ASSET, result.status());
@@ -106,9 +106,9 @@ class AssetVerifierTest {
         Asset target = new Asset("url", "file.txt");
         Asset checksum = new Asset("url", "checksums.txt");
         Path checksumPath = checksumFile("garbage\n");
-        when(githubClient.downloadAsset(checksum)).thenReturn(checksumPath);
+        when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(
+        VerificationResult result = verifier.verify(provider, 
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.INVALID, result.status());
@@ -121,9 +121,9 @@ class AssetVerifierTest {
         Asset target = new Asset("url", "file.txt");
         Asset checksum = new Asset("url", "SHA256SUMS");
         Path checksumPath = checksumFile(OTHER + "  other.txt\n" + HELLO + "  file.txt\n");
-        when(githubClient.downloadAsset(checksum)).thenReturn(checksumPath);
+        when(provider.download(checksum)).thenReturn(checksumPath);
 
-        VerificationResult result = verifier.verify(
+        VerificationResult result = verifier.verify(provider, 
             target, List.of(target, checksum), downloadedHello());
 
         assertEquals(VerificationStatus.VERIFIED, result.status());

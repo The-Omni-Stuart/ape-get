@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
-import cz.cuni.mff.releasemanager.GithubClient;
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 
 /**
@@ -19,35 +19,33 @@ import cz.cuni.mff.releasemanager.types.Asset;
 public final class LinuxSignatureVerifier implements SignatureVerifier {
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
-    private final GithubClient githubClient;
     private final Path gnupgHome;
 
-    public LinuxSignatureVerifier(GithubClient githubClient) {
-        this(githubClient, null);
+    public LinuxSignatureVerifier() {
+        this(null);
     }
 
     /**
-     * @param githubClient client used to fetch the detached signature
      * @param gnupgHome optional GnuPG home directory, mainly for tests
      */
-    public LinuxSignatureVerifier(GithubClient githubClient, Path gnupgHome) {
-        this.githubClient = githubClient;
+    public LinuxSignatureVerifier(Path gnupgHome) {
         this.gnupgHome = gnupgHome;
     }
 
     @Override
-    public SignatureResult verify(Asset target, List<Asset> releaseAssets, Path downloaded)
+    public SignatureResult verify(
+        ReleaseProvider provider, Asset target, List<Asset> releaseAssets, Path downloaded)
         throws IOException, InterruptedException {
         Optional<Asset> signatureAsset = SignatureAssetFinder.find(releaseAssets, target);
         if (signatureAsset.isEmpty()) {
             return SignatureResult.missing(target.name());
         }
 
-        Path signature = githubClient.downloadAsset(signatureAsset.get());
+        Path signature = provider.download(signatureAsset.get());
         try {
             return verifyWithGpg(target, signature, downloaded);
         } finally {
-            githubClient.discardAsset(signature);
+            provider.discardAsset(signature);
         }
     }
 

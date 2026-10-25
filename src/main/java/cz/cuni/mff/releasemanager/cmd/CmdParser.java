@@ -53,6 +53,10 @@ public class CmdParser {
         if (command == null) {
             return usage(String.join(" ", args));
         }
+        if (command == Command.PROVIDERS) {
+            command.arguments = List.of(Arrays.copyOfRange(args, 1, args.length));
+            return command;
+        }
         if (command == Command.SEARCH) {
             if (args.length < 2) {
                 return usage(null);

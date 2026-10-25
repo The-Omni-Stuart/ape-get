@@ -52,6 +52,45 @@ public final class AssetSelector {
         return matching.isEmpty() ? assets : matching;
     }
 
+    /**
+     * Filters assets by the platform's supported file formats.
+     * @param assets release assets
+     * @param formats lowercase extensions including the dot
+     * @return matching assets
+     */
+    public static List<Asset> installable(List<Asset> assets, String[] formats) {
+        if (assets == null) {
+            return List.of();
+        }
+        if (formats == null || formats.length == 0) {
+            return List.of();
+        }
+        return assets.stream()
+            .filter(asset -> asset != null && asset.name() != null)
+            .filter(asset -> {
+                String name = asset.name().toLowerCase(java.util.Locale.ROOT);
+                for (String format : formats) {
+                    if (name.endsWith(format)) {
+                        return true;
+                    }
+                }
+                return false;
+            })
+            .toList();
+    }
+
+    /**
+     * Filters by format, then prefers the current architecture.
+     * @param assets release assets
+     * @param formats lowercase extensions including the dot
+     * @param architecture current machine architecture
+     * @return installable assets
+     */
+    public static List<Asset> installable(
+        List<Asset> assets, String[] formats, Platform.Architecture architecture) {
+        return preferArchitecture(installable(assets, formats), architecture);
+    }
+
     static Platform.Architecture detect(String name) {
         if (name == null) {
             return null;

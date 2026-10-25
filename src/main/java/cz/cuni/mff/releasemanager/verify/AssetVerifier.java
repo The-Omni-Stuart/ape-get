@@ -10,7 +10,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 
-import cz.cuni.mff.releasemanager.GithubClient;
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 
 /**
@@ -19,14 +19,9 @@ import cz.cuni.mff.releasemanager.types.Asset;
 public final class AssetVerifier {
     private static final long MAX_CHECKSUM_BYTES = 1_048_576;
 
-    private final GithubClient githubClient;
-
-    public AssetVerifier(GithubClient githubClient) {
-        this.githubClient = githubClient;
-    }
-
     /**
      * Verifies a downloaded asset.
+     * @param provider provider that supplies the checksum asset
      * @param target the selected release asset
      * @param releaseAssets all assets in the release
      * @param downloaded local downloaded file
@@ -34,8 +29,12 @@ public final class AssetVerifier {
      * @throws IOException if a checksum asset cannot be read
      * @throws InterruptedException if a checksum download is interrupted
      */
-    public VerificationResult verify(Asset target, List<Asset> releaseAssets, Path downloaded)
-        throws IOException, InterruptedException {
+    public VerificationResult verify(
+        ReleaseProvider provider,
+        Asset target,
+        List<Asset> releaseAssets,
+        Path downloaded
+    ) throws IOException, InterruptedException {
         List<Asset> checksumAssets = ChecksumAssetFinder.find(releaseAssets, target);
         if (checksumAssets.isEmpty()) {
             return VerificationResult.missing(target.name());
@@ -45,7 +44,7 @@ public final class AssetVerifier {
         String checkedChecksum = null;
 
         for (Asset checksumAsset : checksumAssets) {
-            Path checksumPath = githubClient.downloadAsset(checksumAsset);
+            Path checksumPath = provider.download(checksumAsset);
             try {
                 if (Files.size(checksumPath) > MAX_CHECKSUM_BYTES) {
                     return VerificationResult.invalid(target.name(), checksumAsset.name());
@@ -72,7 +71,7 @@ public final class AssetVerifier {
                 return VerificationResult.mismatch(
                     target.name(), expected, actual, checksumAsset.name());
             } finally {
-                githubClient.discardAsset(checksumPath);
+                provider.discardAsset(checksumPath);
             }
         }
 

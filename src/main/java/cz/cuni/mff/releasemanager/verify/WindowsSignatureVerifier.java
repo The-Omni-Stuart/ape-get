@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 
 /**
@@ -22,7 +23,8 @@ public final class WindowsSignatureVerifier implements SignatureVerifier {
     private record Authenticode(String Status, String Signer, String Thumbprint) {}
 
     @Override
-    public SignatureResult verify(Asset target, List<Asset> releaseAssets, Path downloaded)
+    public SignatureResult verify(
+        ReleaseProvider provider, Asset target, List<Asset> releaseAssets, Path downloaded)
         throws IOException, InterruptedException {
         String name = downloaded.getFileName().toString().toLowerCase(Locale.ROOT);
         if (!name.endsWith(".exe") && !name.endsWith(".msi")) {

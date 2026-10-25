@@ -2,13 +2,17 @@ package cz.cuni.mff.releasemanager;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -19,8 +23,11 @@ import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.GithubProvider;
+import cz.cuni.mff.releasemanager.provider.GiteaProvider;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
+import cz.cuni.mff.releasemanager.provider.ProviderDetector;
 import cz.cuni.mff.releasemanager.provider.ProviderRegistry;
+import cz.cuni.mff.releasemanager.provider.ProviderType;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.state.AppManifest;
@@ -80,8 +87,8 @@ public class ReleaseManager {
         cmdParser = new CmdParser();
         githubClient = new GithubClient();
         platformHandler = Platform.getPlatformHandler();
-        verifier = new AssetVerifier(githubClient);
-        signatureVerifier = SignatureVerifiers.forCurrentPlatform(githubClient);
+        verifier = new AssetVerifier();
+        signatureVerifier = SignatureVerifiers.forCurrentPlatform();
         stateStore = new StateStore(AppPaths.forCurrentPlatform());
         backupManager = new BackupManager(stateStore.paths());
         prompt = new ConsolePrompt();
@@ -108,6 +115,7 @@ public class ReleaseManager {
             || command == Command.UPDATE
             || command == Command.UNINSTALL
             || command == Command.LIST
+            || command == Command.PROVIDERS
             || command == Command.ROLLBACK
             || command == Command.ADOPT;
         if (!stateful) {
@@ -134,6 +142,7 @@ public class ReleaseManager {
             case UPDATE -> update(command) ? 0 : 1;
             case LIST -> list() ? 0 : 1;
             case INFO -> info(command) ? 0 : 1;
+            case PROVIDERS -> providers(command) ? 0 : 1;
             case ROLLBACK -> rollback(command) ? 0 : 1;
             case DOCTOR -> doctor() ? 0 : 1;
             case ADOPT -> adopt(command) ? 0 : 1;
@@ -300,7 +309,8 @@ public class ReleaseManager {
                     ? githubClient
                     : new GithubClient(config.resolvedApi()),
                 config);
-            case GITEA, GITLAB -> {
+            case GITEA -> new GiteaProvider(config);
+            case GITLAB -> {
                 System.err.println(
                     "Provider type '" + config.type() + "' is not implemented yet.");
                 yield null;
@@ -386,12 +396,12 @@ public class ReleaseManager {
         if (downloadedAsset == null) {
             return false;
         }
-        VerificationResult verification = verify(asset, release.all(), downloadedAsset);
+        VerificationResult verification = verify(provider, asset, release.all(), downloadedAsset);
         if (!isAllowed(verification, downloadedAsset)) {
             return false;
         }
         SignatureResult signature = verifySignature(
-            asset, release.all(), downloadedAsset);
+            provider, asset, release.all(), downloadedAsset);
         if (!isSignatureAllowed(signature, downloadedAsset, previous)) {
             return false;
         }
@@ -404,7 +414,7 @@ public class ReleaseManager {
             return false;
         }
         AppManifest manifest = createManifest(
-            ref, release, asset, installedAsset, verification,
+            ref, provider.config(), release, asset, installedAsset, verification,
             signature, Instant.now(), List.of());
         if (!recordManifest(manifest)) {
             return false;
@@ -424,9 +434,10 @@ public class ReleaseManager {
         }
     }
 
-    private VerificationResult verify(Asset asset, List<Asset> releaseAssets, Path downloaded) {
+    private VerificationResult verify(
+        ReleaseProvider provider, Asset asset, List<Asset> releaseAssets, Path downloaded) {
         try {
-            return verifier.verify(asset, releaseAssets, downloaded);
+            return verifier.verify(provider, asset, releaseAssets, downloaded);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -457,9 +468,9 @@ public class ReleaseManager {
     }
 
     private SignatureResult verifySignature(
-        Asset asset, List<Asset> releaseAssets, Path downloaded) {
+        ReleaseProvider provider, Asset asset, List<Asset> releaseAssets, Path downloaded) {
         try {
-            return signatureVerifier.verify(asset, releaseAssets, downloaded);
+            return signatureVerifier.verify(provider, asset, releaseAssets, downloaded);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -577,6 +588,7 @@ public class ReleaseManager {
 
     private AppManifest createManifest(
         RepoRef ref,
+        ProviderConfig provider,
         ReleaseAssets release,
         Asset asset,
         Path installed,
@@ -614,7 +626,9 @@ public class ReleaseManager {
             backups,
             installedAt,
             Instant.now(),
-            signatureRecord(signature));
+            signatureRecord(signature),
+            provider.type(),
+            provider.resolvedApi());
     }
 
     private boolean recordManifest(AppManifest manifest) {
@@ -690,6 +704,38 @@ public class ReleaseManager {
      *
      * @param command the command containing the repository name
      */
+    private boolean uninstallManifest(AppManifest manifest) {
+        AppManifest.Uninstall uninstall = manifest.install().uninstall();
+        String uninstallPath = uninstall != null && uninstall.path() != null
+            ? uninstall.path()
+            : manifest.install().path();
+        String productCode = uninstall == null ? null : uninstall.productCode();
+        boolean removed = productCode == null || productCode.isBlank()
+            ? platformHandler.uninstall(Path.of(uninstallPath))
+            : platformHandler.uninstall(Path.of(uninstallPath), productCode);
+        if (!removed) {
+            System.err.println("Failed to uninstall " + manifest.repo() + ".");
+            return false;
+        }
+
+        try {
+            if (!stateStore.removeManifest(
+                new RepoRef(manifest.provider(), manifest.repo()))) {
+                System.err.println(
+                    "Uninstalled " + manifest.repo() + ", but failed to remove its manifest.");
+                return false;
+            }
+            stateStore.deleteApplicationState(
+                new RepoRef(manifest.provider(), manifest.repo()));
+        } catch (IOException e) {
+            System.err.println(
+                "Uninstalled " + manifest.repo() + ", but failed to update state: "
+                    + e.getMessage());
+            return false;
+        }
+        return true;
+    }
+
     private boolean uninstall(Command command) {
         RepoRef ref = parseRepo(command.argument);
         if (ref == null) {
@@ -709,33 +755,16 @@ public class ReleaseManager {
             return false;
         }
 
-        AppManifest.Uninstall uninstall = manifest.install().uninstall();
-        String uninstallPath = uninstall != null && uninstall.path() != null
-            ? uninstall.path()
-            : manifest.install().path();
-        String productCode = uninstall == null ? null : uninstall.productCode();
-        boolean removed = productCode == null || productCode.isBlank()
-            ? platformHandler.uninstall(Path.of(uninstallPath))
-            : platformHandler.uninstall(Path.of(uninstallPath), productCode);
-        if (!removed) {
-            System.err.println("Failed to uninstall " + manifest.repo() + ".");
+        if (!uninstallManifest(manifest)) {
             return false;
         }
-
         try {
-            if (!stateStore.removeManifest(ref)) {
-                System.err.println(
-                    "Uninstalled " + manifest.repo() + ", but failed to remove its manifest.");
-                return false;
-            }
             stateStore.rebuildIndex();
         } catch (IOException e) {
-            System.err.println(
-                "Uninstalled " + manifest.repo() + ", but failed to update state: "
-                    + e.getMessage());
+            System.err.println("Uninstalled " + ref.display()
+                + ", but failed to rebuild the index: " + e.getMessage());
             return false;
         }
-
         System.out.println("Successfully uninstalled.");
         return true;
     }
@@ -745,6 +774,525 @@ public class ReleaseManager {
      *
      * @param command the command containing the repository name
      */
+    private boolean providers(Command command) {
+        List<String> args = command.arguments == null ? List.of() : command.arguments;
+        if (args.isEmpty()) {
+            return providersList();
+        }
+        String subcommand = args.get(0).toLowerCase(Locale.ROOT);
+        return switch (subcommand) {
+            case "list" -> args.size() == 1 ? providersList() : providersUsage();
+            case "show" -> args.size() == 2 ? providersShow(args.get(1)) : providersUsage();
+            case "add" -> providersAdd(args.subList(1, args.size()));
+            case "update" -> providersUpdate(args.subList(1, args.size()));
+            case "remove" -> providersRemove(args.subList(1, args.size()));
+            case "recover" -> providersRecover(args.subList(1, args.size()));
+            default -> providersUsage();
+        };
+    }
+
+    private boolean providersUsage() {
+        System.err.println("Usage:");
+        System.err.println("  providers list");
+        System.err.println("  providers show <name>");
+        System.err.println("  providers add <name> <url> [--type auto|github|gitea|gitlab]"
+            + " [--api URL] [--token-env VAR]");
+        System.err.println("  providers update <name> [--type ...] [--api URL] [--url URL]"
+            + " [--token-env VAR] [--force]");
+        System.err.println("  providers remove <name> [--abandon | --purge]");
+        System.err.println("  providers recover <name> [--type ...] [--api URL]");
+        return false;
+    }
+
+    private record ProviderOptions(
+        Map<String, String> values,
+        List<String> positional,
+        Set<String> flags
+    ) {}
+
+    private ProviderOptions parseProviderOptions(
+        List<String> args, Set<String> flagNames, Set<String> valueNames) {
+        Map<String, String> values = new LinkedHashMap<>();
+        List<String> positional = new ArrayList<>();
+        Set<String> flags = new HashSet<>();
+        for (int i = 0; i < args.size(); i++) {
+            String arg = args.get(i);
+            if (!arg.startsWith("--")) {
+                positional.add(arg);
+                continue;
+            }
+            String name = arg.substring(2);
+            if (flagNames.contains(name)) {
+                flags.add(name);
+            } else if (valueNames.contains(name)) {
+                if (i + 1 >= args.size()) {
+                    throw new IllegalArgumentException("Missing value for --" + name);
+                }
+                values.put(name, args.get(++i));
+            } else {
+                throw new IllegalArgumentException("Unknown option: --" + name);
+            }
+        }
+        return new ProviderOptions(values, positional, flags);
+    }
+
+    private boolean providersList() {
+        List<AppManifest> manifests;
+        try {
+            manifests = stateStore.scanManifests();
+        } catch (IOException e) {
+            System.err.println("Failed to read installed packages: " + e.getMessage());
+            return false;
+        }
+        List<ProviderConfig> configs = new ArrayList<>(providers.all());
+        configs.sort(java.util.Comparator.comparing(ProviderConfig::name));
+        for (ProviderConfig config : configs) {
+            long count = manifests.stream()
+                .filter(manifest -> config.name().equals(manifest.provider()))
+                .count();
+            String builtIn = ProviderRegistry.builtIns().containsKey(config.name())
+                ? " [built-in]" : "";
+            String token = "";
+            if (config.tokenEnv() != null && !config.tokenEnv().isBlank()) {
+                token = " token-env=" + config.tokenEnv()
+                    + (System.getenv(config.tokenEnv()) == null ? " (missing)" : " (set)");
+            }
+            System.out.println(config.name() + " (" + config.type() + ", "
+                + config.resolvedApi() + ") packages=" + count + builtIn + token);
+        }
+        return true;
+    }
+
+    private boolean providersShow(String name) {
+        ProviderConfig config = providers.get(name).orElse(null);
+        if (config == null) {
+            System.err.println("Provider '" + name + "' is not configured.");
+            return false;
+        }
+        System.out.println("Name: " + config.name());
+        System.out.println("Type: " + config.type());
+        System.out.println("URL: " + config.url());
+        System.out.println("API: " + config.resolvedApi());
+        System.out.println("Token env: "
+            + (config.tokenEnv() == null || config.tokenEnv().isBlank()
+                ? "none" : config.tokenEnv()));
+        System.out.println("Built-in: " + ProviderRegistry.builtIns().containsKey(config.name()));
+        try {
+            List<AppManifest> manifests = stateStore.scanManifests().stream()
+                .filter(manifest -> config.name().equals(manifest.provider()))
+                .toList();
+            System.out.println("Packages: " + manifests.size());
+            for (AppManifest manifest : manifests) {
+                System.out.println("  " + config.name() + ":" + manifest.repo() + " "
+                    + (manifest.version() == null ? "unknown" : manifest.version()));
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to read installed packages: " + e.getMessage());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean providersAdd(List<String> args) {
+        ProviderOptions options;
+        try {
+            options = parseProviderOptions(args, Set.of(),
+                Set.of("type", "api", "token-env", "name"));
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return false;
+        }
+        if (options.positional().isEmpty() || options.positional().size() > 2) {
+            return providersUsage();
+        }
+
+        String name;
+        String url;
+        if (options.positional().size() == 2) {
+            name = options.positional().get(0);
+            url = options.positional().get(1);
+        } else {
+            url = options.positional().get(0);
+            name = options.values().get("name");
+            if (name == null || name.isBlank()) {
+                try {
+                    name = deriveProviderName(url);
+                } catch (IllegalArgumentException e) {
+                    System.err.println(e.getMessage());
+                    return false;
+                }
+            }
+        }
+        if (!ProviderConfig.validName(name)) {
+            System.err.println("Invalid provider name: " + name);
+            return false;
+        }
+        if (ProviderRegistry.builtIns().containsKey(name)) {
+            System.err.println("Provider '" + name + "' is built-in; choose another name.");
+            return false;
+        }
+        if (providers.get(name).isPresent()) {
+            System.err.println("Provider '" + name + "' already exists; use providers update.");
+            return false;
+        }
+
+        String urlBase = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+        String typeValue = options.values().getOrDefault("type", "auto");
+        ProviderType type;
+        String api = options.values().get("api");
+        try {
+            if ("auto".equalsIgnoreCase(typeValue)) {
+                ProviderDetector.Detected detected = new ProviderDetector().detect(urlBase);
+                type = detected.type();
+                if (api == null || api.isBlank()) {
+                    api = detected.api();
+                }
+                System.out.println("Detected " + type.id() + " at " + urlBase
+                    + " (API " + api + ").");
+            } else {
+                type = ProviderType.from(typeValue).orElse(null);
+                if (type == null) {
+                    System.err.println("Unknown provider type: " + typeValue);
+                    return false;
+                }
+            }
+        } catch (IOException e) {
+            System.err.println(e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("Provider detection interrupted.");
+            return false;
+        }
+
+        ProviderConfig config = new ProviderConfig(
+            name, type.id(), urlBase, api, options.values().get("token-env")).named(name);
+        if (!config.isValid()) {
+            System.err.println("Invalid provider config; check the HTTPS URL and API base.");
+            return false;
+        }
+        Map<String, ProviderConfig> updated = currentProviders();
+        updated.put(name, config);
+        if (!saveProviders(updated)) {
+            return false;
+        }
+        System.out.println("Added provider " + name + " (" + type.id() + ", "
+            + config.resolvedApi() + ").");
+        return true;
+    }
+
+    private boolean providersUpdate(List<String> args) {
+        ProviderOptions options;
+        try {
+            options = parseProviderOptions(args, Set.of("force"),
+                Set.of("type", "api", "token-env", "url"));
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return false;
+        }
+        if (options.positional().size() != 1) {
+            return providersUsage();
+        }
+        String name = options.positional().get(0);
+        ProviderConfig existing = providers.get(name).orElse(null);
+        if (existing == null) {
+            System.err.println("Provider '" + name + "' is not configured.");
+            return false;
+        }
+        if (ProviderRegistry.builtIns().containsKey(name)) {
+            System.err.println("Provider '" + name + "' is built-in and cannot be updated.");
+            return false;
+        }
+
+        String typeValue = options.values().getOrDefault("type", existing.type());
+        ProviderType type = ProviderType.from(typeValue).orElse(null);
+        if (type == null) {
+            System.err.println("Unknown provider type: " + typeValue);
+            return false;
+        }
+        String url = options.values().getOrDefault("url", existing.url());
+        String api = options.values().get("api");
+        if (api == null && (!type.id().equals(existing.type())
+            || !url.equals(existing.url()))) {
+            api = null; // let named() derive from the new type/url
+        }
+        String tokenEnv = options.values().containsKey("token-env")
+            ? options.values().get("token-env") : existing.tokenEnv();
+        ProviderConfig updatedConfig = new ProviderConfig(
+            name, type.id(), url, api, tokenEnv).named(name);
+        if (!updatedConfig.isValid()) {
+            System.err.println("Invalid provider config; check the HTTPS URL and API base.");
+            return false;
+        }
+
+        try {
+            List<AppManifest> manifests = stateStore.scanManifests().stream()
+                .filter(manifest -> name.equals(manifest.provider()))
+                .toList();
+            boolean endpointChanged = !type.id().equals(existing.type())
+                || !updatedConfig.resolvedApi().equals(existing.resolvedApi());
+            if (endpointChanged && !manifests.isEmpty()) {
+                if (!options.flags().contains("force")) {
+                    System.err.println("Provider '" + name + "' has " + manifests.size()
+                        + " installed package(s); changing type/API requires --force.");
+                    return false;
+                }
+                if (!confirm("Change provider " + name + " from " + existing.resolvedApi()
+                    + " to " + updatedConfig.resolvedApi()
+                    + "? Installed packages will fetch updates from the new endpoint.")) {
+                    System.err.println("Provider update declined.");
+                    return false;
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to read installed packages: " + e.getMessage());
+            return false;
+        }
+
+        Map<String, ProviderConfig> map = currentProviders();
+        map.put(name, updatedConfig);
+        if (!saveProviders(map)) {
+            return false;
+        }
+        System.out.println("Updated provider " + name + ".");
+        return true;
+    }
+
+    private boolean providersRemove(List<String> args) {
+        ProviderOptions options;
+        try {
+            options = parseProviderOptions(args, Set.of("abandon", "purge"), Set.of());
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return false;
+        }
+        if (options.positional().size() != 1) {
+            return providersUsage();
+        }
+        if (options.flags().contains("abandon") && options.flags().contains("purge")) {
+            System.err.println("Use only one of --abandon or --purge.");
+            return false;
+        }
+        String name = options.positional().get(0);
+        ProviderConfig config = providers.get(name).orElse(null);
+        if (config == null) {
+            System.err.println("Provider '" + name + "' is not configured.");
+            return false;
+        }
+        if (ProviderRegistry.builtIns().containsKey(name)) {
+            System.err.println("Provider '" + name + "' is built-in and cannot be removed.");
+            return false;
+        }
+
+        List<AppManifest> manifests;
+        try {
+            manifests = stateStore.scanManifests().stream()
+                .filter(manifest -> name.equals(manifest.provider()))
+                .toList();
+        } catch (IOException e) {
+            System.err.println("Failed to read installed packages: " + e.getMessage());
+            return false;
+        }
+
+        if (!manifests.isEmpty()) {
+            System.out.println("Provider " + name + " (" + config.type() + ", "
+                + config.resolvedApi() + ") has " + manifests.size() + " installed package(s):");
+            for (AppManifest manifest : manifests) {
+                System.out.println("  " + name + ":" + manifest.repo() + " "
+                    + (manifest.version() == null ? "unknown" : manifest.version()));
+            }
+            if (!options.flags().contains("purge") && !options.flags().contains("abandon")) {
+                System.err.println("Refusing to remove the provider while packages are installed.");
+                System.err.println("  --purge     uninstall them, delete their state, then remove it");
+                System.err.println("  --abandon   remove only the provider config; packages remain");
+                return false;
+            }
+            if (options.flags().contains("purge")) {
+                if (!confirm("Uninstall " + manifests.size() + " package(s) and remove provider "
+                    + name + " (" + config.type() + ", " + config.resolvedApi() + ")?")) {
+                    System.err.println("Provider removal declined.");
+                    return false;
+                }
+                for (AppManifest manifest : manifests) {
+                    if (!uninstallManifest(manifest)) {
+                        System.err.println("Stopped; provider " + name + " was not removed.");
+                        return false;
+                    }
+                }
+                try {
+                    stateStore.rebuildIndex();
+                } catch (IOException e) {
+                    System.err.println("Packages uninstalled, but the index could not be rebuilt: "
+                        + e.getMessage());
+                    return false;
+                }
+            } else {
+                if (!confirm("Remove provider " + name + " and leave "
+                    + manifests.size() + " package(s) orphaned?")) {
+                    System.err.println("Provider removal declined.");
+                    return false;
+                }
+            }
+        }
+
+        Map<String, ProviderConfig> map = currentProviders();
+        map.remove(name);
+        if (!saveProviders(map)) {
+            return false;
+        }
+        System.out.println("Removed provider " + name + ".");
+        return true;
+    }
+
+    private boolean providersRecover(List<String> args) {
+        ProviderOptions options;
+        try {
+            options = parseProviderOptions(args, Set.of(),
+                Set.of("type", "api", "token-env"));
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return false;
+        }
+        if (options.positional().size() != 1) {
+            return providersUsage();
+        }
+        String name = options.positional().get(0);
+        if (providers.get(name).isPresent()) {
+            System.err.println("Provider '" + name + "' is already configured.");
+            return false;
+        }
+
+        List<AppManifest> manifests;
+        try {
+            manifests = stateStore.scanManifests().stream()
+                .filter(manifest -> name.equals(manifest.provider()))
+                .toList();
+        } catch (IOException e) {
+            System.err.println("Failed to read installed packages: " + e.getMessage());
+            return false;
+        }
+        if (manifests.isEmpty()) {
+            System.err.println("No installed packages reference provider '" + name + "'.");
+            return false;
+        }
+
+        Set<String> types = new HashSet<>();
+        Set<String> apis = new HashSet<>();
+        for (AppManifest manifest : manifests) {
+            if (manifest.providerType() != null && !manifest.providerType().isBlank()) {
+                types.add(manifest.providerType());
+            }
+            if (manifest.providerApi() != null && !manifest.providerApi().isBlank()) {
+                apis.add(manifest.providerApi());
+            }
+        }
+        if (types.isEmpty() || apis.isEmpty()) {
+            System.err.println("Installed manifests do not record the provider type and API.");
+            System.err.println("Pass --type and --api to recover this provider.");
+            return false;
+        }
+        if (types.size() > 1 || apis.size() > 1) {
+            System.err.println("Installed manifests disagree about this provider:");
+            System.err.println("  types: " + types);
+            System.err.println("  APIs:  " + apis);
+            return false;
+        }
+
+        String typeValue = options.values().getOrDefault("type", types.iterator().next());
+        ProviderType type = ProviderType.from(typeValue).orElse(null);
+        if (type == null) {
+            System.err.println("Unknown provider type: " + typeValue);
+            return false;
+        }
+        String api = options.values().getOrDefault("api", apis.iterator().next());
+        String url = deriveUrlFromApi(type, api);
+        ProviderConfig config = new ProviderConfig(
+            name, type.id(), url, api, options.values().get("token-env")).named(name);
+        if (!config.isValid()) {
+            System.err.println("Recovered provider config is invalid.");
+            return false;
+        }
+
+        if (!confirm("Recover provider " + name + " as " + type.id() + " (" + api
+            + ") for " + manifests.size() + " installed package(s)?")) {
+            System.err.println("Provider recovery declined.");
+            return false;
+        }
+        Map<String, ProviderConfig> map = currentProviders();
+        map.put(name, config);
+        if (!saveProviders(map)) {
+            return false;
+        }
+        System.out.println("Recovered provider " + name + ".");
+        return true;
+    }
+
+    private Map<String, ProviderConfig> currentProviders() {
+        return toolConfig.providers() == null
+            ? new LinkedHashMap<>()
+            : new LinkedHashMap<>(toolConfig.providers());
+    }
+
+    private boolean saveProviders(Map<String, ProviderConfig> map) {
+        GrmConfig updated = new GrmConfig(
+            toolConfig.kind(),
+            toolConfig.schemaVersion(),
+            toolConfig.strictVerification(),
+            toolConfig.backupCount(),
+            toolConfig.installRoot(),
+            toolConfig.requireSignature(),
+            map);
+        try {
+            stateStore.saveConfig(updated);
+        } catch (IOException e) {
+            System.err.println("Failed to save providers: " + e.getMessage());
+            return false;
+        }
+        toolConfig = updated;
+        providers = new ProviderRegistry(map);
+        return true;
+    }
+
+    private static String deriveProviderName(String url) {
+        URI uri = URI.create(url);
+        String host = uri.getHost();
+        if (host == null) {
+            throw new IllegalArgumentException("Invalid provider URL: " + url);
+        }
+        String normalized = host.toLowerCase(Locale.ROOT);
+        if (normalized.equals("github.com")) {
+            return "github";
+        }
+        if (normalized.equals("codeberg.org")) {
+            return "codeberg";
+        }
+        if (normalized.equals("gitlab.com")) {
+            return "gitlab";
+        }
+        String name = normalized.replaceAll("[^a-z0-9._-]+", "-")
+            .replaceAll("^[._-]+|[._-]+$", "");
+        if (name.isBlank()) {
+            throw new IllegalArgumentException("Cannot derive a provider name from " + url);
+        }
+        return name;
+    }
+
+    private static String deriveUrlFromApi(ProviderType type, String api) {
+        return switch (type) {
+            case GITEA -> stripApiSuffix(api, "/api/v1");
+            case GITLAB -> stripApiSuffix(api, "/api/v4");
+            case GITHUB -> api.equals("https://api.github.com")
+                ? "https://github.com"
+                : stripApiSuffix(api, "/api/v3");
+        };
+    }
+
+    private static String stripApiSuffix(String api, String suffix) {
+        return api.endsWith(suffix)
+            ? api.substring(0, api.length() - suffix.length())
+            : api;
+    }
+
     private boolean update(Command command) {
         RepoRef ref = parseRepo(command.argument);
         if (ref == null) {
@@ -795,12 +1343,12 @@ public class ReleaseManager {
         if (downloadedAsset == null) {
             return false;
         }
-        VerificationResult verification = verify(newAsset, latest.all(), downloadedAsset);
+        VerificationResult verification = verify(provider, newAsset, latest.all(), downloadedAsset);
         if (!isAllowed(verification, downloadedAsset)) {
             return false;
         }
         SignatureResult signature = verifySignature(
-            newAsset, latest.all(), downloadedAsset);
+            provider, newAsset, latest.all(), downloadedAsset);
         if (!isSignatureAllowed(signature, downloadedAsset, previous)) {
             return false;
         }
@@ -831,6 +1379,7 @@ public class ReleaseManager {
 
         AppManifest updated = createManifest(
             ref,
+            provider.config(),
             latest,
             newAsset,
             installedAsset,
@@ -1014,7 +1563,9 @@ public class ReleaseManager {
             current.backups() == null ? List.of() : current.backups(),
             restored.installedAt(),
             Instant.now(),
-            restored.signature());
+            restored.signature(),
+            restored.providerType(),
+            restored.providerApi());
         if (!recordManifest(rolledBack)) {
             return false;
         }
@@ -1047,6 +1598,7 @@ public class ReleaseManager {
         } else {
             try {
                 toolConfig = stateStore.loadConfig().config();
+                providers = new ProviderRegistry(toolConfig.providers());
                 applyInstallRoot();
             } catch (IOException e) {
                 System.err.println("Failed to read config: " + e.getMessage());
@@ -1095,6 +1647,19 @@ public class ReleaseManager {
             }
         }
 
+        Set<String> missingProviders = new HashSet<>();
+        for (AppManifest manifest : manifests) {
+            if (manifest.provider() != null
+                && providers.get(manifest.provider()).isEmpty()) {
+                missingProviders.add(manifest.provider());
+            }
+        }
+        for (String provider : missingProviders) {
+            System.out.println("Provider not configured: " + provider
+                + " (run providers recover " + provider + ")");
+            healthy = false;
+        }
+
         if (os == Platform.OS.LINUX) {
             healthy &= scanOrphans();
         }
@@ -1108,11 +1673,15 @@ public class ReleaseManager {
         }
         boolean healthy = true;
         try (var files = Files.list(liveRoot)) {
+            List<AppManifest> manifests = stateStore.scanManifests();
             for (Path file : files.filter(Files::isRegularFile).toList()) {
-                String repo = repoFromInstallFile(file);
-                if (repo == null || stateStore.findManifest(repo).isPresent()) {
+                String name = file.getFileName().toString();
+                boolean tracked = manifests.stream().anyMatch(manifest ->
+                    AppPaths.repoDirectoryName(manifest.repo()).equals(name));
+                if (tracked) {
                     continue;
                 }
+                String repo = name.replace("__", "/");
                 System.out.println("Orphan candidate: " + file + " (repo: " + repo + ")");
                 healthy = false;
             }
@@ -1121,15 +1690,6 @@ public class ReleaseManager {
             return false;
         }
         return healthy;
-    }
-
-    private static String repoFromInstallFile(Path file) {
-        String name = file.getFileName().toString();
-        int separator = name.indexOf("__");
-        if (separator <= 0 || separator + 2 >= name.length()) {
-            return null;
-        }
-        return name.substring(0, separator) + "/" + name.substring(separator + 2);
     }
 
     private boolean adopt(Command command) {
@@ -1170,6 +1730,7 @@ public class ReleaseManager {
 
         try {
             String name = live.getFileName().toString();
+            ProviderConfig providerConfig = providers.get(ref.provider()).orElse(null);
             AppManifest manifest = new AppManifest(
                 AppManifest.KIND,
                 AppManifest.SCHEMA_VERSION,
@@ -1187,7 +1748,10 @@ public class ReleaseManager {
                 new AppManifest.Verification("unknown", "none", null, null, null),
                 List.of(),
                 Files.getLastModifiedTime(live).toInstant(),
-                Instant.now());
+                Instant.now(),
+                null,
+                providerConfig == null ? null : providerConfig.type(),
+                providerConfig == null ? null : providerConfig.resolvedApi());
             if (!recordManifest(manifest)) {
                 return false;
             }
@@ -1228,6 +1792,7 @@ public class ReleaseManager {
         out.println("  update [name] - update the installed release by name");
         out.println("  list - list all installed releases");
         out.println("  info [name] - show details for an installed release");
+        out.println("  providers - list, add, update, remove, or recover provider instances");
         out.println("  rollback [name] - restore the latest backup");
         out.println("  doctor - diagnose state and orphaned installs");
         out.println("  adopt [name] - adopt an existing Linux install");

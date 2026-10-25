@@ -9,6 +9,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 
 @EnabledOnOs(OS.WINDOWS)
@@ -24,6 +26,8 @@ class WindowsSignatureVerifierTest {
 
     @TempDir
     Path tempDir;
+
+    private final ReleaseProvider provider = mock(ReleaseProvider.class);
 
     private String thumbprint;
 
@@ -43,7 +47,7 @@ class WindowsSignatureVerifierTest {
         Path copy = Files.copy(trusted, tempDir.resolve("signed.exe"));
 
         SignatureResult result = new WindowsSignatureVerifier()
-            .verify(asset(copy), List.of(), copy);
+            .verify(provider, asset(copy), List.of(), copy);
 
         System.out.println("authenticode: " + result);
         assertEquals(SignatureStatus.VERIFIED, result.status(), result.detail());
@@ -57,7 +61,7 @@ class WindowsSignatureVerifierTest {
         Path executable = createUnsignedExecutable("unsigned.exe");
 
         SignatureResult result = new WindowsSignatureVerifier()
-            .verify(asset(executable), List.of(), executable);
+            .verify(provider, asset(executable), List.of(), executable);
 
         System.out.println("authenticode: " + result);
         assertEquals(SignatureStatus.MISSING, result.status(), result.detail());
@@ -78,7 +82,7 @@ class WindowsSignatureVerifierTest {
         }
 
         SignatureResult result = new WindowsSignatureVerifier()
-            .verify(asset(executable), List.of(), executable);
+            .verify(provider, asset(executable), List.of(), executable);
 
         System.out.println("authenticode: " + result);
         assertEquals(SignatureStatus.INVALID, result.status(), result.detail());
@@ -109,7 +113,7 @@ class WindowsSignatureVerifierTest {
             .orElseThrow(() -> new AssertionError("no certificate thumbprint:\n" + output));
     }
 
-    private static Path findTrustedExecutable() throws Exception {
+    private Path findTrustedExecutable() throws Exception {
         String root = System.getenv("SystemRoot");
         String[] candidates = {
             root + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
@@ -122,7 +126,7 @@ class WindowsSignatureVerifierTest {
                 continue;
             }
             SignatureResult result = new WindowsSignatureVerifier()
-                .verify(asset(path), List.of(), path);
+                .verify(provider, asset(path), List.of(), path);
             if (result.status() == SignatureStatus.VERIFIED) {
                 return path;
             }

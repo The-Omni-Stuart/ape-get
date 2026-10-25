@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 
@@ -22,7 +23,8 @@ public final class MacSignatureVerifier implements SignatureVerifier {
     private record ProcessResult(int exitCode, String output) {}
 
     @Override
-    public SignatureResult verify(Asset target, List<Asset> releaseAssets, Path downloaded)
+    public SignatureResult verify(
+        ReleaseProvider provider, Asset target, List<Asset> releaseAssets, Path downloaded)
         throws IOException, InterruptedException {
         String name = downloaded.getFileName().toString().toLowerCase(Locale.ROOT);
         if (!name.endsWith(".dmg")) {

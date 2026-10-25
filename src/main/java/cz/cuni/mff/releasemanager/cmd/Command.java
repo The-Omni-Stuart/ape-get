@@ -1,6 +1,7 @@
 package cz.cuni.mff.releasemanager.cmd;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -17,6 +18,7 @@ public enum Command {
     UPDATE("update", 1),
     LIST("list", 0),
     INFO("info", 1),
+    PROVIDERS("providers", 0),
     ROLLBACK("rollback", 1),
     DOCTOR("doctor", 0),
     ADOPT("adopt", 1),
@@ -35,6 +37,7 @@ public enum Command {
 
     public final String commandName;
     public String argument;
+    public List<String> arguments = List.of();
     public int argNumber;
 
     /**

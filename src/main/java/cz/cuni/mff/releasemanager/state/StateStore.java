@@ -16,6 +16,7 @@ import java.util.Set;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import cz.cuni.mff.releasemanager.types.RepoRef;
+import cz.cuni.mff.releasemanager.utils.FileUtils;
 
 /**
  * Reads and writes grm_manifest.json files and rebuilds grm_index.json.
@@ -42,6 +43,15 @@ public final class StateStore {
 
     public ConfigStore.LoadResult loadConfig() throws IOException {
         return configStore.load();
+    }
+
+    /**
+     * Persists tool configuration.
+     * @param config configuration to write
+     * @throws IOException if the file cannot be written
+     */
+    public void saveConfig(GrmConfig config) throws IOException {
+        configStore.save(config);
     }
 
     /**
@@ -154,6 +164,18 @@ public final class StateStore {
         AppManifest manifest = found.get();
         return Files.deleteIfExists(
             paths.manifestFile(manifest.provider(), manifest.repo()));
+    }
+
+    /**
+     * Deletes the per-application state directory, including backups.
+     * @param ref application reference
+     * @throws IOException if the directory cannot be removed
+     */
+    public void deleteApplicationState(RepoRef ref) throws IOException {
+        Path dir = paths.appDir(ref.provider(), ref.path());
+        if (Files.exists(dir)) {
+            FileUtils.deleteRecursively(dir);
+        }
     }
 
     public boolean removeManifest(String repo) throws IOException {

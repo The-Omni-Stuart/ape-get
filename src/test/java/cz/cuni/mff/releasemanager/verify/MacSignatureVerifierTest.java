@@ -7,12 +7,14 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.mock;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.types.Asset;
 
 @EnabledOnOs(OS.MAC)
@@ -21,13 +23,15 @@ class MacSignatureVerifierTest {
     @TempDir
     Path tempDir;
 
+    private final ReleaseProvider provider = mock(ReleaseProvider.class);
+
     @Test
     @Timeout(300)
     void verifiesAdHocSignedBundle() throws Exception {
         Path dmg = buildDmg("Signed", true, false);
 
         SignatureResult result = new MacSignatureVerifier()
-            .verify(asset(dmg), List.of(), dmg);
+            .verify(provider, asset(dmg), List.of(), dmg);
 
         assertEquals(SignatureStatus.VERIFIED, result.status());
         assertEquals("ad-hoc", result.signer());
@@ -41,7 +45,7 @@ class MacSignatureVerifierTest {
         Path dmg = buildDmg("Unsigned", false, false);
 
         SignatureResult result = new MacSignatureVerifier()
-            .verify(asset(dmg), List.of(), dmg);
+            .verify(provider, asset(dmg), List.of(), dmg);
 
         assertEquals(SignatureStatus.INVALID, result.status());
     }
@@ -52,7 +56,7 @@ class MacSignatureVerifierTest {
         Path dmg = buildDmg("Tampered", true, true);
 
         SignatureResult result = new MacSignatureVerifier()
-            .verify(asset(dmg), List.of(), dmg);
+            .verify(provider, asset(dmg), List.of(), dmg);
 
         assertEquals(SignatureStatus.INVALID, result.status());
     }

@@ -162,6 +162,20 @@ class StateStoreTest {
     }
 
     @Test
+    void deletesApplicationStateIncludingBackups() throws Exception {
+        StateStore store = store();
+        AppPaths paths = new AppPaths(tempDir);
+        store.saveManifest(manifest("owner/repo"));
+        Path backup = paths.appDir("github", "owner/repo").resolve("backups/one/file");
+        Files.createDirectories(backup.getParent());
+        Files.writeString(backup, "old");
+
+        store.deleteApplicationState(new RepoRef("github", "owner/repo"));
+
+        assertFalse(Files.exists(paths.appDir("github", "owner/repo")));
+    }
+
+    @Test
     void rebuildsIndexFromManifests() throws Exception {
         StateStore store = store();
         AppPaths paths = new AppPaths(tempDir);

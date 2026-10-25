@@ -1,5 +1,7 @@
 package cz.cuni.mff.releasemanager.cmd;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,6 +28,17 @@ class CmdParserTest {
         assertNotNull(result);
         assertEquals(Command.INSTALL, result);
         assertEquals("argument", result.argument);
+    }
+
+    @Test
+    void testParseProvidersKeepsSubcommandArguments() {
+        Command result = cmdParser.parse(new String[]{
+            "providers", "add", "work", "https://git.example.com", "--type", "gitea"});
+
+        assertEquals(Command.PROVIDERS, result);
+        assertEquals(List.of(
+            "add", "work", "https://git.example.com", "--type", "gitea"),
+            result.arguments);
     }
 
     @Test
