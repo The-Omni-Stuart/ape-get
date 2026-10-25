@@ -299,6 +299,74 @@ public final class WindowsHandler extends PlatformHandler {
         }
     }
 
+    @Override
+    public boolean supportsInstallerRollback(AppManifest manifest) {
+        if (manifest == null || manifest.install() == null) {
+            return false;
+        }
+        if (!"msi".equalsIgnoreCase(manifest.install().kind())) {
+            return false;
+        }
+        String path = manifest.install().path();
+        return path != null
+            && path.toLowerCase(Locale.ROOT).endsWith(".msi")
+            && Files.isRegularFile(Path.of(path));
+    }
+
+    @Override
+    public boolean supportsBackup(AppManifest manifest) {
+        return supportsInstallerRollback(manifest);
+    }
+
+    @Override
+    public boolean rollbackInstaller(
+        AppManifest current, AppManifest restored, Path installer) {
+        if (restored == null || restored.install() == null
+            || restored.install().path() == null
+            || installer == null || !Files.isRegularFile(installer)) {
+            System.err.println("Rollback installer is missing: " + installer);
+            return false;
+        }
+        try {
+            if (installState(current) != InstallState.MISSING) {
+                AppManifest.Uninstall uninstall = current.install().uninstall();
+                String code = uninstall == null ? null : uninstall.productCode();
+                boolean removed = code == null || code.isBlank()
+                    ? uninstall(Path.of(current.install().path()))
+                    : uninstall(Path.of(current.install().path()), code);
+                if (!removed) {
+                    System.err.println(
+                        "Rollback aborted: the current version could not be uninstalled.");
+                    return false;
+                }
+            }
+
+            Process process = process(
+                "msiexec", "/i", installer.toString(), "/qn", "/norestart")
+                .inheritIO()
+                .start();
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                throw new IOException("Rollback installation failed with exit code: "
+                    + exitCode);
+            }
+
+            Path cached = Path.of(restored.install().path());
+            if (!installer.toAbsolutePath().normalize()
+                .equals(cached.toAbsolutePath().normalize())) {
+                Files.createDirectories(cached.toAbsolutePath().getParent());
+                Files.copy(installer, cached, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            System.err.println("Rollback error: " + e.getMessage());
+            return false;
+        }
+    }
+
     private static ProcessBuilder process(String... command) {
         return ChildEnvironment.sanitize(new ProcessBuilder(command));
     }

@@ -514,6 +514,135 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteRollbackOnWindowsReinstallsBackupInstaller() throws Exception {
+        setOs(Platform.OS.WINDOWS);
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest current = withProductCode(
+            manifest("user/example", "http://v2", "app.msi", "/cache/v2.msi"),
+            "{22222222-2222-2222-2222-222222222222}");
+        AppManifest restored = withProductCode(
+            manifest("user/example", "http://v1", "app.msi", "/cache/v1.msi"),
+            "{11111111-1111-1111-1111-111111111111}");
+        AppManifest.Backup backup = backup("0.9.0");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(current));
+        when(mockPlatformHandler.supportsInstallerRollback(current)).thenReturn(true);
+        when(mockBackupManager.latest(current)).thenReturn(Optional.of(backup));
+        when(mockBackupManager.readManifest(backup)).thenReturn(restored);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+        when(mockPlatformHandler.rollbackInstaller(
+            current, restored, Path.of(backup.artifact()))).thenReturn(true);
+
+        assertEquals(0, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockPlatformHandler).rollbackInstaller(
+            current, restored, Path.of(backup.artifact()));
+        verify(mockBackupManager, never()).restore(any(), any());
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals("1.0.0", captor.getValue().version());
+        assertEquals("{11111111-1111-1111-1111-111111111111}",
+            captor.getValue().install().uninstall().productCode());
+    }
+
+    @Test
+    void testExecuteRollbackOnWindowsRequiresMsiInstaller() throws Exception {
+        setOs(Platform.OS.WINDOWS);
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest current = manifest(
+            "user/example", "http://v2", "app.exe", "/ProgramFiles/app/uninst.exe");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(current));
+        when(mockPlatformHandler.supportsInstallerRollback(current)).thenReturn(false);
+
+        assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockBackupManager, never()).latest(any());
+        verify(mockPlatformHandler, never()).rollbackInstaller(any(), any(), any());
+    }
+
+    @Test
+    void testExecuteRollbackOnWindowsStopsWhenInstallerRollbackFails() throws Exception {
+        setOs(Platform.OS.WINDOWS);
+        Command cmd = Command.ROLLBACK;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest current = manifest(
+            "user/example", "http://v2", "app.msi", "/cache/v2.msi");
+        AppManifest restored = manifest(
+            "user/example", "http://v1", "app.msi", "/cache/v1.msi");
+        AppManifest.Backup backup = backup("0.9.0");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(current));
+        when(mockPlatformHandler.supportsInstallerRollback(current)).thenReturn(true);
+        when(mockBackupManager.latest(current)).thenReturn(Optional.of(backup));
+        when(mockBackupManager.readManifest(backup)).thenReturn(restored);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
+        when(mockPlatformHandler.rollbackInstaller(
+            current, restored, Path.of(backup.artifact()))).thenReturn(false);
+
+        assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
+
+        verify(mockStateStore, never()).saveManifest(any());
+    }
+
+    @Test
+    void testExecuteUpdateSkipsBackupForWindowsNsis() throws Exception {
+        setOs(Platform.OS.WINDOWS);
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest previous = manifest(
+            "user/example", "http://old", "example.exe", "/ProgramFiles/uninst.exe");
+        Asset newAsset = new Asset("http://newurl", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(previous));
+        when(mockPlatformHandler.supportsInstallerRollback(previous)).thenReturn(false);
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockPlatformHandler.install(any(InstallRequest.class)))
+            .thenReturn(Path.of("/ProgramFiles/uninst.exe"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockBackupManager, never()).createAndPrune(any(), anyInt());
+    }
+
+    @Test
+    void testExecuteUpdateCreatesBackupForWindowsMsi() throws Exception {
+        setOs(Platform.OS.WINDOWS);
+        Command cmd = Command.UPDATE;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppManifest previous = manifest(
+            "user/example", "http://old", "example.msi", "/cache/v1.msi");
+        Asset newAsset = new Asset("http://newurl", "example.msi");
+        Path downloaded = Path.of("/tmp/downloaded.msi");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(previous));
+        when(mockPlatformHandler.supportsInstallerRollback(previous)).thenReturn(true);
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+        when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
+        when(mockPlatformHandler.install(any(InstallRequest.class)))
+            .thenReturn(Path.of("/cache/v2.msi"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
+
+        verify(mockBackupManager).createAndPrune(any(), anyInt());
+    }
+
+    @Test
     void testExecuteInstallDryRunDoesNotDownloadOrInstall() throws Exception {
         Command cmd = Command.INSTALL;
         cmd.argument = "user/example";
@@ -1722,19 +1851,6 @@ class ReleaseManagerTest {
 
         verify(mockBackupManager, never()).restore(any(), any());
         verify(mockStateStore, never()).saveManifest(any());
-    }
-
-    @Test
-    void testExecuteRollbackRefusedOnWindows() throws Exception {
-        setOs(Platform.OS.WINDOWS);
-        Command cmd = Command.ROLLBACK;
-        cmd.argument = "user/example";
-        when(mockCmdParser.parse(any())).thenReturn(cmd);
-
-        assertEquals(1, releaseManager.execute(new String[]{"rollback", "user/example"}));
-
-        verify(mockStateStore, never()).findManifest(any(RepoRef.class));
-        verify(mockBackupManager, never()).latest(any());
     }
 
     @Test

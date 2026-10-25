@@ -84,6 +84,35 @@ public abstract class PlatformHandler {
     }
 
     /**
+     * @param manifest installed application manifest
+     * @return true when this platform can roll back by reinstalling a cached installer
+     */
+    public boolean supportsInstallerRollback(AppManifest manifest) {
+        return false;
+    }
+
+    /**
+     * Rolls an installer-based application back by uninstalling the current
+     * product and reinstalling the cached installer.
+     * @param current manifest of the installed release
+     * @param restored manifest to restore
+     * @param installer cached installer for the restored release
+     * @return true when the rollback completed
+     */
+    public boolean rollbackInstaller(
+        AppManifest current, AppManifest restored, Path installer) {
+        return false;
+    }
+
+    /**
+     * @param manifest installed application manifest
+     * @return true when this platform can create a usable backup for it
+     */
+    public boolean supportsBackup(AppManifest manifest) {
+        return true;
+    }
+
+    /**
      * @return paths used for per-app state
      */
     protected AppPaths statePaths() {

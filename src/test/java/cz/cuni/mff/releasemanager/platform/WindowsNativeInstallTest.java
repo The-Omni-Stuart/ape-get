@@ -2,6 +2,8 @@ package cz.cuni.mff.releasemanager.platform;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+
+import cz.cuni.mff.releasemanager.state.AppManifest;
 
 @EnabledOnOs(OS.WINDOWS)
 class WindowsNativeInstallTest {
@@ -127,6 +131,112 @@ class WindowsNativeInstallTest {
         assertTrue(handler.uninstall(installed, productCode));
         assertFalse(Files.exists(app));
         assertEquals(PlatformHandler.InstallState.MISSING, handler.productInstallState(productCode));
+    }
+
+    @Test
+    @Timeout(600)
+    void rollsBackMsiByReinstallingTheCachedInstaller() throws Exception {
+        Path fixture = Files.createDirectories(tempDir.resolve("rollback"));
+        Path v1 = buildMsi(fixture, "v1", "1.0.0.0");
+        Path cachedV1 = handler.install(v1, "owner/msi");
+        assertNotNull(cachedV1);
+        String codeV1 = handler.productCode(cachedV1);
+        assertNotNull(codeV1);
+
+        Path backupDir = Files.createDirectories(tempDir.resolve("backup"));
+        Path backupInstaller = backupDir.resolve("v1.msi");
+        Files.copy(cachedV1, backupInstaller);
+        AppManifest restored = msiManifest(cachedV1, codeV1, "1.0.0.0");
+
+        Path v2 = buildMsi(fixture, "v2", "2.0.0.0");
+        Path cachedV2 = handler.install(v2, "owner/msi");
+        assertNotNull(cachedV2);
+        String codeV2 = handler.productCode(cachedV2);
+        assertNotNull(codeV2);
+        AppManifest current = msiManifest(cachedV2, codeV2, "2.0.0.0");
+
+        Path app = installedApp();
+        assertEquals("v2", Files.readString(app));
+        assertEquals(PlatformHandler.InstallState.INSTALLED,
+            handler.productInstallState(codeV2));
+
+        assertTrue(handler.rollbackInstaller(current, restored, backupInstaller));
+
+        assertTrue(Files.isRegularFile(app), "app.exe missing after rollback");
+        assertEquals("v1", Files.readString(app));
+        assertEquals(PlatformHandler.InstallState.INSTALLED,
+            handler.productInstallState(codeV1));
+        assertEquals(PlatformHandler.InstallState.MISSING,
+            handler.productInstallState(codeV2));
+    }
+
+    private Path buildMsi(Path fixture, String name, String version) throws Exception {
+        Files.writeString(fixture.resolve("app.exe"), name);
+        String wxs = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+              <Product Id="*" Name="ApeGetMsiRollbackTest" Language="1033"
+                       Version="%s" Manufacturer="ApeGet"
+                       UpgradeCode="{D4C5E3F6-7081-4C9D-AEBF-2A3B4C5D6E7F}">
+                <Package Id="*" InstallerVersion="500" Compressed="yes"
+                         InstallScope="perMachine" />
+                <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+                <MediaTemplate EmbedCab="yes" />
+                <Directory Id="TARGETDIR" Name="SourceDir">
+                  <Directory Id="ProgramFiles64Folder">
+                    <Directory Id="INSTALLDIR" Name="ApeGetMsiRollbackTest">
+                      <Component Id="Main"
+                                 Guid="{E5D6F407-8192-4DAE-BFC0-3B4C5D6E7F80}">
+                        <File Id="AppExe" Source="app.exe" KeyPath="yes" />
+                      </Component>
+                    </Directory>
+                  </Directory>
+                </Directory>
+                <Feature Id="Main" Level="1">
+                  <ComponentRef Id="Main" />
+                </Feature>
+              </Product>
+            </Wix>
+            """.formatted(version);
+        Path wxsFile = fixture.resolve(name + ".wxs");
+        Files.writeString(wxsFile, wxs);
+        run(fixture, "candle", name + ".wxs");
+        run(fixture, "light", "-sval", name + ".wixobj", "-out", name + ".msi");
+        return fixture.resolve(name + ".msi");
+    }
+
+    private Path installedApp() {
+        String programFiles = System.getenv("ProgramFiles");
+        String programFilesX86 = System.getenv("ProgramFiles(x86)");
+        Path app64 = Path.of(programFiles, "ApeGetMsiRollbackTest", "app.exe");
+        Path app32 = programFilesX86 == null
+            ? app64
+            : Path.of(programFilesX86, "ApeGetMsiRollbackTest", "app.exe");
+        return Files.isRegularFile(app64) ? app64 : app32;
+    }
+
+    private static AppManifest msiManifest(
+        Path cachedInstaller, String productCode, String version) {
+        return new AppManifest(
+            AppManifest.KIND,
+            AppManifest.SCHEMA_VERSION,
+            "github",
+            "owner/msi",
+            version,
+            1L,
+            new AppManifest.Asset(
+                cachedInstaller.getFileName().toString(), "https://example.invalid",
+                null, null),
+            new AppManifest.Install(
+                "msi",
+                cachedInstaller.toString(),
+                cachedInstaller.getParent().toString(),
+                new AppManifest.Uninstall(
+                    cachedInstaller.toString(), List.of(), productCode)),
+            new AppManifest.Verification("unknown", "none", null, null, null),
+            List.of(),
+            Instant.parse("2026-01-01T00:00:00Z"),
+            Instant.parse("2026-01-01T00:00:00Z"));
     }
 
     private void run(Path workingDirectory, String... command) throws Exception {

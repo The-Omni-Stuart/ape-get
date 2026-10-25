@@ -1624,8 +1624,9 @@ public class ReleaseManager {
         List<AppManifest.Backup> backups = previous.backups() == null
             ? List.of()
             : previous.backups();
-        if (toolConfig.backupCount() > 0
-            && os != Platform.OS.WINDOWS) {
+        boolean backupSupported = os != Platform.OS.WINDOWS
+            || platformHandler.supportsInstallerRollback(previous);
+        if (toolConfig.backupCount() > 0 && backupSupported) {
             try {
                 backups = backupManager.createAndPrune(
                     previous, toolConfig.backupCount());
@@ -1845,10 +1846,6 @@ public class ReleaseManager {
     }
 
     private boolean rollback(Command command) {
-        if (os == Platform.OS.WINDOWS) {
-            System.err.println("rollback is not supported for Windows installers yet.");
-            return false;
-        }
         RepoRef ref = parseRepo(command.argument);
         if (ref == null) {
             return false;
@@ -1867,6 +1864,12 @@ public class ReleaseManager {
             return false;
         }
 
+        if (os == Platform.OS.WINDOWS
+            && !platformHandler.supportsInstallerRollback(current)) {
+            System.err.println("Rollback on Windows requires an MSI with a cached installer.");
+            return false;
+        }
+
         var latestBackup = backupManager.latest(current);
         if (latestBackup.isEmpty()) {
             System.err.println("No backups are available for " + ref.display() + ".");
@@ -1880,6 +1883,10 @@ public class ReleaseManager {
             System.out.println("  Backup: " + backup.artifact());
             System.out.println("No changes were made.");
             return true;
+        }
+
+        if (os == Platform.OS.WINDOWS) {
+            return rollbackWindows(current, backup, ref);
         }
 
         String message = "Roll back " + ref.display() + " from "
@@ -1910,7 +1917,45 @@ public class ReleaseManager {
             return false;
         }
 
-        AppManifest rolledBack = new AppManifest(
+        AppManifest rolledBack = rolledBackManifest(restored, current);
+        if (!recordManifest(rolledBack)) {
+            return false;
+        }
+        Output.info("Rolled back " + ref.display() + " to "
+            + (backup.version() == null ? "unknown" : backup.version()) + ".");
+        return true;
+    }
+
+    private boolean rollbackWindows(
+        AppManifest current, AppManifest.Backup backup, RepoRef ref) {
+        AppManifest restored;
+        try {
+            restored = backupManager.readManifest(backup);
+        } catch (IOException e) {
+            System.err.println("Rollback failed: " + e.getMessage());
+            return false;
+        }
+        if (restored == null || !restored.isValid()) {
+            System.err.println("Backup manifest is invalid.");
+            return false;
+        }
+        if (!platformHandler.rollbackInstaller(
+            current, restored, Path.of(backup.artifact()))) {
+            System.err.println("Rollback failed; " + ref.display()
+                + " may need to be reinstalled.");
+            return false;
+        }
+        if (!recordManifest(rolledBackManifest(restored, current))) {
+            return false;
+        }
+        Output.info("Rolled back " + ref.display() + " to "
+            + (backup.version() == null ? "unknown" : backup.version()) + ".");
+        return true;
+    }
+
+    private static AppManifest rolledBackManifest(
+        AppManifest restored, AppManifest current) {
+        return new AppManifest(
             restored.kind(),
             restored.schemaVersion(),
             restored.provider(),
@@ -1926,12 +1971,6 @@ public class ReleaseManager {
             restored.signature(),
             restored.providerType(),
             restored.providerApi());
-        if (!recordManifest(rolledBack)) {
-            return false;
-        }
-        Output.info("Rolled back " + ref.display() + " to "
-            + (backup.version() == null ? "unknown" : backup.version()) + ".");
-        return true;
     }
 
     private void applyInstallRoot() {
