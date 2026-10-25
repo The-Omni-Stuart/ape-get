@@ -25,7 +25,7 @@ class GrmConfigTest {
         GrmConfig config = new GrmConfig(
             GrmConfig.KIND, GrmConfig.SCHEMA_VERSION,
             false, 1, null, false, Map.of(), true,
-            "beta", "apply", 6);
+            "beta", "apply", 6, 30, null);
 
         assertEquals(UpdateChannel.BETA, config.channel());
         assertEquals(AutoUpdateMode.APPLY, config.autoUpdateMode());
@@ -37,12 +37,26 @@ class GrmConfigTest {
         GrmConfig config = new GrmConfig(
             GrmConfig.KIND, GrmConfig.SCHEMA_VERSION,
             false, 1, null, false, Map.of(), true,
-            "beta", "check", 12);
+            "beta", "check", 12, 45, "http://127.0.0.1:8118");
 
         GrmConfig updated = config.withProviders(Map.of());
         assertEquals("beta", updated.updateChannel());
         assertEquals("check", updated.autoUpdate());
         assertEquals(12, updated.updateIntervalHours());
+        assertEquals(45, updated.networkTimeoutSeconds());
+        assertEquals("http://127.0.0.1:8118", updated.proxy());
         assertSame(GrmConfig.KIND, updated.kind());
+    }
+
+    @Test
+    void normalisesNetworkSettings() {
+        GrmConfig config = new GrmConfig(
+            GrmConfig.KIND, GrmConfig.SCHEMA_VERSION,
+            false, 1, null, false, Map.of(), true,
+            "stable", "off", 24, 0, "  ");
+
+        assertEquals(30, config.networkTimeoutSeconds());
+        assertEquals(java.time.Duration.ofSeconds(30), config.networkTimeout());
+        assertEquals(null, config.proxy());
     }
 }

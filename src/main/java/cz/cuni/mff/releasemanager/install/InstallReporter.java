@@ -109,6 +109,13 @@ public final class InstallReporter {
                 case FAILED -> Output.error(name + " update failed.");
             }
         }
+        long failed = results.stream()
+            .filter(result -> result.status() == UpdateResult.Status.FAILED)
+            .count();
+        if (failed > 0) {
+            Output.error("Failed to update " + failed + " of "
+                + results.size() + " package(s).");
+        }
     }
 
     public void upToDate(RepoRef ref, String version) {

@@ -3,11 +3,13 @@ package cz.cuni.mff.releasemanager.provider;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,9 +42,7 @@ public class GithubClient {
     private static final String ACCEPT_JSON_HEADER = "application/vnd.github.v3+json";
     private static final String ACCEPT_STREAM_HEADER = "application/octet-stream";
     private static final String RESULT_COUNT = "5";
-    private static final Duration API_TIMEOUT = Duration.ofSeconds(30);
-    private static final Duration DEFAULT_DOWNLOAD_TIMEOUT = Duration.ofMinutes(5);
-    private final HttpClient client;
+    private volatile HttpClient client;
     private final PlatformHandler platformHandler;
     private final Duration downloadTimeout;
     private final String apiBase;
@@ -50,11 +50,11 @@ public class GithubClient {
 
     // default github.com endpoint with the standard token variable
     public GithubClient() {
-        this(DEFAULT_API_URL, DEFAULT_TOKEN_ENV, DEFAULT_DOWNLOAD_TIMEOUT);
+        this(DEFAULT_API_URL, DEFAULT_TOKEN_ENV, null);
     }
 
     public GithubClient(String apiBase, String tokenEnv) {
-        this(apiBase, tokenEnv, DEFAULT_DOWNLOAD_TIMEOUT);
+        this(apiBase, tokenEnv, null);
     }
 
     GithubClient(Duration downloadTimeout) {
@@ -69,12 +69,31 @@ public class GithubClient {
         String value = tokenEnv == null || tokenEnv.isBlank()
             ? null : System.getenv(tokenEnv);
         this.token = value == null || value.isBlank() ? null : value;
-        client = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .version(HttpClient.Version.HTTP_2)
-            .connectTimeout(Duration.ofSeconds(30))
-            .build();
         platformHandler = Platform.getPlatformHandler();
+    }
+
+    // built on first use so config-loaded proxy and timeout settings apply
+    private HttpClient client() {
+        HttpClient current = client;
+        if (current == null) {
+            synchronized (this) {
+                current = client;
+                if (current == null) {
+                    HttpClient.Builder builder = HttpClient.newBuilder()
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .version(HttpClient.Version.HTTP_2);
+                    NetworkSettings.apply(builder);
+                    current = builder.build();
+                    client = current;
+                }
+            }
+        }
+        return current;
+    }
+
+    private Duration downloadTimeout() {
+        return downloadTimeout == null
+            ? NetworkSettings.downloadTimeout() : downloadTimeout;
     }
 
     // search repositories by name
@@ -205,22 +224,23 @@ public class GithubClient {
         HttpRequest request = authorized(HttpRequest.newBuilder()
             .uri(URI.create(url))
             .header("Accept", ACCEPT_STREAM_HEADER)
-            .timeout(downloadTimeout))
+            .timeout(downloadTimeout()))
             .build();
+        URI uri = request.uri();
         CompletableFuture<HttpResponse<Path>> future =
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofFile(destination));
+            client().sendAsync(request, HttpResponse.BodyHandlers.ofFile(destination));
         try {
             HttpResponse<Path> response = future.get(
-                downloadTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                downloadTimeout().toMillis(), TimeUnit.MILLISECONDS);
             handleResponseCode(response);
         } catch (TimeoutException e) {
             future.cancel(true);
             throw new IOException(
-                "Download timed out after " + downloadTimeout.toMillis() + " ms", e);
+                "download timed out after " + downloadTimeout().toSeconds() + "s", e);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof IOException io) {
-                throw io;
+                throw networkError(io, uri, "download");
             }
             if (cause instanceof InterruptedException interrupted) {
                 throw interrupted;
@@ -242,19 +262,36 @@ public class GithubClient {
         HttpRequest request = authorized(HttpRequest.newBuilder()
             .uri(uri)
             .header("Accept", ACCEPT_JSON_HEADER)
-            .timeout(API_TIMEOUT))
+            .timeout(NetworkSettings.apiTimeout()))
             .build();
         HttpResponse<String> response;
         try {
-            response = client.send(
+            response = client().send(
                 request,
                 HttpResponse.BodyHandlers.ofString()
             );
-        } catch (ConnectException e) {
-            throw new IOException("Connection error.", e);
+        } catch (IOException e) {
+            throw networkError(e, uri, "request");
         }
         handleResponseCode(response);
         return Optional.of(response.body());
+    }
+
+    private static IOException networkError(
+        IOException error, URI uri, String action) {
+        if (error instanceof HttpTimeoutException) {
+            Duration timeout = "download".equals(action)
+                ? NetworkSettings.downloadTimeout() : NetworkSettings.apiTimeout();
+            return new IOException(
+                action + " timed out after " + timeout.toSeconds() + "s", error);
+        }
+        if (error instanceof UnknownHostException) {
+            return new IOException("could not resolve " + uri.getHost(), error);
+        }
+        if (error instanceof ConnectException) {
+            return new IOException("could not connect to " + uri.getHost(), error);
+        }
+        return error;
     }
 
     // 403 is a rate limit only when GitHub says the remaining quota is zero

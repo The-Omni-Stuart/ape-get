@@ -24,7 +24,9 @@ public record GrmConfig(
     @JsonProperty("search_all_providers") Boolean searchAllProviders,
     @JsonProperty("update_channel") String updateChannel,
     @JsonProperty("auto_update") String autoUpdate,
-    @JsonProperty("update_interval_hours") int updateIntervalHours
+    @JsonProperty("update_interval_hours") int updateIntervalHours,
+    @JsonProperty("network_timeout_seconds") int networkTimeoutSeconds,
+    String proxy
 ) {
     public static final String KIND = "grm.config";
     public static final int SCHEMA_VERSION = 1;
@@ -34,6 +36,15 @@ public record GrmConfig(
         autoUpdate = AutoUpdateMode.from(autoUpdate).id();
         if (updateIntervalHours <= 0) {
             updateIntervalHours = 24;
+        }
+        if (networkTimeoutSeconds <= 0) {
+            networkTimeoutSeconds = 30;
+        }
+        if (proxy != null) {
+            proxy = proxy.strip();
+            if (proxy.isEmpty()) {
+                proxy = null;
+            }
         }
     }
 
@@ -45,7 +56,7 @@ public record GrmConfig(
         String installRoot
     ) {
         this(kind, schemaVersion, strictVerification, backupCount, installRoot,
-            false, Map.of(), true, "stable", "off", 24);
+            false, Map.of(), true, "stable", "off", 24, 30, null);
     }
 
     public GrmConfig(
@@ -57,7 +68,7 @@ public record GrmConfig(
         boolean requireSignature
     ) {
         this(kind, schemaVersion, strictVerification, backupCount, installRoot,
-            requireSignature, Map.of(), true, "stable", "off", 24);
+            requireSignature, Map.of(), true, "stable", "off", 24, 30, null);
     }
 
     public GrmConfig(
@@ -70,7 +81,7 @@ public record GrmConfig(
         Map<String, ProviderConfig> providers
     ) {
         this(kind, schemaVersion, strictVerification, backupCount, installRoot,
-            requireSignature, providers, true, "stable", "off", 24);
+            requireSignature, providers, true, "stable", "off", 24, 30, null);
     }
 
     // old eight-field form, kept for callers and tests
@@ -85,19 +96,21 @@ public record GrmConfig(
         Boolean searchAllProviders
     ) {
         this(kind, schemaVersion, strictVerification, backupCount, installRoot,
-            requireSignature, providers, searchAllProviders, "stable", "off", 24);
+            requireSignature, providers, searchAllProviders, "stable", "off", 24,
+            30, null);
     }
 
     public static GrmConfig defaults() {
         return new GrmConfig(KIND, SCHEMA_VERSION, false, 1, null, false,
-            Map.of(), true, "stable", "off", 24);
+            Map.of(), true, "stable", "off", 24, 30, null);
     }
 
     public GrmConfig withProviders(Map<String, ProviderConfig> updated) {
         return new GrmConfig(
             kind, schemaVersion, strictVerification, backupCount, installRoot,
             requireSignature, updated, searchAllProviders,
-            updateChannel, autoUpdate, updateIntervalHours);
+            updateChannel, autoUpdate, updateIntervalHours,
+            networkTimeoutSeconds, proxy);
     }
 
     @JsonIgnore
@@ -108,6 +121,11 @@ public record GrmConfig(
     @JsonIgnore
     public UpdateChannel channel() {
         return UpdateChannel.from(updateChannel);
+    }
+
+    @JsonIgnore
+    public java.time.Duration networkTimeout() {
+        return java.time.Duration.ofSeconds(networkTimeoutSeconds);
     }
 
     @JsonIgnore

@@ -2,6 +2,7 @@ package cz.cuni.mff.releasemanager.provider;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,6 +20,7 @@ import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -34,6 +36,24 @@ class GitLabProviderTest {
         if (server != null) {
             server.stop(0);
         }
+    }
+
+    @Test
+    @Timeout(15)
+    void reportsConnectionFailuresWithAReason() throws Exception {
+        int port;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
+        ProviderConfig config = new ProviderConfig(
+            "work", "gitea", "http://127.0.0.1:" + port, null, null);
+        GitLabProvider provider = new GitLabProvider(config);
+
+        IOException error = assertThrows(IOException.class,
+            () -> provider.latest("owner/repo"));
+
+        assertTrue(error.getMessage().contains("could not connect"),
+            error.getMessage());
     }
 
     @Test

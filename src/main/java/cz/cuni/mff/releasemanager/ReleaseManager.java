@@ -35,6 +35,7 @@ import cz.cuni.mff.releasemanager.install.UninstallService;
 import cz.cuni.mff.releasemanager.install.UpdateChecker;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.provider.NetworkSettings;
 import cz.cuni.mff.releasemanager.provider.ProviderConfig;
 import cz.cuni.mff.releasemanager.provider.ProviderFactory;
 import cz.cuni.mff.releasemanager.provider.ProviderRegistry;
@@ -189,8 +190,22 @@ public class ReleaseManager {
         }
         toolConfig = loaded;
         providers = new ProviderRegistry(toolConfig.providers());
+        if (!applyNetworkSettings()) {
+            return false;
+        }
         applyInstallRoot();
         return true;
+    }
+
+    private boolean applyNetworkSettings() {
+        try {
+            NetworkSettings.configure(
+                toolConfig.networkTimeoutSeconds(), toolConfig.proxy());
+            return true;
+        } catch (IllegalArgumentException e) {
+            Output.error("Invalid network config: " + e.getMessage());
+            return false;
+        }
     }
 
     private ReleaseProvider resolveProvider(String name) {
@@ -221,7 +236,7 @@ public class ReleaseManager {
         try {
             toolConfig = stateStore.loadConfig().config();
             providers = new ProviderRegistry(toolConfig.providers());
-            return true;
+            return applyNetworkSettings();
         } catch (IOException e) {
             Output.error("Failed to read config: " + e.getMessage());
             return false;

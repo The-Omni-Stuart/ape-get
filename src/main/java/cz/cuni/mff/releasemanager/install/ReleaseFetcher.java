@@ -5,6 +5,7 @@ import java.io.IOException;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.provider.UpdateChannel;
+import cz.cuni.mff.releasemanager.utils.NetworkErrors;
 import cz.cuni.mff.releasemanager.utils.Output;
 
 // reads the latest release, or the tag the user asked for
@@ -24,7 +25,12 @@ public final class ReleaseFetcher {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            Output.error("Failed to read release: " + e.getMessage());
+            String name = provider.config() == null
+                ? null : provider.config().name();
+            String target = name == null || name.isBlank()
+                ? path : name + ":" + path;
+            Output.error("Failed to read releases from " + target + ": "
+                + NetworkErrors.describe(e));
             return null;
         }
     }

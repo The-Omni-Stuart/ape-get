@@ -2,6 +2,7 @@ package cz.cuni.mff.releasemanager.provider;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,6 +21,8 @@ import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class GiteaProviderTest {
@@ -34,6 +37,24 @@ class GiteaProviderTest {
         if (server != null) {
             server.stop(0);
         }
+    }
+
+    @Test
+    @Timeout(15)
+    void reportsConnectionFailuresWithAReason() throws Exception {
+        int port;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
+        ProviderConfig config = new ProviderConfig(
+            "work", "gitea", "http://127.0.0.1:" + port, null, null);
+        GiteaProvider provider = new GiteaProvider(config);
+
+        IOException error = assertThrows(IOException.class,
+            () -> provider.latest("owner/repo"));
+
+        assertTrue(error.getMessage().contains("could not connect"),
+            error.getMessage());
     }
 
     @Test

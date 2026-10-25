@@ -1,10 +1,13 @@
 package cz.cuni.mff.releasemanager.provider;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
@@ -15,9 +18,6 @@ import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 // shared HTTP plumbing for the Gitea and GitLab adapters
 final class ProviderHttp {
-    private static final Duration API_TIMEOUT = Duration.ofSeconds(30);
-    private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(5);
-
     private final ProviderConfig config;
     private final HttpClient client;
     private final String label;
@@ -38,12 +38,16 @@ final class ProviderHttp {
     }
 
     String get(String url, String context) throws IOException, InterruptedException {
-        HttpRequest request = request(url, API_TIMEOUT)
+        HttpRequest request = request(url, NetworkSettings.apiTimeout())
             .header("Accept", "application/json")
             .GET()
             .build();
-        HttpResponse<String> response =
-            client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException e) {
+            throw networkError(e, request.uri(), "request");
+        }
         authenticate(response.statusCode());
         if (response.statusCode() != 200) {
             throw new IOException(label + " API returned " + response.statusCode()
@@ -55,9 +59,15 @@ final class ProviderHttp {
     Path download(Asset asset) throws IOException, InterruptedException {
         Path destination = StagedAsset.create(asset.name());
         try {
-            HttpRequest request = request(asset.url(), DOWNLOAD_TIMEOUT).GET().build();
-            HttpResponse<Path> response =
-                client.send(request, HttpResponse.BodyHandlers.ofFile(destination));
+            HttpRequest request = request(
+                asset.url(), NetworkSettings.downloadTimeout()).GET().build();
+            HttpResponse<Path> response;
+            try {
+                response = client.send(
+                    request, HttpResponse.BodyHandlers.ofFile(destination));
+            } catch (IOException e) {
+                throw networkError(e, request.uri(), "download");
+            }
             if (response.statusCode() != 200) {
                 throw new IOException(label + " download returned "
                     + response.statusCode() + " for " + asset.name());
@@ -79,6 +89,23 @@ final class ProviderHttp {
                 value -> builder.header(authHeader, authPrefix + value));
         }
         return builder;
+    }
+
+    private IOException networkError(
+        IOException error, URI uri, String action) {
+        if (error instanceof HttpTimeoutException) {
+            Duration timeout = "download".equals(action)
+                ? NetworkSettings.downloadTimeout() : NetworkSettings.apiTimeout();
+            return new IOException(label + " " + action + " timed out after "
+                + timeout.toSeconds() + "s", error);
+        }
+        if (error instanceof UnknownHostException) {
+            return new IOException(label + " could not resolve " + uri.getHost(), error);
+        }
+        if (error instanceof ConnectException) {
+            return new IOException(label + " could not connect to " + uri.getHost(), error);
+        }
+        return error;
     }
 
     private void authenticate(int status) throws IOException {

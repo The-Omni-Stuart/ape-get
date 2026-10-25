@@ -1,7 +1,10 @@
 package cz.cuni.mff.releasemanager.provider;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -84,10 +87,11 @@ class GithubClientTest {
     @Test
     void followsRedirectsWithoutAllowingHttpsDowngrade() throws Exception {
         GithubClient client = new GithubClient();
-        Field clientField = GithubClient.class.getDeclaredField("client");
-        clientField.setAccessible(true);
+        java.lang.reflect.Method clientMethod =
+            GithubClient.class.getDeclaredMethod("client");
+        clientMethod.setAccessible(true);
 
-        HttpClient http = (HttpClient) clientField.get(client);
+        HttpClient http = (HttpClient) clientMethod.invoke(client);
 
         assertEquals(HttpClient.Redirect.NORMAL, http.followRedirects());
     }
@@ -300,6 +304,41 @@ class GithubClientTest {
     }
 
     @Test
+    @Timeout(15)
+    void apiTimeoutsExplainTheConfiguredTimeout() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/repos/owner/repo/releases/latest", exchange -> {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ignored) {
+                // test shutdown
+            }
+            exchange.close();
+        });
+        ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setDaemon(true);
+            return thread;
+        });
+        server.setExecutor(executor);
+        server.start();
+        NetworkSettings.configure(1, null);
+        try {
+            GithubClient client = new GithubClient(
+                "http://127.0.0.1:" + server.getAddress().getPort(), null);
+
+            String error = captureErr(
+                () -> client.getLatestRelease("owner/repo"));
+
+            assertTrue(error.contains("timed out after 1s"), error);
+        } finally {
+            NetworkSettings.configure(0, null);
+            server.stop(0);
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     @Timeout(10)
     void downloadAsset_rejectsEmptyResponse() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -412,4 +451,16 @@ class GithubClientTest {
         }
     }
 
+
+    private static String captureErr(Runnable action) {
+        PrintStream original = System.err;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(bytes, true, StandardCharsets.UTF_8));
+        try {
+            action.run();
+        } finally {
+            System.setErr(original);
+        }
+        return bytes.toString(StandardCharsets.UTF_8);
+    }
 }

@@ -222,6 +222,18 @@ protected static String captureOut(IntSupplier action) {
         return bytes.toString(StandardCharsets.UTF_8);
     }
 
+protected static String captureErr(IntSupplier action) {
+        PrintStream original = System.err;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(bytes, true, StandardCharsets.UTF_8));
+        try {
+            action.getAsInt();
+        } finally {
+            System.setErr(original);
+        }
+        return bytes.toString(StandardCharsets.UTF_8);
+    }
+
 protected static AppManifest.Backup backup(String version) {
         return new AppManifest.Backup(
      version,

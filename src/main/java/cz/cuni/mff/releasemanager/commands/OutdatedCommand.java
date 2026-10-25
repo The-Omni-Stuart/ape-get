@@ -53,12 +53,17 @@ public final class OutdatedCommand {
             return !report.failed();
         }
         if (report.outdated().isEmpty()) {
-            Output.data("Everything is up to date.");
+            Output.data(report.failed()
+                ? "Could not check every package."
+                : "Everything is up to date.");
             return !report.failed();
         }
         for (OutdatedEntry entry : report.outdated()) {
             Output.data(entry.provider() + ":" + entry.repo() + " "
                 + label(entry.current()) + " -> " + label(entry.latest()));
+        }
+        if (report.failed()) {
+            Output.error("Could not check every package.");
         }
         return !report.failed();
     }

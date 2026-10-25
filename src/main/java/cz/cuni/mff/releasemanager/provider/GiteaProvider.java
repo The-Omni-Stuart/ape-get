@@ -6,7 +6,6 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -28,11 +27,15 @@ public final class GiteaProvider implements ReleaseProvider {
     private final ProviderHttp http;
 
     public GiteaProvider(ProviderConfig config) {
-        this(config, HttpClient.newBuilder()
+        this(config, client());
+    }
+
+    private static HttpClient client() {
+        HttpClient.Builder builder = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
-            .version(HttpClient.Version.HTTP_2)
-            .connectTimeout(Duration.ofSeconds(30))
-            .build());
+            .version(HttpClient.Version.HTTP_2);
+        NetworkSettings.apply(builder);
+        return builder.build();
     }
 
     GiteaProvider(ProviderConfig config, HttpClient client) {

@@ -73,8 +73,12 @@ public final class InstallService {
         }
         ReleaseAssets release = components.fetcher().fetch(
             provider, ref.path(), cmdParser.getVersion(), channel);
-        if (release == null || release.installable().isEmpty()) {
+        if (release == null) {
             Output.error("Failed to retrieve the release.");
+            return false;
+        }
+        if (release.installable().isEmpty()) {
+            Output.error("No compatible package found for this platform.");
             return false;
         }
         PackageKind requested;
