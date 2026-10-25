@@ -9,7 +9,8 @@ import java.util.Optional;
 public enum ProviderType {
     GITHUB("github"),
     GITEA("gitea"),
-    GITLAB("gitlab");
+    GITLAB("gitlab"),
+    RNGIT("rngit");
 
     private final String id;
 

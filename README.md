@@ -87,7 +87,7 @@ java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar list
 | `rollback <repo>` | Restore the latest local backup |
 | `list` | List installed releases |
 | `info <repo>` | Show version, path, checksums, signatures, and backups |
-| `providers ...` | List, add, update, remove, or recover providers |
+| `providers ...` | List, add, update, remove, or recover providers (GitHub, Gitea, GitLab, rngit) |
 | `doctor` | Diagnose state and platform issues |
 | `adopt <repo>` | Adopt an existing Linux install |
 | `help` | Show usage instructions |
@@ -102,6 +102,20 @@ Example repositories:
 
 Built-in providers are `github`, `codeberg`, and `gitlab`. Repository arguments must name the
 provider, for example `github:owner/repo`.
+
+rngit nodes are configured as custom providers with the Reticulum node destination or a local
+alias. The repository path is `group/repo`, as rngit expects:
+
+```bash
+providers add rns rns://7649a50d84610232d1416b41d2896aff --type rngit
+install rns:group/repo
+```
+
+The type is detected from the `rns://` scheme when `--type` is omitted, and a name such as
+`rns-7649a50d` is derived. rngit needs the RNS `rngit` client and a reachable Reticulum interface;
+when a destination cannot be resolved ape-get points at the RNS interface or `rnsd`. rngit verifies
+the signed release manifest and every fetched artifact, so the detached-signature check used by the
+HTTP providers does not apply.
 
 ```bash
 search neovim                    # queries every configured provider
@@ -141,7 +155,12 @@ removes it on update.
 
 `--channel beta` follows prereleases where the provider exposes them. Automatic updates are
 configured in `grm_config.json` with `auto_update` (`off`, `check`, or `apply`),
-`update_channel` (`stable` or `beta`), and `update_interval_hours`. A `list` command performs a
+`update_channel` (`stable` or `beta`), and `update_interval_hours`. `network_timeout_seconds`
+(default 30) sets the API and connection timeout; downloads keep at least five minutes and rngit
+fetches at least thirty. `proxy` takes an `http://host:port` proxy for the HTTP providers. Only
+HTTP CONNECT proxies are supported: for Tor, enable `HTTPTunnelPort` and point `proxy` at it; SOCKS
+is not supported by the Java HTTP client. An unreachable provider or a timeout reports the provider
+and repository, and `update --all` carries on with the remaining packages. A `list` command performs a
 due check or update and records it in `grm_updates.log`. `--desktop` creates a Linux application-menu entry; `--terminal`
 marks it as terminal-based and `--icon` points at an icon file. `--assimilate` converts an APE to a
 native binary using the cosmocc `assimilate` tool; it is never used unless requested.

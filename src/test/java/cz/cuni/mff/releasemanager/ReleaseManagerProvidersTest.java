@@ -45,6 +45,60 @@ class ReleaseManagerProvidersTest extends ReleaseManagerTestSupport {
         verify(mockStateStore).saveConfig(any());
     }
 
+
+    @Test
+    void testExecuteRejectsAnUnsupportedProxy() throws Exception {
+        Command cmd = Command.PROVIDERS;
+        cmd.arguments = List.of("list");
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockStateStore.loadConfig()).thenReturn(new ConfigStore.LoadResult(
+            new GrmConfig(
+                GrmConfig.KIND, GrmConfig.SCHEMA_VERSION,
+                false, 1, null, false, java.util.Map.of(), true,
+                "stable", "off", 24, 30, "socks5://127.0.0.1:9050"),
+            false,
+            null));
+
+        String error = captureErr(() -> releaseManager.execute(
+            new String[]{"providers", "list"}));
+
+        assertTrue(error.contains("Invalid network config"), error);
+        assertTrue(error.contains("HTTPTunnelPort"), error);
+    }
+
+    @Test
+    void testExecuteProvidersAddRngit() throws Exception {
+        Command cmd = Command.PROVIDERS;
+        cmd.arguments = List.of(
+            "add", "rns", "rns://7649a50d84610232d1416b41d2896aff", "--type", "rngit");
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        assertEquals(0, releaseManager.execute(new String[]{
+            "providers", "add", "rns",
+            "rns://7649a50d84610232d1416b41d2896aff", "--type", "rngit"}));
+
+        ArgumentCaptor<GrmConfig> captor = ArgumentCaptor.forClass(GrmConfig.class);
+        verify(mockStateStore).saveConfig(captor.capture());
+        ProviderConfig rns = captor.getValue().providers().get("rns");
+        assertEquals("rngit", rns.type());
+        assertEquals("rns://7649a50d84610232d1416b41d2896aff", rns.resolvedApi());
+    }
+
+    @Test
+    void testExecuteProvidersAddDerivesAnRngitName() throws Exception {
+        Command cmd = Command.PROVIDERS;
+        cmd.arguments = List.of("add", "rns://7649a50d84610232d1416b41d2896aff");
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        assertEquals(0, releaseManager.execute(new String[]{
+            "providers", "add", "rns://7649a50d84610232d1416b41d2896aff"}));
+
+        ArgumentCaptor<GrmConfig> captor = ArgumentCaptor.forClass(GrmConfig.class);
+        verify(mockStateStore).saveConfig(captor.capture());
+        assertEquals("rngit",
+            captor.getValue().providers().get("rns-7649a50d").type());
+    }
+
     @Test
     void testExecuteProvidersListJson() throws Exception {
         Command cmd = Command.PROVIDERS;

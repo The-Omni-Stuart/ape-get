@@ -24,6 +24,16 @@ class ProviderDetectorTest {
     }
 
     @Test
+    void detectsRngitDestinationsWithoutProbing() throws Exception {
+        ProviderDetector.Detected detected = new ProviderDetector(
+            HttpClient.newHttpClient())
+            .detect("rns://7649a50d84610232d1416b41d2896aff");
+
+        assertEquals(ProviderType.RNGIT, detected.type());
+        assertEquals("rns://7649a50d84610232d1416b41d2896aff", detected.api());
+    }
+
+    @Test
     void detectsGitea() throws Exception {
         String base = start(200, 404, 404);
 

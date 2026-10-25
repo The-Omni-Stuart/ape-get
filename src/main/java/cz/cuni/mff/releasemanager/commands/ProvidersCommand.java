@@ -76,7 +76,7 @@ public final class ProvidersCommand {
         Output.error("Usage:");
         Output.error("  providers list");
         Output.error("  providers show <name>");
-        Output.error("  providers add <name> <url> [--type auto|github|gitea|gitlab]"
+        Output.error("  providers add <name> <url> [--type auto|github|gitea|gitlab|rngit]"
             + " [--api URL] [--token-env VAR]");
         Output.error("  providers update <name> [--type ...] [--api URL] [--url URL]"
             + " [--token-env VAR] [--force]");
@@ -275,8 +275,10 @@ public final class ProvidersCommand {
                 if (api == null || api.isBlank()) {
                     api = detected.api();
                 }
-                Output.info("Detected " + type.id() + " at " + urlBase
-                    + " (API " + api + ").");
+                Output.info(type == ProviderType.RNGIT
+                    ? "Detected rngit at " + urlBase + "."
+                    : "Detected " + type.id() + " at " + urlBase
+                        + " (API " + api + ").");
             } else {
                 type = ProviderType.from(typeValue).orElse(null);
                 if (type == null) {
@@ -296,7 +298,8 @@ public final class ProvidersCommand {
         ProviderConfig config = new ProviderConfig(
             name, type.id(), urlBase, api, options.values().get("token-env")).named(name);
         if (!config.isValid()) {
-            Output.error("Invalid provider config; check the HTTPS URL, API base, and token variable.");
+            Output.error("Invalid provider config; check the URL (https:// or rns://)," +
+                " API base, and token variable.");
             return false;
         }
         Map<String, ProviderConfig> updated = currentProviders();
@@ -353,7 +356,8 @@ public final class ProvidersCommand {
         ProviderConfig updatedConfig = new ProviderConfig(
             name, type.id(), url, api, tokenEnv).named(name);
         if (!updatedConfig.isValid()) {
-            Output.error("Invalid provider config; check the HTTPS URL, API base, and token variable.");
+            Output.error("Invalid provider config; check the URL (https:// or rns://)," +
+                " API base, and token variable.");
             return false;
         }
 
@@ -606,6 +610,12 @@ public final class ProvidersCommand {
         if (normalized.equals("gitlab.com")) {
             return "gitlab";
         }
+        if ("rns".equalsIgnoreCase(uri.getScheme())) {
+            String alias = normalized.replaceAll("[^a-z0-9._-]+", "-")
+                .replaceAll("^[._-]+|[._-]+$", "");
+            boolean hash = alias.matches("[0-9a-f]{32,64}");
+            return "rns-" + (hash ? alias.substring(0, 8) : alias);
+        }
         String name = normalized.replaceAll("[^a-z0-9._-]+", "-")
             .replaceAll("^[._-]+|[._-]+$", "");
         if (name.isBlank()) {
@@ -618,6 +628,7 @@ public final class ProvidersCommand {
         return switch (type) {
             case GITEA -> stripApiSuffix(api, "/api/v1");
             case GITLAB -> stripApiSuffix(api, "/api/v4");
+            case RNGIT -> api;
             case GITHUB -> api.equals("https://api.github.com")
                 ? "https://github.com"
                 : stripApiSuffix(api, "/api/v3");

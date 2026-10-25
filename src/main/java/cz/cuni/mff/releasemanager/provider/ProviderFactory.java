@@ -22,6 +22,7 @@ public final class ProviderFactory {
                 config);
             case GITEA -> new GiteaProvider(config);
             case GITLAB -> new GitLabProvider(config);
+            case RNGIT -> new RngitProvider(config);
         };
     }
 }

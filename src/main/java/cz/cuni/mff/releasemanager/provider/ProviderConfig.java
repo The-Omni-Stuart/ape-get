@@ -33,14 +33,19 @@ public record ProviderConfig(
             return false;
         }
         Optional<ProviderType> providerType = providerType();
-        if (providerType.isEmpty() || !isHttps(url)) {
+        if (providerType.isEmpty()) {
+            return false;
+        }
+        boolean rngit = providerType.get() == ProviderType.RNGIT;
+        if (!(rngit ? isRns(url) : isHttps(url))) {
             return false;
         }
         if (tokenEnv != null && !tokenEnv.isBlank()
             && !tokenEnv.matches("[A-Za-z_][A-Za-z0-9_]*")) {
             return false;
         }
-        return api == null || api.isBlank() || isHttps(api);
+        return api == null || api.isBlank()
+            || (rngit ? isRns(api) : isHttps(api));
     }
 
     @JsonIgnore
@@ -56,12 +61,16 @@ public record ProviderConfig(
                 : base + "/api/v3";
             case GITEA -> base + "/api/v1";
             case GITLAB -> base + "/api/v4";
+            case RNGIT -> base;
         };
     }
 
     // only send the token to hosts that belong to this provider
     @JsonIgnore
     public boolean allowsTokenFor(String downloadUrl) {
+        if (providerType().orElseThrow() == ProviderType.RNGIT) {
+            return false;
+        }
         String host = hostOf(downloadUrl);
         return host != null
             && (host.equals(hostOf(resolvedApi())) || host.equals(hostOf(url)));
@@ -88,6 +97,24 @@ public record ProviderConfig(
 
     public static boolean validName(String name) {
         return name != null && name.matches("[a-z0-9][a-z0-9._-]*");
+    }
+
+    private static boolean isRns(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = new URI(value);
+            String host = uri.getHost();
+            return "rns".equalsIgnoreCase(uri.getScheme())
+                && host != null
+                && host.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+                && (uri.getPath() == null || uri.getPath().isBlank()
+                    || "/".equals(uri.getPath()))
+                && uri.getUserInfo() == null;
+        } catch (URISyntaxException e) {
+            return false;
+        }
     }
 
     private static boolean isHttps(String value) {

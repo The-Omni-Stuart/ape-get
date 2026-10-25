@@ -19,10 +19,15 @@ public final class ProviderDetector {
     private final HttpClient client;
 
     public ProviderDetector() {
-        this(HttpClient.newBuilder()
+        this(client());
+    }
+
+    private static HttpClient client() {
+        HttpClient.Builder builder = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(5))
-            .build());
+            .connectTimeout(Duration.ofSeconds(5));
+        NetworkSettings.applyProxy(builder);
+        return builder.build();
     }
 
     ProviderDetector(HttpClient client) {
@@ -32,12 +37,16 @@ public final class ProviderDetector {
     // probes the instance for one unambiguous API layout
     public Detected detect(String url) throws IOException, InterruptedException {
         String base = stripTrailingSlash(url);
-        String host;
+        URI parsed;
         try {
-            host = URI.create(base).getHost();
+            parsed = URI.create(base);
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid provider URL: " + url, e);
         }
+        if ("rns".equalsIgnoreCase(parsed.getScheme())) {
+            return new Detected(ProviderType.RNGIT, base);
+        }
+        String host = parsed.getHost();
         if (host == null) {
             throw new IOException("Invalid provider URL: " + url);
         }
@@ -70,14 +79,16 @@ public final class ProviderDetector {
             StringBuilder message = new StringBuilder(
                 "Multiple provider APIs responded at " + base + ": ");
             for (Detected detected : found) {
-                message.append(detected.type().id()).append(" (").append(detected.api()).append(") ");
+                message.append(detected.type().id())
+                    .append(" (").append(detected.api()).append(") ");
             }
-            message.append("- pass --type github|gitea|gitlab");
+            message.append("- pass --type github|gitea|gitlab|rngit");
             throw new IOException(message.toString());
         }
         throw new IOException(
             "Could not detect the provider type at " + base
-                + ". Pass --type github|gitea|gitlab, or --api if the API is on another host.");
+                + ". Pass --type github|gitea|gitlab|rngit,"
+                + " or --api if the API is on another host.");
     }
 
     private boolean probe(String url) throws InterruptedException {
