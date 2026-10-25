@@ -81,7 +81,42 @@ public final class GitLabProvider implements ReleaseProvider {
             .filter(candidate -> !candidate.upcoming())
             .findFirst()
             .orElseThrow(() -> new IOException("No published release found for " + path));
+        return toReleaseAssets(release);
+    }
 
+    @Override
+    public ReleaseAssets release(String path, String tag)
+        throws IOException, InterruptedException {
+        String project = URLEncoder.encode(path, StandardCharsets.UTF_8);
+        String encodedTag = URLEncoder.encode(tag, StandardCharsets.UTF_8)
+            .replace("+", "%20");
+        String url = config.resolvedApi() + "/projects/" + project
+            + "/releases/" + encodedTag;
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+            .header("Accept", "application/json")
+            .header("User-Agent", "ape-get")
+            .timeout(API_TIMEOUT)
+            .GET();
+        token().ifPresent(value -> builder.header("PRIVATE-TOKEN", value));
+
+        HttpResponse<String> response = client.send(
+            builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 401 || response.statusCode() == 403) {
+            throw new IOException("GitLab authentication failed for " + config.name());
+        }
+        if (response.statusCode() != 200) {
+            throw new IOException(
+                "GitLab API returned " + response.statusCode() + " for " + path
+                    + " release " + tag);
+        }
+        GitLabRelease release = MAPPER.readValue(response.body(), GitLabRelease.class);
+        if (release.upcoming()) {
+            throw new IOException("Release " + tag + " is not published yet");
+        }
+        return toReleaseAssets(release);
+    }
+
+    private static ReleaseAssets toReleaseAssets(GitLabRelease release) {
         List<Asset> all = release.assets() == null || release.assets().links() == null
             ? List.of()
             : release.assets().links().stream()

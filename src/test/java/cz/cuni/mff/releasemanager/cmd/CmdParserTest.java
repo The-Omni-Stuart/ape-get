@@ -237,4 +237,55 @@ class CmdParserTest {
 
         assertFalse(cmdParser.isAssumeYes());
     }
+
+    @Test
+    void testParseAssetOption() {
+        Command result = cmdParser.parse(new String[] {
+            "install", "owner/repo", "--asset", "app-x86_64.AppImage"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertEquals("app-x86_64.AppImage", cmdParser.getAsset());
+    }
+
+    @Test
+    void testParseVersionOption() {
+        Command result = cmdParser.parse(new String[] {
+            "--version", "v1.2.3", "install", "owner/repo"});
+
+        assertEquals(Command.INSTALL, result);
+        assertEquals("owner/repo", result.argument);
+        assertEquals("v1.2.3", cmdParser.getVersion());
+    }
+
+    @Test
+    void testParseOutputFlags() {
+        Command result = cmdParser.parse(new String[] {
+            "list", "--json", "--quiet", "--dry-run"});
+
+        assertEquals(Command.LIST, result);
+        assertTrue(cmdParser.isJson());
+        assertTrue(cmdParser.isQuiet());
+        assertTrue(cmdParser.isDryRun());
+    }
+
+    @Test
+    void testParseResetsOutputFlags() {
+        cmdParser.parse(new String[] {"list", "--json", "--quiet", "--dry-run"});
+        cmdParser.parse(new String[] {"list"});
+
+        assertFalse(cmdParser.isJson());
+        assertFalse(cmdParser.isQuiet());
+        assertFalse(cmdParser.isDryRun());
+        assertEquals(null, cmdParser.getAsset());
+        assertEquals(null, cmdParser.getVersion());
+    }
+
+    @Test
+    void testParseMissingOptionValuesAreUsageErrors() {
+        for (String option : new String[] {"--asset", "--version", "--provider"}) {
+            Command result = cmdParser.parse(new String[] {"install", "owner/repo", option});
+            assertEquals(Command.USAGE, result, option);
+        }
+    }
 }

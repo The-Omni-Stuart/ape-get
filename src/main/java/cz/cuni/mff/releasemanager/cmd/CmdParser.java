@@ -16,7 +16,12 @@ public class CmdParser {
     private boolean assumeYes;
     private boolean requireSignature;
     private boolean allowSignerChange;
+    private boolean dryRun;
+    private boolean json;
+    private boolean quiet;
     private String provider;
+    private String asset;
+    private String version;
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -29,7 +34,12 @@ public class CmdParser {
         assumeYes = false;
         requireSignature = false;
         allowSignerChange = false;
+        dryRun = false;
+        json = false;
+        quiet = false;
         provider = null;
+        asset = null;
+        version = null;
         List<String> filtered = new ArrayList<>(args.length);
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -41,11 +51,27 @@ public class CmdParser {
                 requireSignature = true;
             } else if ("--allow-signer-change".equals(arg)) {
                 allowSignerChange = true;
+            } else if ("--dry-run".equals(arg)) {
+                dryRun = true;
+            } else if ("--json".equals(arg)) {
+                json = true;
+            } else if ("--quiet".equals(arg)) {
+                quiet = true;
             } else if ("--provider".equals(arg)) {
                 if (i + 1 >= args.length) {
                     return usage("Missing value for --provider");
                 }
                 provider = args[++i];
+            } else if ("--asset".equals(arg)) {
+                if (i + 1 >= args.length) {
+                    return usage("Missing value for --asset");
+                }
+                asset = args[++i];
+            } else if ("--version".equals(arg)) {
+                if (i + 1 >= args.length) {
+                    return usage("Missing value for --version");
+                }
+                version = args[++i];
             } else {
                 filtered.add(arg);
             }
@@ -127,6 +153,41 @@ public class CmdParser {
      */
     public String getProvider() {
         return provider;
+    }
+
+    /**
+     * @return asset name from --asset, or null
+     */
+    public String getAsset() {
+        return asset;
+    }
+
+    /**
+     * @return release tag from --version, or null
+     */
+    public String getVersion() {
+        return version;
+    }
+
+    /**
+     * @return true if the last parse saw --dry-run
+     */
+    public boolean isDryRun() {
+        return dryRun;
+    }
+
+    /**
+     * @return true if the last parse saw --json
+     */
+    public boolean isJson() {
+        return json;
+    }
+
+    /**
+     * @return true if the last parse saw --quiet
+     */
+    public boolean isQuiet() {
+        return quiet;
     }
 
     /**

@@ -354,6 +354,134 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteInstallUsesRequestedVersion() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getVersion()).thenReturn("v1.2.3");
+
+        Asset asset = new Asset("http://url", "example.exe");
+        Path downloaded = Path.of("/tmp/downloaded.exe");
+        when(mockGithubClient.getRelease("user/example", "v1.2.3"))
+            .thenReturn(new ReleaseAssets(
+                "v1.2.3", 11L, List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
+            .thenReturn(Path.of("/ProgramFiles/example.exe"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient, never()).getLatestRelease(any());
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals("v1.2.3", captor.getValue().version());
+        assertEquals(11L, captor.getValue().releaseId());
+    }
+
+    @Test
+    void testExecuteInstallSelectsAssetByName() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getAsset()).thenReturn("app-x86_64.AppImage");
+
+        Asset first = new Asset("http://url/one", "app-aarch64.AppImage");
+        Asset chosen = new Asset("http://url/two", "app-x86_64.AppImage");
+        Path downloaded = Path.of("/tmp/downloaded.AppImage");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(first, chosen), List.of(first, chosen)));
+        when(mockGithubClient.downloadAsset(chosen)).thenReturn(downloaded);
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified(chosen.name(), "checksum"));
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
+            .thenReturn(Path.of("/home/user/.local/bin/example"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient).downloadAsset(chosen);
+        verify(mockGithubClient, never()).downloadAsset(first);
+    }
+
+    @Test
+    void testExecuteInstallSelectsAssetByIndex() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getAsset()).thenReturn("2");
+
+        Asset first = new Asset("http://url/one", "app-aarch64.AppImage");
+        Asset second = new Asset("http://url/two", "app-x86_64.AppImage");
+        Path downloaded = Path.of("/tmp/downloaded.AppImage");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(first, second), List.of(first, second)));
+        when(mockGithubClient.downloadAsset(second)).thenReturn(downloaded);
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified(second.name(), "checksum"));
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
+            .thenReturn(Path.of("/home/user/.local/bin/example"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient).downloadAsset(second);
+        verify(mockGithubClient, never()).downloadAsset(first);
+    }
+
+    @Test
+    void testExecuteInstallRejectsUnknownAsset() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getAsset()).thenReturn("missing.AppImage");
+
+        Asset asset = new Asset("http://url", "app.AppImage");
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+
+        assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        verify(mockGithubClient, never()).downloadAsset(any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
+    }
+
+    @Test
+    void testExecuteInstallPassesVersionToPlatformHandler() throws Exception {
+        Command cmd = Command.INSTALL;
+        cmd.argument = "user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getVersion()).thenReturn("v1.2.3");
+
+        Asset asset = new Asset("http://url", "example.AppImage");
+        Path downloaded = Path.of("/tmp/downloaded.AppImage");
+        Path versioned = Path.of("/state/versions/v1.2.3/example.AppImage");
+        when(mockGithubClient.getRelease("user/example", "v1.2.3"))
+            .thenReturn(new ReleaseAssets("v1.2.3", 1L, List.of(asset), List.of(asset)));
+        when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
+        when(mockVerifier.verify(any(), any(), any(), any()))
+            .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
+            .thenReturn(versioned);
+        when(mockPlatformHandler.launcherPath("user/example"))
+            .thenReturn(Path.of("/home/user/.local/bin/example"));
+
+        assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
+
+        ArgumentCaptor<cz.cuni.mff.releasemanager.platform.InstallRequest> request =
+            ArgumentCaptor.forClass(cz.cuni.mff.releasemanager.platform.InstallRequest.class);
+        verify(mockPlatformHandler).install(request.capture());
+        assertEquals("v1.2.3", request.getValue().version());
+        assertEquals("github", request.getValue().provider());
+        assertEquals("user/example", request.getValue().repoFullName());
+
+        ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
+        verify(mockStateStore).saveManifest(captor.capture());
+        assertEquals(versioned.toString(), captor.getValue().install().path());
+        assertEquals(Path.of("/home/user/.local/bin/example").toString(),
+            captor.getValue().install().uninstall().path());
+    }
+
+    @Test
     void testExecuteInstall() throws Exception {
         Command cmd = Command.INSTALL;
         cmd.argument = "user/example";
@@ -366,14 +494,14 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).downloadAsset(asset);
         verify(mockVerifier).verify(any(), any(), any(), any());
-        verify(mockPlatformHandler).install(downloaded, "user/example");
+        verify(mockPlatformHandler).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
 
         ArgumentCaptor<AppManifest> manifestCaptor = ArgumentCaptor.forClass(AppManifest.class);
         verify(mockStateStore).saveManifest(manifestCaptor.capture());
@@ -403,7 +531,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), checksum.name()));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
@@ -432,7 +560,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -458,7 +586,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
     @Test
@@ -476,12 +604,12 @@ class ReleaseManagerTest {
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
         when(mockSignatureVerifier.verify(any(), any(), any(), any()))
             .thenReturn(SignatureResult.missing("example.exe"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
 
-        verify(mockPlatformHandler).install(downloaded, "user/example");
+        verify(mockPlatformHandler).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
     @Test
@@ -497,7 +625,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"install", "user/example"}));
@@ -520,7 +648,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/example.exe"));
 
         assertEquals(0, releaseManager.execute(
@@ -655,7 +783,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(installed);
         String productCode = "{11111111-2222-3333-4444-555555555555}";
         when(mockPlatformHandler.productCode(installed)).thenReturn(productCode);
@@ -708,13 +836,13 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockGithubClient).downloadAsset(newAsset);
-        verify(mockPlatformHandler).install(downloaded, "user/example");
+        verify(mockPlatformHandler).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockBackupManager).createAndPrune(any(), anyInt());
         ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
@@ -749,7 +877,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockBackupManager, never()).createAndPrune(any(), anyInt());
         verify(mockStateStore, never()).saveManifest(any());
@@ -776,7 +904,7 @@ class ReleaseManagerTest {
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
         when(mockSignatureVerifier.verify(any(), any(), any(), any()))
             .thenReturn(SignatureResult.verified("example.exe", "gpg", "Test Signer", "FPR"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
@@ -810,7 +938,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockGithubClient).discardAsset(downloaded);
     }
 
@@ -837,7 +965,7 @@ class ReleaseManagerTest {
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
         when(mockSignatureVerifier.verify(any(), any(), any(), any()))
             .thenReturn(SignatureResult.verified("example.exe", "gpg", "New Signer", "NEW"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
@@ -874,7 +1002,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockStateStore, never()).saveManifest(any());
     }
@@ -902,7 +1030,7 @@ class ReleaseManagerTest {
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
         when(mockSignatureVerifier.verify(any(), any(), any(), any()))
             .thenReturn(SignatureResult.missing("example.exe"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
@@ -936,7 +1064,7 @@ class ReleaseManagerTest {
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockGithubClient).discardAsset(downloaded);
     }
 
@@ -957,7 +1085,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example"))
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class)))
             .thenReturn(Path.of("/ProgramFiles/uninstall.exe"));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "user/example"}));
@@ -965,7 +1093,7 @@ class ReleaseManagerTest {
         InOrder inOrder = inOrder(mockGithubClient, mockVerifier, mockPlatformHandler);
         inOrder.verify(mockGithubClient).downloadAsset(newAsset);
         inOrder.verify(mockVerifier).verify(any(), any(), any(), any());
-        inOrder.verify(mockPlatformHandler).install(downloaded, "user/example");
+        inOrder.verify(mockPlatformHandler).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockPlatformHandler, never()).uninstall(any());
         verify(mockStateStore).saveManifest(any());
     }
@@ -987,12 +1115,12 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example")).thenReturn(null);
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class))).thenReturn(null);
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockPlatformHandler, never()).uninstall(any());
-        verify(mockPlatformHandler).install(downloaded, "user/example");
+        verify(mockPlatformHandler).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -1019,7 +1147,7 @@ class ReleaseManagerTest {
 
         verify(mockGithubClient).discardAsset(downloaded);
         verify(mockPlatformHandler, never()).uninstall(any());
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -1041,7 +1169,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"update", "user/example"}));
 
         verify(mockPlatformHandler, never()).uninstall(any());
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
         verify(mockStateStore, never()).saveManifest(any());
     }
 
@@ -1096,7 +1224,7 @@ class ReleaseManagerTest {
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
-        when(mockPlatformHandler.install(downloaded, "user/example")).thenReturn(null);
+        when(mockPlatformHandler.install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class))).thenReturn(null);
 
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
     }
@@ -1118,7 +1246,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
     @Test
@@ -1138,7 +1266,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
     @Test
@@ -1161,7 +1289,7 @@ class ReleaseManagerTest {
         assertEquals(1, releaseManager.execute(new String[]{"install", "user/example"}));
 
         verify(mockGithubClient).discardAsset(downloaded);
-        verify(mockPlatformHandler, never()).install(any(), any());
+        verify(mockPlatformHandler, never()).install(any(cz.cuni.mff.releasemanager.platform.InstallRequest.class));
     }
 
     @Test

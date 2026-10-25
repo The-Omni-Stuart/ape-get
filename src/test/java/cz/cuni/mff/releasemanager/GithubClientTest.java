@@ -58,6 +58,30 @@ class GithubClientTest {
     }
 
     @Test
+    void fetchesReleaseByTag() throws Exception {
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("""
+            { "id": 7, "tag_name": "v1.2.3", "assets": [
+              { "name": "app.bin", "browser_download_url": "https://example.invalid/app" }
+            ] }
+            """);
+        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
+            .thenReturn(mockResponse);
+        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".bin"});
+
+        ReleaseAssets release = githubClient.getRelease("owner/repo", "v1.2.3");
+
+        assertEquals("v1.2.3", release.version());
+        assertEquals(7L, release.releaseId());
+        assertEquals(1, release.all().size());
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(mockHttpClient).send(captor.capture(), eq(HttpResponse.BodyHandlers.ofString()));
+        assertEquals("/repos/owner/repo/releases/tags/v1.2.3",
+            captor.getValue().uri().getPath());
+    }
+
+    @Test
     void followsRedirectsWithoutAllowingHttpsDowngrade() throws Exception {
         GithubClient client = new GithubClient();
         Field clientField = GithubClient.class.getDeclaredField("client");

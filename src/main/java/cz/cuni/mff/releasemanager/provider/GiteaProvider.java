@@ -85,7 +85,49 @@ public final class GiteaProvider implements ReleaseProvider {
             .filter(candidate -> !candidate.draft() && !candidate.prerelease())
             .findFirst()
             .orElseThrow(() -> new IOException("No published release found for " + path));
+        return toReleaseAssets(release);
+    }
 
+    @Override
+    public ReleaseAssets release(String path, String tag)
+        throws IOException, InterruptedException {
+        String[] parts = path.split("/");
+        if (parts.length != 2) {
+            throw new IOException("Gitea supports owner/repo paths, got: " + path);
+        }
+        String encodedTag = URLEncoder.encode(tag, StandardCharsets.UTF_8)
+            .replace("+", "%20");
+        String url = config.resolvedApi() + "/repos/" + parts[0] + "/" + parts[1]
+            + "/releases/tags/" + encodedTag;
+        GiteaRelease release = fetchRelease(url, path);
+        if (release.draft()) {
+            throw new IOException("Release " + tag + " is a draft");
+        }
+        return toReleaseAssets(release);
+    }
+
+    private GiteaRelease fetchRelease(String url, String path)
+        throws IOException, InterruptedException {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+            .header("Accept", "application/json")
+            .header("User-Agent", "ape-get")
+            .timeout(API_TIMEOUT)
+            .GET();
+        token().ifPresent(value -> builder.header("Authorization", "token " + value));
+
+        HttpResponse<String> response = client.send(
+            builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 401 || response.statusCode() == 403) {
+            throw new IOException("Gitea authentication failed for " + config.name());
+        }
+        if (response.statusCode() != 200) {
+            throw new IOException(
+                "Gitea API returned " + response.statusCode() + " for " + path);
+        }
+        return MAPPER.readValue(response.body(), GiteaRelease.class);
+    }
+
+    private ReleaseAssets toReleaseAssets(GiteaRelease release) {
         List<Asset> all = release.assets() == null
             ? List.of()
             : release.assets().stream()

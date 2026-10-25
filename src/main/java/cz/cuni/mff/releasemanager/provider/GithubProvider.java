@@ -30,6 +30,11 @@ public final class GithubProvider implements ReleaseProvider {
     }
 
     @Override
+    public ReleaseAssets release(String path, String tag) throws IOException, InterruptedException {
+        return githubClient.getRelease(path, tag);
+    }
+
+    @Override
     public Path download(Asset asset) throws IOException, InterruptedException {
         return githubClient.downloadAsset(asset);
     }

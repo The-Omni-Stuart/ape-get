@@ -58,6 +58,39 @@ public abstract class PlatformHandler {
     public abstract Path install(Path asset, String repoFullName);
 
     /**
+     * Installs the asset using the full request, including the provider and version.
+     * @param request install operation
+     * @return Path to the live installed file
+     */
+    public Path install(InstallRequest request) {
+        return install(request.asset(), request.repoFullName());
+    }
+
+    /**
+     * @param repoFullName repository in owner/name form
+     * @return stable launcher path when the platform uses one, otherwise null
+     */
+    public Path launcherPath(String repoFullName) {
+        return null;
+    }
+
+    /**
+     * Re-points platform links after a backup has been restored.
+     * @param manifest manifest of the restored release
+     * @param restoredPath path the backup artifact was restored to
+     */
+    public void activateRestored(AppManifest manifest, Path restoredPath) {
+        // platforms without versioned installs need no extra step
+    }
+
+    /**
+     * @return paths used for per-app state
+     */
+    protected AppPaths statePaths() {
+        return stateStore.paths();
+    }
+
+    /**
      * Uninstalls the asset.
      * @param asset Path to the asset to uninstall.
      * @return true if the asset is gone, false if it could not be removed.
@@ -135,14 +168,30 @@ public abstract class PlatformHandler {
     protected boolean isOwnedByAnotherRepo(Path target, String repoFullName) {
         try {
             Path normalizedTarget = target.toAbsolutePath().normalize();
-            return stateStore.scanManifests().stream()
-                .filter(manifest -> !manifest.repo().equals(repoFullName))
-                .map(manifest -> Path.of(manifest.install().path())
-                    .toAbsolutePath()
-                    .normalize())
-                .anyMatch(path -> path.equals(normalizedTarget) || path.startsWith(normalizedTarget));
+            for (AppManifest manifest : stateStore.scanManifests()) {
+                if (manifest.repo() == null || manifest.repo().equals(repoFullName)
+                    || manifest.install() == null) {
+                    continue;
+                }
+                if (owns(manifest.install().path(), normalizedTarget)) {
+                    return true;
+                }
+                AppManifest.Uninstall uninstall = manifest.install().uninstall();
+                if (uninstall != null && owns(uninstall.path(), normalizedTarget)) {
+                    return true;
+                }
+            }
+            return false;
         } catch (IOException | InvalidPathException e) {
             return true;
         }
+    }
+
+    private static boolean owns(String path, Path normalizedTarget) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        Path owned = Path.of(path).toAbsolutePath().normalize();
+        return owned.equals(normalizedTarget) || owned.startsWith(normalizedTarget);
     }
 }

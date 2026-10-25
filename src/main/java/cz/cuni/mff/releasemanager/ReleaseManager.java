@@ -320,22 +320,27 @@ public class ReleaseManager {
     }
 
     private ReleaseAssets latest(ReleaseProvider provider, String path) {
+        String version = cmdParser.getVersion();
         try {
-            return provider.latest(path);
+            return version == null || version.isBlank()
+                ? provider.latest(path)
+                : provider.release(path, version);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            System.err.println("Failed to read the latest release: " + e.getMessage());
+            System.err.println("Failed to read release: " + e.getMessage());
             return null;
         }
     }
 
     private Path installDownloaded(
-        ReleaseProvider provider, Path downloaded, String repoPath) {
+        ReleaseProvider provider, Path downloaded, RepoRef ref, String version) {
         Path installed = null;
         try {
-            installed = platformHandler.install(downloaded, repoPath);
+            installed = platformHandler.install(
+                new cz.cuni.mff.releasemanager.platform.InstallRequest(
+                    downloaded, ref.provider(), ref.path(), version));
         } finally {
             if (!downloaded.equals(installed)) {
                 provider.discardAsset(downloaded);
@@ -475,10 +480,13 @@ public class ReleaseManager {
         }
         ReleaseAssets release = latest(provider, ref.path());
         if (release == null || release.installable().isEmpty()) {
-            System.err.println("Failed to retrieve the latest release.");
+            System.err.println("Failed to retrieve the release.");
             return false;
         }
-        Asset asset = getSingleAsset(release.installable());
+        Asset asset = selectAsset(release.installable());
+        if (asset == null) {
+            return false;
+        }
         Path downloadedAsset = download(provider, asset);
         if (downloadedAsset == null) {
             return false;
@@ -495,7 +503,8 @@ public class ReleaseManager {
         if (!isSignerAllowed(previous, signature, downloadedAsset, "install")) {
             return false;
         }
-        Path installedAsset = installDownloaded(provider, downloadedAsset, ref.path());
+        Path installedAsset = installDownloaded(
+            provider, downloadedAsset, ref, release.version());
         if (installedAsset == null) {
             System.err.println("Installation failed.");
             return false;
@@ -684,6 +693,8 @@ public class ReleaseManager {
         Instant installedAt,
         List<AppManifest.Backup> backups
     ) {
+        Path launcher = platformHandler.launcherPath(ref.path());
+        Path uninstallPath = launcher == null ? installed : launcher;
         return new AppManifest(
             AppManifest.KIND,
             AppManifest.SCHEMA_VERSION,
@@ -703,7 +714,8 @@ public class ReleaseManager {
                 installed.toString(),
                 stateStore.paths().appDir(ref.provider(), ref.path()).toString(),
                 new AppManifest.Uninstall(
-                    installed.toString(), List.of(), platformHandler.productCode(installed))),
+                    uninstallPath.toString(), List.of(),
+                    platformHandler.productCode(installed))),
             new AppManifest.Verification(
                 verification.status().name().toLowerCase(Locale.ROOT),
                 "sha256",
@@ -752,6 +764,35 @@ public class ReleaseManager {
             return "dmg";
         }
         return "unknown";
+    }
+
+    private Asset selectAsset(List<Asset> assets) {
+        String requested = cmdParser.getAsset();
+        if (requested == null || requested.isBlank()) {
+            return getSingleAsset(assets);
+        }
+        String value = requested.trim();
+        if (value.matches("\\d+")) {
+            int index;
+            try {
+                index = Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                index = -1;
+            }
+            if (index >= 1 && index <= assets.size()) {
+                return assets.get(index - 1);
+            }
+        }
+        for (Asset asset : assets) {
+            if (asset.name().equalsIgnoreCase(value)) {
+                return asset;
+            }
+        }
+        System.err.println("No installable asset named '" + value + "'. Available assets:");
+        for (int i = 0; i < assets.size(); i++) {
+            System.err.println("  " + (i + 1) + ": " + assets.get(i).name());
+        }
+        return null;
     }
 
     /**
@@ -1412,14 +1453,22 @@ public class ReleaseManager {
             return false;
         }
         Asset newAsset = null;
-        for (Asset asset : assets) {
-            if (asset.name().equals(previous.asset().name())) {
-                newAsset = asset;
-                break;
+        String requestedAsset = cmdParser.getAsset();
+        if (requestedAsset != null && !requestedAsset.isBlank()) {
+            newAsset = selectAsset(assets);
+            if (newAsset == null) {
+                return false;
             }
-        }
-        if (newAsset == null) {
-            newAsset = getSingleAsset(assets);
+        } else {
+            for (Asset asset : assets) {
+                if (asset.name().equals(previous.asset().name())) {
+                    newAsset = asset;
+                    break;
+                }
+            }
+            if (newAsset == null) {
+                newAsset = getSingleAsset(assets);
+            }
         }
         if (previous.asset().url().equals(newAsset.url())) {
             System.out.println("Already up to date.");
@@ -1458,7 +1507,8 @@ public class ReleaseManager {
             }
         }
 
-        Path installedAsset = installDownloaded(provider, downloadedAsset, ref.path());
+        Path installedAsset = installDownloaded(
+            provider, downloadedAsset, ref, latest.version());
         if (installedAsset == null) {
             System.err.println("Installation failed.");
             return false;
@@ -1625,13 +1675,18 @@ public class ReleaseManager {
         }
 
         AppManifest restored;
+        Path restoreTarget;
         try {
             restored = backupManager.readManifest(backup);
             if (restored == null || !restored.isValid()) {
                 System.err.println("Backup manifest is invalid.");
                 return false;
             }
-            backupManager.restore(backup, Path.of(current.install().path()));
+            restoreTarget = backup.installPath() == null || backup.installPath().isBlank()
+                ? Path.of(current.install().path())
+                : Path.of(backup.installPath());
+            backupManager.restore(backup, restoreTarget);
+            platformHandler.activateRestored(restored, restoreTarget);
         } catch (IOException e) {
             System.err.println("Rollback failed: " + e.getMessage());
             return false;
@@ -1889,6 +1944,11 @@ public class ReleaseManager {
         out.println("  --require-signature - fail when no verified signature is available");
         out.println("  --allow-signer-change - accept a changed signer after confirmation");
         out.println("  --provider <name> - use a configured provider for search");
+        out.println("  --asset <name|index> - choose a release asset non-interactively");
+        out.println("  --version <tag> - install or update to a specific release");
+        out.println("  --dry-run - show what would happen without changing anything");
+        out.println("  --json - machine-readable output");
+        out.println("  --quiet - suppress progress messages");
         out.println("  --yes - assume yes for confirmation prompts");
     }
 }

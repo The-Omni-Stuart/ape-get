@@ -80,6 +80,40 @@ class GitLabProviderTest {
 
     @Test
     @Timeout(60)
+    void readsReleaseByTag() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v4/projects", exchange -> {
+            requestedPath.set(exchange.getRequestURI().getRawPath());
+            byte[] bytes = """
+                { "tag_name": "v1.2.3", "upcoming_release": false,
+                  "assets": { "links": [
+                    { "name": "app.bin", "url": "https://example.invalid/file",
+                      "direct_asset_url": "http://127.0.0.1/download/file" }
+                  ] } }
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+
+        ProviderConfig config = new ProviderConfig(
+            "gitlab", "https://gitlab.example", apiBase(), null);
+        GitLabProvider provider = new GitLabProvider(config, HttpClient.newHttpClient());
+
+        ReleaseAssets release = provider.release("group/subgroup/project", "v1.2.3");
+
+        assertEquals("v1.2.3", release.version());
+        assertEquals(1, release.all().size());
+        assertTrue(requestedPath.get().endsWith("/releases/v1.2.3"),
+            requestedPath.get());
+        assertTrue(requestedPath.get().contains("group%2Fsubgroup%2Fproject"),
+            requestedPath.get());
+    }
+
+    @Test
+    @Timeout(60)
     void searchesProjects() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/v4/projects", exchange -> {

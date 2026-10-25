@@ -77,6 +77,34 @@ class GiteaProviderTest {
 
     @Test
     @Timeout(60)
+    void readsReleaseByTag() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/repos/owner/repo/releases/tags/v1.2.3", exchange -> {
+            byte[] bytes = """
+                { "id": 42, "tag_name": "v1.2.3", "draft": false, "prerelease": false,
+                  "assets": [ { "name": "app.bin",
+                    "browser_download_url": "http://127.0.0.1/download/app" } ] }
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+
+        ProviderConfig config = new ProviderConfig(
+            "gitea", "https://example.invalid", apiBase(), null);
+        GiteaProvider provider = new GiteaProvider(config, HttpClient.newHttpClient());
+
+        ReleaseAssets release = provider.release("owner/repo", "v1.2.3");
+
+        assertEquals("v1.2.3", release.version());
+        assertEquals(42L, release.releaseId());
+        assertEquals(1, release.all().size());
+    }
+
+    @Test
+    @Timeout(60)
     void searchesRepositories() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/v1/repos/search", exchange -> {

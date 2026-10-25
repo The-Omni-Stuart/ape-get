@@ -134,10 +134,34 @@ public class GithubClient {
         String repo = parts[1];
 
         String url = apiBase + "/repos/" + owner + "/" + repo + "/releases/latest";
+        return fetchRelease(url, "No releases found for this repository.");
+    }
+
+    /**
+     * Retrieves a specific release by tag.
+     * @param repoFullName The full name of the repository (owner/repo).
+     * @param tag Release tag name.
+     * @return all assets and the installable subset
+     */
+    public ReleaseAssets getRelease(String repoFullName, String tag) {
+        String[] parts = repoFullName.split("/");
+        if (parts.length != 2) {
+            return new ReleaseAssets(List.of(), List.of());
+        }
+        String owner = parts[0];
+        String repo = parts[1];
+        String encodedTag = URLEncoder.encode(tag, StandardCharsets.UTF_8)
+            .replace("+", "%20");
+        String url = apiBase + "/repos/" + owner + "/" + repo
+            + "/releases/tags/" + encodedTag;
+        return fetchRelease(url, "Release " + tag + " was not found.");
+    }
+
+    private ReleaseAssets fetchRelease(String url, String emptyMessage) {
         try {
             var jsonResponse = request(URI.create(url));
             if (jsonResponse.isEmpty()) {
-                System.err.println("No releases found for this repository.");
+                System.err.println(emptyMessage);
                 return new ReleaseAssets(List.of(), List.of());
             }
             ObjectMapper mapper = new ObjectMapper();
@@ -149,6 +173,9 @@ public class GithubClient {
             }
             return new ReleaseAssets(release.tagName(), release.id(), all, installable);
         } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             System.err.println(ex.getMessage());
             return new ReleaseAssets(List.of(), List.of());
         }

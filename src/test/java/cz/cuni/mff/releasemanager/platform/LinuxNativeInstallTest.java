@@ -15,6 +15,9 @@ import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import cz.cuni.mff.releasemanager.state.AppPaths;
+import cz.cuni.mff.releasemanager.state.StateStore;
+
 @EnabledOnOs(OS.LINUX)
 class LinuxNativeInstallTest {
 
@@ -22,10 +25,12 @@ class LinuxNativeInstallTest {
     Path tempDir;
 
     private LinuxHandler handler;
+    private AppPaths paths;
 
     @BeforeEach
     void setUp() {
-        handler = LinuxHandler.getInstance();
+        paths = new AppPaths(tempDir.resolve("state"));
+        handler = new LinuxHandler(new StateStore(paths));
         handler.setInstallRoot(tempDir.resolve("bin"));
     }
 
@@ -41,16 +46,24 @@ class LinuxNativeInstallTest {
         Files.setPosixFilePermissions(asset,
             PosixFilePermissions.fromString("rwxr-xr-x"));
 
-        Path installed = handler.install(asset, "owner/native");
+        Path installed = handler.install(
+            new InstallRequest(asset, "github", "owner/native", "v1.0.0"));
 
         assertNotNull(installed);
-        assertEquals(tempDir.resolve("bin").resolve("owner__native"), installed);
+        assertEquals(paths.appDir("github", "owner/native")
+            .resolve("versions/v1.0.0/native.AppImage"), installed);
         assertTrue(Files.isRegularFile(installed));
         assertTrue(Files.isExecutable(installed));
         assertEquals("#!/bin/sh\necho native\n", Files.readString(installed));
         assertFalse(Files.exists(asset));
 
-        assertTrue(handler.uninstall(installed));
-        assertFalse(Files.exists(installed));
+        Path launcher = handler.launcherPath("owner/native");
+        assertEquals(tempDir.resolve("bin").resolve("owner__native"), launcher);
+        assertTrue(Files.isSymbolicLink(launcher));
+        assertEquals("#!/bin/sh\necho native\n", Files.readString(launcher));
+
+        assertTrue(handler.uninstall(launcher));
+        assertFalse(Files.exists(launcher));
+        assertTrue(Files.isRegularFile(installed));
     }
 }

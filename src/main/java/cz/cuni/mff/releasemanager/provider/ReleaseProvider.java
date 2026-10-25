@@ -22,6 +22,16 @@ public interface ReleaseProvider {
     ReleaseAssets latest(String path) throws IOException, InterruptedException;
 
     /**
+     * Reads a specific release by tag.
+     * @param path repository path on the provider
+     * @param tag release tag
+     * @return all assets and the installable subset
+     * @throws IOException if the provider request fails
+     * @throws InterruptedException if the request is interrupted
+     */
+    ReleaseAssets release(String path, String tag) throws IOException, InterruptedException;
+
+    /**
      * @param asset asset to download
      * @return local temporary file
      * @throws IOException if the download fails
