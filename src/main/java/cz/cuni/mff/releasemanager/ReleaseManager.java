@@ -2273,7 +2273,8 @@ public class ReleaseManager {
         List<String> orphans = new ArrayList<>();
         try (var files = Files.list(liveRoot)) {
             List<AppManifest> manifests = stateStore.scanManifests();
-            for (Path file : files.filter(Files::isRegularFile).toList()) {
+            for (Path file : files.filter(file ->
+                Files.isRegularFile(file) || Files.isSymbolicLink(file)).toList()) {
                 String name = file.getFileName().toString();
                 boolean tracked = manifests.stream().anyMatch(manifest ->
                     AppPaths.repoDirectoryName(manifest.repo()).equals(name));

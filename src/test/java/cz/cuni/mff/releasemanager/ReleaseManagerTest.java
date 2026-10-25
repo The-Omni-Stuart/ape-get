@@ -2153,6 +2153,20 @@ class ReleaseManagerTest {
     }
 
     @Test
+    void testExecuteDoctorFindsBrokenLauncherSymlink() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            !System.getProperty("os.name").toLowerCase().contains("win"));
+        Command cmd = Command.DOCTOR;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        AppPaths paths = tempPaths();
+        Path bin = Files.createDirectories(paths.root().resolve("bin"));
+        Files.createSymbolicLink(bin.resolve("owner__repo"), bin.resolve("missing"));
+        when(mockPlatformHandler.getInstallRoot()).thenReturn(bin);
+
+        assertEquals(1, releaseManager.execute(new String[]{"doctor"}));
+    }
+
+    @Test
     void testExecuteAdoptWritesManifest() throws Exception {
         Command cmd = Command.ADOPT;
         cmd.argument = "owner/repo";
