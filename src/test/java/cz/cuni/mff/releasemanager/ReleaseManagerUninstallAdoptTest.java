@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.never;
@@ -90,6 +91,29 @@ class ReleaseManagerUninstallAdoptTest extends ReleaseManagerTestSupport {
         verify(mockPlatformHandler).uninstall(uninstallPath);
         verify(mockStateStore).removeManifest(new RepoRef("github", "user/example"));
         verify(mockStateStore).rebuildIndex();
+    }
+
+    @Test
+    void testExecuteUninstallCanBeDeclined() throws IOException {
+        Command cmd = Command.UNINSTALL;
+        cmd.argument = "github:user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+
+        AppManifest manifest = manifest(
+            "user/example", "http://url", "example.exe", "/ProgramFiles/uninstall.exe");
+        Path uninstallPath = Path.of("/ProgramFiles/uninstall.exe");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(manifest));
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+
+        int[] code = new int[1];
+        String error = captureErr(() -> code[0] = releaseManager.execute(
+            new String[]{"uninstall", "github:user/example"}));
+
+        assertEquals(1, code[0]);
+        assertTrue(error.contains("Uninstall declined"), error);
+        verify(mockPlatformHandler, never()).uninstall(any(Path.class));
+        verify(mockStateStore, never()).removeManifest(any(RepoRef.class));
     }
 
     @Test

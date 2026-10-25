@@ -1,5 +1,7 @@
 package cz.cuni.mff.releasemanager.install;
 
+import cz.cuni.mff.releasemanager.cmd.Confirmation;
+
 // the collaborators one install or update needs, built per command
 public record InstallComponents(
     ReleaseFetcher fetcher,
@@ -9,4 +11,5 @@ public record InstallComponents(
     InstallReporter reporter,
     TrustGateFactory trust,
     BackupService backups,
-    PlatformInstaller platform) {}
+    PlatformInstaller platform,
+    Confirmation confirmation) {}

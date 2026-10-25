@@ -1,7 +1,6 @@
 package cz.cuni.mff.releasemanager.provider;
 
 import java.io.IOException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -59,7 +58,7 @@ public final class SearchCommand {
             }
             Output.info("Searching " + adapters.size() + " provider(s)...");
             return printSearchResults(searchService.searchAll(
-                adapters, command.argument, Duration.ofSeconds(10)));
+                adapters, command.argument, NetworkSettings.apiTimeout()));
         }
 
         ReleaseProvider provider = resolveProvider.resolve(providerName);
@@ -73,7 +72,7 @@ public final class SearchCommand {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            Output.error("Search failed: " + e.getMessage());
+            ProviderNotices.reportFailure(providerName, e);
             return false;
         }
         List<Repo> items = result.items() == null ? List.of() : result.items();
@@ -116,9 +115,7 @@ public final class SearchCommand {
             Output.json(new SearchReport(hits, errors));
             return succeeded > 0;
         }
-        for (SearchError error : errors) {
-            Output.error("Warning: " + error.provider() + ": " + error.error());
-        }
+        ProviderNotices.reportFailures(results);
         if (succeeded == 0) {
             Output.error("All provider searches failed.");
             return false;

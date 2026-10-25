@@ -160,6 +160,14 @@ class CmdParserTest {
     }
 
     @Test
+    void testParseShortAssumeYes() {
+        Command result = cmdParser.parse(new String[] {"install", "owner/repo", "-y"});
+
+        assertEquals(Command.INSTALL, result);
+        assertTrue(cmdParser.isAssumeYes());
+    }
+
+    @Test
     void testParseAssumeYesBeforeCommand() {
         Command result = cmdParser.parse(new String[] {"--yes", "install", "owner/repo"});
 

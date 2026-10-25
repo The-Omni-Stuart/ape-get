@@ -17,7 +17,7 @@ final class ProcessRngitCommand implements RngitCommand {
     public Result run(List<String> args, Path directory, Duration timeout)
         throws IOException, InterruptedException {
         if (!Executables.isAvailable("rngit")) {
-            throw new IOException(
+            throw new ProviderException(ProviderException.Reason.UNREACHABLE,
                 "rngit is not installed; install RNS with 'pip install rns'.");
         }
         ProcessBuilder builder = new ProcessBuilder();
@@ -28,17 +28,25 @@ final class ProcessRngitCommand implements RngitCommand {
         Path outputFile = Files.createTempFile("grm-rngit-output-", ".log");
         builder.redirectOutput(outputFile.toFile());
         long seconds = Math.max(1, timeout.toSeconds());
+        Process process = builder.start();
         try {
-            Process process = builder.start();
             process.getOutputStream().close();
             if (!process.waitFor(seconds, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                throw new IOException("rngit command timed out after " + seconds + "s");
+                throw new ProviderException(ProviderException.Reason.TIMEOUT,
+                    "rngit command timed out after " + seconds + "s");
             }
             String output = Files.readString(outputFile, StandardCharsets.UTF_8);
             return new Result(process.exitValue(), output);
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            throw e;
         } finally {
-            Files.deleteIfExists(outputFile);
+            try {
+                Files.deleteIfExists(outputFile);
+            } catch (IOException ignored) {
+                // the killed process may still hold the file on Windows
+            }
         }
     }
 }

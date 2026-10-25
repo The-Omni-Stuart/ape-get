@@ -21,7 +21,9 @@ import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -29,6 +31,50 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
+
+    @Test
+    void testExecuteUpdateCanBeDeclined() throws Exception {
+        Command cmd = Command.UPDATE;
+        cmd.argument = "github:user/example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+
+        AppManifest previous = manifest(
+            "user/example", "http://old", "example.exe", "/ProgramFiles/uninst.exe");
+        Asset newAsset = new Asset("http://newurl", "example.AppImage");
+        when(mockStateStore.findManifest(new RepoRef("github", "user/example")))
+            .thenReturn(Optional.of(previous));
+        when(mockGithubClient.getLatestRelease("user/example"))
+            .thenReturn(new ReleaseAssets(
+                "1.1.0", 2L, List.of(newAsset), List.of(newAsset)));
+
+        int[] code = new int[1];
+        String error = captureErr(() -> code[0] = releaseManager.execute(
+            new String[]{"update", "github:user/example"}));
+
+        assertEquals(1, code[0]);
+        assertTrue(error.contains("Update declined"), error);
+        verify(mockGithubClient, never()).downloadAsset(any());
+        verify(mockPlatformHandler, never()).install(any());
+    }
+
+    @Test
+    void testExecuteUpdateAllCanBeDeclined() throws Exception {
+        Command cmd = Command.UPDATE;
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.isAll()).thenReturn(true);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+        when(mockStateStore.scanManifests()).thenReturn(List.of(manifest(
+            "user/example", "http://old", "example.exe", "/ProgramFiles/uninst.exe")));
+
+        int[] code = new int[1];
+        String error = captureErr(() -> code[0] = releaseManager.execute(
+            new String[]{"update", "--all"}));
+
+        assertEquals(1, code[0]);
+        assertTrue(error.contains("Update declined"), error);
+        verify(mockGithubClient, never()).getLatestRelease(any());
+    }
 
     @Test
     void testExecuteUpdateSkipsBackupForWindowsNsis() throws Exception {

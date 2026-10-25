@@ -68,7 +68,7 @@ public final class AutoUpdater {
     }
 
     private void apply(UpdateChannel channel) {
-        boolean ok = installService.updateAll(false);
+        boolean ok = installService.updateAll(false, false);
         log.append("apply channel=" + channel.id() + ": "
             + (ok ? "completed" : "completed with errors"));
         Output.info(ok

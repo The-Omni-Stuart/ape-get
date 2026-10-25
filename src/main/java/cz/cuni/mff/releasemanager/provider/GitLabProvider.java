@@ -62,7 +62,8 @@ public final class GitLabProvider implements ReleaseProvider {
         GitLabRelease release = releases.stream()
             .filter(candidate -> !candidate.upcoming())
             .findFirst()
-            .orElseThrow(() -> new IOException("No published release found for " + path));
+            .orElseThrow(() -> new ProviderException(
+                ProviderException.Reason.NOT_FOUND, "no published release"));
         return toReleaseAssets(release);
     }
 

@@ -69,7 +69,7 @@ public class CmdParser {
             String arg = args[i];
             if ("--strict".equals(arg)) {
                 strict = true;
-            } else if ("--yes".equals(arg)) {
+            } else if ("--yes".equals(arg) || "-y".equals(arg)) {
                 assumeYes = true;
             } else if ("--require-signature".equals(arg)) {
                 requireSignature = true;

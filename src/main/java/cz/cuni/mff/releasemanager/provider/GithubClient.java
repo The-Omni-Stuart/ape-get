@@ -97,30 +97,25 @@ public class GithubClient {
     }
 
     // search repositories by name
-    public Optional<SearchResult> searchRepoByName(String name) {
+    public Optional<SearchResult> searchRepoByName(String name)
+        throws IOException, InterruptedException {
         String query = URLEncoder.encode(name, StandardCharsets.UTF_8);
         String url = apiBase + "/search/repositories?q=" + query + "&per_page=" + RESULT_COUNT;
-        try {
-            var jsonResponse = request(URI.create(url));
-            if (!jsonResponse.isPresent()) {
-                return Optional.empty();
-            }
-            String json = jsonResponse.get();
-            SearchResult searchResult = getSearchResult(json);
-            return Optional.ofNullable(searchResult);
-
-        } catch (IOException | InterruptedException ex) {
-            Output.error(ex.getMessage());
+        var jsonResponse = request(URI.create(url));
+        if (jsonResponse.isEmpty()) {
             return Optional.empty();
         }
+        return Optional.ofNullable(getSearchResult(jsonResponse.get()));
     }
 
     // latest release with all assets and the installable subset
-    public ReleaseAssets getLatestRelease(String repoFullName) {
+    public ReleaseAssets getLatestRelease(String repoFullName)
+        throws IOException, InterruptedException {
         return getLatestRelease(repoFullName, UpdateChannel.STABLE);
     }
 
-    public ReleaseAssets getLatestRelease(String repoFullName, UpdateChannel channel) {
+    public ReleaseAssets getLatestRelease(String repoFullName, UpdateChannel channel)
+        throws IOException, InterruptedException {
         String[] parts = repoFullName.split("/");
         if (parts.length != 2) {
             return new ReleaseAssets(List.of(), List.of());
@@ -137,7 +132,8 @@ public class GithubClient {
     }
 
     // one release by tag
-    public ReleaseAssets getRelease(String repoFullName, String tag) {
+    public ReleaseAssets getRelease(String repoFullName, String tag)
+        throws IOException, InterruptedException {
         String[] parts = repoFullName.split("/");
         if (parts.length != 2) {
             return new ReleaseAssets(List.of(), List.of());
@@ -151,59 +147,42 @@ public class GithubClient {
         return fetchRelease(url, "Release " + tag + " was not found.");
     }
 
-    private ReleaseAssets fetchRelease(String url, String emptyMessage) {
-        try {
-            var jsonResponse = request(URI.create(url));
-            if (jsonResponse.isEmpty()) {
-                Output.error(emptyMessage);
-                return new ReleaseAssets(List.of(), List.of());
-            }
-            ObjectMapper mapper = new ObjectMapper();
-            Release release = mapper.readValue(jsonResponse.get(), Release.class);
-            return toReleaseAssets(release);
-        } catch (IOException | InterruptedException ex) {
-            if (ex instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            Output.error(ex.getMessage());
+    private ReleaseAssets fetchRelease(String url, String emptyMessage)
+        throws IOException, InterruptedException {
+        var jsonResponse = request(URI.create(url));
+        if (jsonResponse.isEmpty()) {
+            Output.error(emptyMessage);
             return new ReleaseAssets(List.of(), List.of());
         }
+        ObjectMapper mapper = new ObjectMapper();
+        Release release = mapper.readValue(jsonResponse.get(), Release.class);
+        return toReleaseAssets(release);
     }
 
-    private ReleaseAssets fetchReleaseList(String url, String emptyMessage) {
-        try {
-            var jsonResponse = request(URI.create(url));
-            if (jsonResponse.isEmpty()) {
-                Output.error(emptyMessage);
-                return new ReleaseAssets(List.of(), List.of());
-            }
-            ObjectMapper mapper = new ObjectMapper();
-            List<Release> releases = mapper.readValue(
-                jsonResponse.get(), new TypeReference<List<Release>>() {});
-            Release release = releases.stream()
-                .filter(candidate -> !candidate.draft())
-                .findFirst()
-                .orElse(null);
-            if (release == null) {
-                Output.error(emptyMessage);
-                return new ReleaseAssets(List.of(), List.of());
-            }
-            return toReleaseAssets(release);
-        } catch (IOException | InterruptedException ex) {
-            if (ex instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            Output.error(ex.getMessage());
+    private ReleaseAssets fetchReleaseList(String url, String emptyMessage)
+        throws IOException, InterruptedException {
+        var jsonResponse = request(URI.create(url));
+        if (jsonResponse.isEmpty()) {
+            Output.error(emptyMessage);
             return new ReleaseAssets(List.of(), List.of());
         }
+        ObjectMapper mapper = new ObjectMapper();
+        List<Release> releases = mapper.readValue(
+            jsonResponse.get(), new TypeReference<List<Release>>() {});
+        Release release = releases.stream()
+            .filter(candidate -> !candidate.draft())
+            .findFirst()
+            .orElse(null);
+        if (release == null) {
+            Output.error(emptyMessage);
+            return new ReleaseAssets(List.of(), List.of());
+        }
+        return toReleaseAssets(release);
     }
 
     private ReleaseAssets toReleaseAssets(Release release) {
         List<Asset> all = release.assets() == null ? List.of() : release.assets();
         List<Asset> installable = filterInstallable(all);
-        if (installable.isEmpty()) {
-            Output.error("No suitable asset found for this repository.");
-        }
         return new ReleaseAssets(release.tagName(), release.id(), all, installable);
     }
 
@@ -235,7 +214,8 @@ public class GithubClient {
             handleResponseCode(response);
         } catch (TimeoutException e) {
             future.cancel(true);
-            throw new IOException(
+            throw new ProviderException(
+                ProviderException.Reason.TIMEOUT,
                 "download timed out after " + downloadTimeout().toSeconds() + "s", e);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
@@ -282,14 +262,19 @@ public class GithubClient {
         if (error instanceof HttpTimeoutException) {
             Duration timeout = "download".equals(action)
                 ? NetworkSettings.downloadTimeout() : NetworkSettings.apiTimeout();
-            return new IOException(
+            return new ProviderException(
+                ProviderException.Reason.TIMEOUT,
                 action + " timed out after " + timeout.toSeconds() + "s", error);
         }
         if (error instanceof UnknownHostException) {
-            return new IOException("could not resolve " + uri.getHost(), error);
+            return new ProviderException(
+                ProviderException.Reason.UNREACHABLE,
+                "could not resolve " + uri.getHost(), error);
         }
         if (error instanceof ConnectException) {
-            return new IOException("could not connect to " + uri.getHost(), error);
+            return new ProviderException(
+                ProviderException.Reason.UNREACHABLE,
+                "could not connect to " + uri.getHost(), error);
         }
         return error;
     }
@@ -303,12 +288,25 @@ public class GithubClient {
                 case 403 -> {
                     if (response.headers()
                         .firstValueAsLong("X-RateLimit-Remaining").orElse(-1) == 0) {
-                        handleRateLimit(response.headers());
-                        throw new IOException("Rate limit exceeded. Try again later.");
+                        throw new ProviderException(
+                            ProviderException.Reason.RATE_LIMITED,
+                            rateLimitMessage(response.headers()));
                     }
-                    throw new IOException("HTTP Error 403: " + body);
+                    if (body.toLowerCase(java.util.Locale.ROOT).contains("rate limit")) {
+                        throw new ProviderException(
+                            ProviderException.Reason.RATE_LIMITED,
+                            "Rate limit exceeded; try again later.");
+                    }
+                    throw new ProviderException(
+                        ProviderException.Reason.UNAUTHORIZED, "access denied");
                 }
-                case 404 -> throw new IOException("Resource not found: " + body);
+                case 401 -> throw new ProviderException(
+                    ProviderException.Reason.UNAUTHORIZED, "authentication failed");
+                case 404 -> throw new ProviderException(
+                    ProviderException.Reason.NOT_FOUND, "resource not found");
+                case 429 -> throw new ProviderException(
+                    ProviderException.Reason.RATE_LIMITED,
+                    "Rate limit exceeded; try again later.");
                 default -> throw new IOException("HTTP Error " + statusCode + ": " + body);
             }
         }
@@ -330,12 +328,12 @@ public class GithubClient {
     }
 
     // logs the quota reset time so the user knows when to retry
-    private void handleRateLimit(HttpHeaders headers) {
-        long remaining = headers.firstValueAsLong("X-RateLimit-Remaining").orElse(0);
+    private static String rateLimitMessage(HttpHeaders headers) {
         long resetTime = headers.firstValueAsLong("X-RateLimit-Reset").orElse(0);
-
-        Output.errorf("Rate limit exceeded: Remaining: %d, Reset: %tT UTC%n",
-            remaining, new Date(resetTime * 1000));
+        String suffix = resetTime > 0
+            ? String.format(" after %tT UTC", new Date(resetTime * 1000))
+            : " later";
+        return "Rate limit exceeded; try again" + suffix + ".";
     }
 
     // keep assets for this platform and architecture

@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
+import cz.cuni.mff.releasemanager.cmd.Confirmation;
 import cz.cuni.mff.releasemanager.install.UninstallService;
 import cz.cuni.mff.releasemanager.json.JsonViews.UninstallPlan;
 import cz.cuni.mff.releasemanager.json.JsonViews.UninstallResult;
@@ -19,12 +20,17 @@ public final class UninstallCommand {
     private final CmdParser cmdParser;
     private final StateStore stateStore;
     private final UninstallService uninstallService;
+    private final Confirmation confirmation;
 
     public UninstallCommand(
-        CmdParser cmdParser, StateStore stateStore, UninstallService uninstallService) {
+        CmdParser cmdParser,
+        StateStore stateStore,
+        UninstallService uninstallService,
+        Confirmation confirmation) {
         this.cmdParser = cmdParser;
         this.stateStore = stateStore;
         this.uninstallService = uninstallService;
+        this.confirmation = confirmation;
     }
 
     public boolean run(Command command) {
@@ -62,6 +68,10 @@ public final class UninstallCommand {
             return true;
         }
 
+        if (!confirmation.allowed("Uninstall",
+            ref.display() + " " + manifest.version() + " from " + uninstallPath)) {
+            return false;
+        }
         if (!uninstallService.remove(manifest)) {
             return false;
         }

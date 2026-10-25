@@ -19,7 +19,17 @@ import cz.cuni.mff.releasemanager.types.SearchResult;
  */
 public final class SearchService {
 
-    public record ProviderResult(String provider, List<Repo> repos, String error) {}
+    public record ProviderResult(
+        String provider,
+        List<Repo> repos,
+        String error,
+        ProviderException.Reason reason
+    ) implements ProviderFailure {
+        public ProviderResult(String provider, List<Repo> repos, String error) {
+            this(provider, repos, error, error == null
+                ? null : ProviderException.Reason.OTHER);
+        }
+    }
 
     /**
      * @param providers providers to query
@@ -41,24 +51,36 @@ public final class SearchService {
             }
 
             List<ProviderResult> results = new ArrayList<>();
+            long deadline = System.nanoTime() + timeout.toNanos();
             for (Map.Entry<ReleaseProvider, Future<SearchResult>> entry : futures.entrySet()) {
                 String name = entry.getKey().config().name();
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    entry.getValue().cancel(true);
+                    results.add(new ProviderResult(
+                        name, List.of(), "timed out",
+                        ProviderException.Reason.TIMEOUT));
+                    continue;
+                }
                 try {
                     SearchResult result = entry.getValue().get(
-                        timeout.toMillis(), TimeUnit.MILLISECONDS);
+                        remaining, TimeUnit.NANOSECONDS);
                     List<Repo> repos = result == null || result.items() == null
                         ? List.of()
                         : result.items();
                     results.add(new ProviderResult(name, repos, null));
                 } catch (TimeoutException e) {
                     entry.getValue().cancel(true);
-                    results.add(new ProviderResult(name, List.of(), "timed out"));
+                    results.add(new ProviderResult(
+                        name, List.of(), "timed out",
+                        ProviderException.Reason.TIMEOUT));
                 } catch (ExecutionException e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();
                     results.add(new ProviderResult(
                         name, List.of(), cause.getMessage() == null
                             ? cause.getClass().getSimpleName()
-                            : cause.getMessage()));
+                            : cause.getMessage(),
+                        ProviderException.of(cause)));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     results.add(new ProviderResult(name, List.of(), "interrupted"));

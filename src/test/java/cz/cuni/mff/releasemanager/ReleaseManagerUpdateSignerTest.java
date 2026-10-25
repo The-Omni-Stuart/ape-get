@@ -18,9 +18,11 @@ import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -141,7 +143,7 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "github:user/example"}));
 
-        verify(mockPrompt).confirm(any(), anyBoolean());
+        verify(mockPrompt, atLeastOnce()).confirm(any(), anyBoolean());
         ArgumentCaptor<AppManifest> captor = ArgumentCaptor.forClass(AppManifest.class);
         verify(mockStateStore).saveManifest(captor.capture());
         assertEquals("NEW", captor.getValue().signature().identity());
@@ -153,7 +155,8 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
         cmd.argument = "github:user/example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
         when(mockCmdParser.isAllowSignerChange()).thenReturn(true);
-        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(false);
+        when(mockPrompt.confirm(contains("signer change"), anyBoolean()))
+            .thenReturn(false);
 
         Asset oldAsset = new Asset("http://oldurl", "example.exe");
         Asset newAsset = new Asset("http://newurl", "example.exe");

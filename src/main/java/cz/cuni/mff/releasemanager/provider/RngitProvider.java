@@ -69,9 +69,7 @@ public final class RngitProvider implements ReleaseProvider {
                 List.of("release", repositoryUrl(ref.path()), "fetch", target),
                 temp, NetworkSettings.rngitFetchTimeout());
             if (result.exitCode() != 0) {
-                throw new IOException("rngit could not fetch " + ref.name()
-                    + ": " + summarize(result.output())
-                    + pathHint(result.output()));
+                throw failure("fetch", ref.name(), result.output());
             }
             Path downloaded = findArtifact(temp, ref.name());
             if (downloaded == null) {
@@ -97,7 +95,9 @@ public final class RngitProvider implements ReleaseProvider {
 
     @Override
     public SearchResult search(String query) throws IOException {
-        throw new IOException("rngit does not support repository search");
+        throw new ProviderException(
+            ProviderException.Reason.UNSUPPORTED,
+            "repository search is not supported");
     }
 
     private ReleaseAssets view(String path, String target)
@@ -107,9 +107,7 @@ public final class RngitProvider implements ReleaseProvider {
             List.of("release", repository, "view", target),
             workDir, NetworkSettings.rngitMetadataTimeout());
         if (result.exitCode() != 0) {
-            throw new IOException("rngit could not read " + target
-                + ": " + summarize(result.output())
-                + pathHint(result.output()));
+            throw failure("read", target, result.output());
         }
         String tag = parseTag(result.output());
         if (tag == null) {
@@ -243,6 +241,25 @@ public final class RngitProvider implements ReleaseProvider {
                 .findFirst()
                 .orElse(null);
         }
+    }
+
+    private static ProviderException failure(
+        String action, String target, String output) {
+        String message = "rngit could not " + action + " " + target + ": "
+            + summarize(output) + pathHint(output);
+        String lower = output == null
+            ? "" : output.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("could not resolve path")
+            || lower.contains("link establishment failed")
+            || lower.contains("could not recall")) {
+            return new ProviderException(
+                ProviderException.Reason.UNREACHABLE, message);
+        }
+        if (lower.contains("not found") || lower.contains("no releases")) {
+            return new ProviderException(
+                ProviderException.Reason.NOT_FOUND, message);
+        }
+        return new ProviderException(ProviderException.Reason.OTHER, message);
     }
 
     // rngit starts its own instance; a missing path usually means no interfaces

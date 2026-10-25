@@ -37,6 +37,7 @@ import cz.cuni.mff.releasemanager.verify.SignatureResult;
 import cz.cuni.mff.releasemanager.verify.SignatureVerifier;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -71,6 +72,7 @@ abstract class ReleaseManagerTestSupport {
         mockStateStore = mock(StateStore.class);
         mockBackupManager = mock(BackupManager.class);
         mockPrompt = mock(Prompt.class);
+        when(mockPrompt.confirm(any(), anyBoolean())).thenReturn(true);
         mockPaths = new AppPaths(
             Path.of(System.getProperty("java.io.tmpdir"), "grm-test-state"));
 

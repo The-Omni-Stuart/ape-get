@@ -29,6 +29,7 @@ import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -202,7 +203,7 @@ class GithubClientTest {
     }
 
     @Test
-    void getLatestRelease_returnsEmptyForInvalidRepoName() {
+    void getLatestRelease_returnsEmptyForInvalidRepoName() throws Exception {
         List<Asset> assets = githubClient.getLatestRelease("invalidRepoName").installable();
         assertTrue(assets.isEmpty());
     }
@@ -304,6 +305,57 @@ class GithubClientTest {
     }
 
     @Test
+    @Timeout(10)
+    void searchRepoByName_reportsRateLimits() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search/repositories", exchange -> {
+            exchange.getResponseHeaders().add("X-RateLimit-Remaining", "0");
+            exchange.getResponseHeaders().add("X-RateLimit-Reset", "0");
+            byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(403, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            GithubClient client = new GithubClient(
+                "http://127.0.0.1:" + server.getAddress().getPort(), null);
+
+            IOException error = assertThrows(IOException.class,
+                () -> client.searchRepoByName("tool"));
+
+            assertTrue(error.getMessage().contains("Rate limit"), error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void searchRepoByName_reportsSecondaryRateLimits() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search/repositories", exchange -> {
+            byte[] body = "{\"message\":\"You have exceeded a secondary rate limit.\"}"
+                .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(403, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            GithubClient client = new GithubClient(
+                "http://127.0.0.1:" + server.getAddress().getPort(), null);
+
+            ProviderException error = assertThrows(ProviderException.class,
+                () -> client.searchRepoByName("tool"));
+
+            assertEquals(ProviderException.Reason.RATE_LIMITED, error.reason());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     @Timeout(15)
     void apiTimeoutsExplainTheConfiguredTimeout() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -327,10 +379,12 @@ class GithubClientTest {
             GithubClient client = new GithubClient(
                 "http://127.0.0.1:" + server.getAddress().getPort(), null);
 
-            String error = captureErr(
+            ProviderException error = assertThrows(ProviderException.class,
                 () -> client.getLatestRelease("owner/repo"));
 
-            assertTrue(error.contains("timed out after 1s"), error);
+            assertTrue(error.getMessage().contains("timed out after 1s"),
+                error.getMessage());
+            assertEquals(ProviderException.Reason.TIMEOUT, error.reason());
         } finally {
             NetworkSettings.configure(0, null);
             server.stop(0);
@@ -380,7 +434,8 @@ class GithubClientTest {
             IOException error = assertThrows(
                 IOException.class, () -> client.downloadAsset(asset));
 
-            assertTrue(error.getMessage().contains("403"), error.getMessage());
+            assertTrue(error.getMessage().contains("access denied"), error.getMessage());
+            assertFalse(error.getMessage().contains("Rate limit"), error.getMessage());
         } finally {
             server.stop(0);
         }

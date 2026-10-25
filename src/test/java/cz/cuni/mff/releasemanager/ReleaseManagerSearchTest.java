@@ -17,6 +17,7 @@ import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -28,7 +29,7 @@ import static org.mockito.Mockito.when;
 class ReleaseManagerSearchTest extends ReleaseManagerTestSupport {
 
     @Test
-    void testExecuteSearch() {
+    void testExecuteSearch() throws Exception {
         Command cmd = Command.SEARCH;
         cmd.argument = "example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
@@ -45,7 +46,7 @@ class ReleaseManagerSearchTest extends ReleaseManagerTestSupport {
     }
 
     @Test
-    void testExecuteSearchUsesProviderOption() {
+    void testExecuteSearchUsesProviderOption() throws Exception {
         Command cmd = Command.SEARCH;
         cmd.argument = "example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
@@ -59,7 +60,7 @@ class ReleaseManagerSearchTest extends ReleaseManagerTestSupport {
     }
 
     @Test
-    void testExecuteSearchUnknownProviderFails() {
+    void testExecuteSearchUnknownProviderFails() throws Exception {
         Command cmd = Command.SEARCH;
         cmd.argument = "example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);
@@ -87,6 +88,29 @@ class ReleaseManagerSearchTest extends ReleaseManagerTestSupport {
         assertEquals(0, releaseManager.execute(
             new String[]{"search", "example", "--provider", "all"}));
         verify(service).searchAll(any(), eq("example"), any());
+    }
+
+
+    @Test
+    void testExecuteSearchWarnsAboutFailedProviders() throws Exception {
+        Command cmd = Command.SEARCH;
+        cmd.argument = "example";
+        when(mockCmdParser.parse(any())).thenReturn(cmd);
+        when(mockCmdParser.getProvider()).thenReturn("all");
+
+        SearchService service = mock(SearchService.class);
+        when(service.searchAll(any(), eq("example"), any())).thenReturn(List.of(
+            new SearchService.ProviderResult(
+                "github", List.of(new Repo("a/b", "A")), null),
+            new SearchService.ProviderResult("codeberg", List.of(), "down")));
+        useSearchService(service);
+
+        int[] code = new int[1];
+        String error = captureErr(() -> code[0] = releaseManager.execute(
+            new String[]{"search", "example", "--provider", "all"}));
+
+        assertEquals(0, code[0]);
+        assertTrue(error.contains("Warning: codeberg: down"), error);
     }
 
     @Test
@@ -130,7 +154,7 @@ class ReleaseManagerSearchTest extends ReleaseManagerTestSupport {
     }
 
     @Test
-    void testExecuteSearchWithNoResultsSucceeds() {
+    void testExecuteSearchWithNoResultsSucceeds() throws Exception {
         Command cmd = Command.SEARCH;
         cmd.argument = "example";
         when(mockCmdParser.parse(any())).thenReturn(cmd);

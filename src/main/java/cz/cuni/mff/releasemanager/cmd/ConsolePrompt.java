@@ -29,7 +29,8 @@ public final class ConsolePrompt implements Prompt {
         }
         Output.error(message);
         if (!interactive) {
-            Output.error("Confirmation required. Re-run with --yes to approve.");
+            Output.error(
+                "Confirmation required. Re-run with --yes (or -y) to approve.");
             return false;
         }
         Output.prompt("Continue? [y/N] ");

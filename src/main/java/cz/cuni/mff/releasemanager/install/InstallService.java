@@ -89,8 +89,7 @@ public final class InstallService {
             return false;
         }
         List<Asset> candidates = planner.candidates(
-            cmdParser.getAsset() == null ? release.installable() : release.all(),
-            requested, cmdParser.getAsset() != null);
+            assetPool(release), requested, cmdParser.getAsset() != null);
         if (candidates.isEmpty()) {
             Output.error("No compatible package found for this platform.");
             return false;
@@ -103,9 +102,16 @@ public final class InstallService {
         if (plan == null) {
             return false;
         }
+        if (!commandIsFree(ref, plan.command())) {
+            return false;
+        }
         if (cmdParser.isDryRun()) {
             components.reporter().printPlan("install", ref, release, plan);
             return true;
+        }
+        if (!components.confirmation().allowed("Install",
+            ref.display() + " " + release.version() + " (" + asset.name() + ")")) {
+            return false;
         }
         Path downloaded = components.downloader().download(provider, asset);
         if (downloaded == null) {
@@ -165,11 +171,15 @@ public final class InstallService {
             Output.error("Failed to load application state: " + e.getMessage());
             return false;
         }
-        return updateOne(previous, cmdParser.getVersion(), true).status()
+        return updateOne(previous, cmdParser.getVersion(), true, true).status()
             != UpdateResult.Status.FAILED;
     }
 
     public boolean updateAll(boolean report) {
+        return updateAll(report, true);
+    }
+
+    public boolean updateAll(boolean report, boolean ask) {
         List<AppManifest> installed;
         try {
             installed = manifests.scan();
@@ -177,9 +187,14 @@ public final class InstallService {
             Output.error("Failed to load applications: " + e.getMessage());
             return false;
         }
+        if (ask && !installed.isEmpty()
+            && !components.confirmation().allowed("Update",
+                installed.size() + " installed package(s)")) {
+            return false;
+        }
         List<UpdateResult> results = new java.util.ArrayList<>();
         for (AppManifest previous : installed) {
-            results.add(updateOne(previous, null, false));
+            results.add(updateOne(previous, null, false, false));
         }
         if (report) {
             components.reporter().batch(results);
@@ -189,7 +204,7 @@ public final class InstallService {
     }
 
     private UpdateResult updateOne(
-        AppManifest previous, String version, boolean report) {
+        AppManifest previous, String version, boolean report, boolean ask) {
         RepoRef ref = new RepoRef(previous.provider(), previous.repo());
         String fromVersion = previous.version();
         ReleaseProvider provider = resolveProvider.resolve(previous.provider());
@@ -213,8 +228,7 @@ public final class InstallService {
             return failed(ref, fromVersion, null);
         }
         List<Asset> assets = planner.candidates(
-            cmdParser.getAsset() == null ? latest.installable() : latest.all(),
-            requested, cmdParser.getAsset() != null);
+            assetPool(latest), requested, cmdParser.getAsset() != null);
         if (assets.isEmpty()) {
             Output.error("No compatible package found for this platform.");
             return failed(ref, fromVersion, null);
@@ -225,6 +239,9 @@ public final class InstallService {
         }
         PackagePlan plan = planner.plan(ref, newAsset, requested, previous);
         if (plan == null) {
+            return failed(ref, fromVersion, null);
+        }
+        if (!commandIsFree(ref, plan.command())) {
             return failed(ref, fromVersion, null);
         }
         if (previous.asset().url().equals(newAsset.url())) {
@@ -242,6 +259,12 @@ public final class InstallService {
             return new UpdateResult(
                 ref.provider(), ref.path(), fromVersion, latest.version(),
                 UpdateResult.Status.PLANNED, null);
+        }
+        String fromLabel = fromVersion == null ? "unknown" : fromVersion;
+        if (ask && !components.confirmation().allowed("Update",
+            ref.display() + " " + fromLabel + " -> " + latest.version()
+                + " (" + newAsset.name() + ")")) {
+            return failed(ref, fromVersion, null);
         }
         Path downloaded = components.downloader().download(provider, newAsset);
         if (downloaded == null) {
@@ -293,6 +316,43 @@ public final class InstallService {
         return new UpdateResult(
             ref.provider(), ref.path(), fromVersion, latest.version(),
             UpdateResult.Status.UPDATED, null);
+    }
+
+    // numeric --asset indexes the same list the interactive prompt shows
+    private List<Asset> assetPool(ReleaseAssets release) {
+        String requested = cmdParser.getAsset();
+        if (requested == null || requested.isBlank()
+            || requested.trim().matches("\\d+")) {
+            return release.installable();
+        }
+        return release.all();
+    }
+
+    // portable packages share the user bin directory; refuse to steal a command
+    private boolean commandIsFree(RepoRef ref, String command) {
+        if (command == null || command.isBlank()) {
+            return true;
+        }
+        try {
+            for (AppManifest manifest : manifests.scan()) {
+                if (manifest == null || manifest.install() == null
+                    || !command.equals(manifest.install().command())) {
+                    continue;
+                }
+                if (ref.provider().equals(manifest.provider())
+                    && ref.path().equals(manifest.repo())) {
+                    continue;
+                }
+                Output.error("Command '" + command + "' is already used by "
+                    + manifest.provider() + ":" + manifest.repo()
+                    + "; choose another with --name.");
+                return false;
+            }
+            return true;
+        } catch (IOException e) {
+            Output.error("Failed to check installed commands: " + e.getMessage());
+            return false;
+        }
     }
 
     private UpdateResult failed(RepoRef ref, String fromVersion, String message) {

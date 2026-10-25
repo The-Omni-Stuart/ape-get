@@ -77,5 +77,6 @@ class SearchServiceTest {
         assertTrue(results.get(0).error() == null);
         assertNotNull(results.get(0).repos());
         assertEquals("timed out", results.get(1).error());
+        assertEquals(ProviderException.Reason.TIMEOUT, results.get(1).reason());
     }
 }

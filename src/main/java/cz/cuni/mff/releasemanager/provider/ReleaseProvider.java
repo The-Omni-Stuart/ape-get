@@ -14,6 +14,13 @@ public interface ReleaseProvider {
     ProviderConfig config();
 
     /**
+     * @return true when {@link #latest(String)} can cheaply check whether a repository exists
+     */
+    default boolean supportsRepositoryLookup() {
+        return true;
+    }
+
+    /**
      * @param path repository path on this provider
      * @return latest release and its assets
      * @throws IOException if the provider request fails

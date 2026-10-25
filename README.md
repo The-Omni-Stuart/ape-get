@@ -72,12 +72,16 @@ java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar list
 
 ## Supported commands
 
-`<repo>` is `provider:owner/repo` or `provider:group/subgroup/project`. The provider is required.
+`<repo>` is `provider:owner/repo` or `provider:group/subgroup/project`. `install` also accepts a
+bare `owner/repo`: it checks each configured provider for that repository, installs directly when
+one has it, and asks you to pick when several do. A name without a slash is searched across
+providers. Use the provider-qualified form to skip detection. rngit lookups run over Reticulum and
+can be slower; `rngit:group/repo` skips detection entirely.
 
 | Command | Description |
 | --- | --- |
 | `search <query>` | Search all configured providers |
-| `install <repo>` | Install the latest release (refuses an already-tracked repo; use `update`) |
+| `install <repo>` | Install the latest release; a bare `owner/repo` is resolved across providers |
 | `install --version <tag> <repo>` | Install a specific release |
 | `install --asset <name\|index> <repo>` | Choose an asset non-interactively |
 | `update <repo>` | Update an installed release |
@@ -94,14 +98,15 @@ java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar list
 
 Example repositories:
 
-- github:keepassxreboot/keepassxc
+- keepassxreboot/keepassxc — searches providers; one match installs, several prompt
+- github:keepassxreboot/keepassxc — explicit source
 - github:ip7z/7zip
 - github:obsproject/obs-studio
 
 ## Providers and common options
 
-Built-in providers are `github`, `codeberg`, and `gitlab`. Repository arguments must name the
-provider, for example `github:owner/repo`.
+Built-in providers are `github`, `codeberg`, and `gitlab`. `update`, `uninstall`, `rollback`, and
+`info` require the provider prefix, for example `github:owner/repo`.
 
 rngit nodes are configured as custom providers with the Reticulum node destination or a local
 alias. The repository path is `group/repo`, as rngit expects:
@@ -142,14 +147,16 @@ stored in the config.
 
 Common flags: `--asset`, `--version`, `--kind`, `--name`, `--no-command`, `--all`,
 `--outdated`, `--channel`, `--dry-run`, `--desktop`, `--no-desktop`, `--terminal`, `--icon`,
-`--assimilate`, `--json`, `--quiet`, `--yes`.
+`--assimilate`, `--provider`, `--json`, `--quiet`, `-y`/`--yes`.
 `--json` writes one document to stdout; progress, warnings, and prompts go to stderr.
-`--yes` is required for non-interactive use; without it, confirmation prompts refuse when no TTY is
-available.
+`-y`/`--yes` is required for non-interactive use. Without it, install, update (including
+`--all`, which asks once), uninstall, rollback, adopt, and destructive provider changes refuse when
+no TTY is available.
 
 Portable packages create a command in the user bin directory by default. `--name` changes it and
-`--no-command` suppresses it. Plain `.exe` assets are treated as NSIS installers; use
-`--kind portable-exe` for a portable Windows executable. `--desktop` creates a Linux menu entry,
+`--no-command` suppresses it. A command already owned by another installed package is refused, so
+pass `--name` when two providers host packages with the same asset name. Plain `.exe` assets are
+treated as NSIS installers; use `--kind portable-exe` for a portable Windows executable. `--desktop` creates a Linux menu entry,
 using the AppImage's embedded name, comment, categories, and icon when available; `--no-desktop`
 removes it on update.
 
@@ -160,7 +167,9 @@ configured in `grm_config.json` with `auto_update` (`off`, `check`, or `apply`),
 fetches at least thirty. `proxy` takes an `http://host:port` proxy for the HTTP providers. Only
 HTTP CONNECT proxies are supported: for Tor, enable `HTTPTunnelPort` and point `proxy` at it; SOCKS
 is not supported by the Java HTTP client. An unreachable provider or a timeout reports the provider
-and repository, and `update --all` carries on with the remaining packages. A `list` command performs a
+and repository, and `update --all` carries on with the remaining packages. When a provider cannot be
+checked — unsupported, rate limited, or offline — one warning or note is printed for that provider
+and the remaining sources are still checked. A `list` command performs a
 due check or update and records it in `grm_updates.log`. `--desktop` creates a Linux application-menu entry; `--terminal`
 marks it as terminal-based and `--icon` points at an icon file. `--assimilate` converts an APE to a
 native binary using the cosmocc `assimilate` tool; it is never used unless requested.

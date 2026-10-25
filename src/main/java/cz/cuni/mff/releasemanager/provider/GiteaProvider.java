@@ -68,7 +68,8 @@ public final class GiteaProvider implements ReleaseProvider {
             .filter(candidate -> !candidate.draft())
             .filter(candidate -> beta || !candidate.prerelease())
             .findFirst()
-            .orElseThrow(() -> new IOException("No published release found for " + path));
+            .orElseThrow(() -> new ProviderException(
+                ProviderException.Reason.NOT_FOUND, "no published release"));
         return toReleaseAssets(release);
     }
 

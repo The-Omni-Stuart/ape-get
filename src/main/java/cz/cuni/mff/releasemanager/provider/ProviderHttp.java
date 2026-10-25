@@ -49,6 +49,14 @@ final class ProviderHttp {
             throw networkError(e, request.uri(), "request");
         }
         authenticate(response.statusCode());
+        if (response.statusCode() == 404) {
+            throw new ProviderException(
+                ProviderException.Reason.NOT_FOUND, "repository or release not found");
+        }
+        if (response.statusCode() == 429) {
+            throw new ProviderException(
+                ProviderException.Reason.RATE_LIMITED, "rate limit exceeded");
+        }
         if (response.statusCode() != 200) {
             throw new IOException(label + " API returned " + response.statusCode()
                 + " for " + context);
@@ -67,6 +75,14 @@ final class ProviderHttp {
                     request, HttpResponse.BodyHandlers.ofFile(destination));
             } catch (IOException e) {
                 throw networkError(e, request.uri(), "download");
+            }
+            if (response.statusCode() == 404) {
+                throw new ProviderException(
+                    ProviderException.Reason.NOT_FOUND, "asset not found");
+            }
+            if (response.statusCode() == 429) {
+                throw new ProviderException(
+                    ProviderException.Reason.RATE_LIMITED, "rate limit exceeded");
             }
             if (response.statusCode() != 200) {
                 throw new IOException(label + " download returned "
@@ -96,22 +112,28 @@ final class ProviderHttp {
         if (error instanceof HttpTimeoutException) {
             Duration timeout = "download".equals(action)
                 ? NetworkSettings.downloadTimeout() : NetworkSettings.apiTimeout();
-            return new IOException(label + " " + action + " timed out after "
-                + timeout.toSeconds() + "s", error);
+            return new ProviderException(
+                ProviderException.Reason.TIMEOUT,
+                label + " " + action + " timed out after "
+                    + timeout.toSeconds() + "s", error);
         }
         if (error instanceof UnknownHostException) {
-            return new IOException(label + " could not resolve " + uri.getHost(), error);
+            return new ProviderException(
+                ProviderException.Reason.UNREACHABLE,
+                label + " could not resolve " + uri.getHost(), error);
         }
         if (error instanceof ConnectException) {
-            return new IOException(label + " could not connect to " + uri.getHost(), error);
+            return new ProviderException(
+                ProviderException.Reason.UNREACHABLE,
+                label + " could not connect to " + uri.getHost(), error);
         }
         return error;
     }
 
     private void authenticate(int status) throws IOException {
         if (status == 401 || status == 403) {
-            throw new IOException(
-                label + " authentication failed for " + config.name());
+            throw new ProviderException(
+                ProviderException.Reason.UNAUTHORIZED, "authentication failed");
         }
     }
 

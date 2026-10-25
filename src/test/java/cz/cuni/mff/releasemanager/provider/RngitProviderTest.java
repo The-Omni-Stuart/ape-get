@@ -133,6 +133,31 @@ class RngitProviderTest {
         RngitProvider provider = new RngitProvider(
             CONFIG, (args, directory, timeout) -> new RngitCommand.Result(0, ""));
 
-        assertThrows(IOException.class, () -> provider.search("anything"));
+        ProviderException error = assertThrows(ProviderException.class,
+            () -> provider.search("anything"));
+        assertEquals(ProviderException.Reason.UNSUPPORTED, error.reason());
+    }
+
+    @Test
+    void mapsMissingReleasesToNotFound() {
+        RngitProvider provider = new RngitProvider(CONFIG,
+            (args, directory, timeout) -> new RngitCommand.Result(1, "Release not found"));
+
+        ProviderException error = assertThrows(ProviderException.class,
+            () -> provider.release("group/repo", "v1.0.0"));
+
+        assertEquals(ProviderException.Reason.NOT_FOUND, error.reason());
+    }
+
+    @Test
+    void mapsUnresolvedPathsToUnreachable() {
+        RngitProvider provider = new RngitProvider(CONFIG,
+            (args, directory, timeout) -> new RngitCommand.Result(1,
+                "Could not resolve path to <7649a50d84610232d1416b41d2896aff>"));
+
+        ProviderException error = assertThrows(ProviderException.class,
+            () -> provider.latest("group/repo"));
+
+        assertEquals(ProviderException.Reason.UNREACHABLE, error.reason());
     }
 }
