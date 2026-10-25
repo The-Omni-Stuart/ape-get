@@ -4,137 +4,331 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Numeric version to build (for example 1.2.3)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-binaries-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: github-releases-manager
 
 jobs:
-  build-linux:
+  prepare:
+    name: Prepare version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Normalise version
+        id: version
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+          INPUT: ${{ inputs.version }}
+        run: |
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            raw="$INPUT"
+          else
+            raw="${TAG#v}"
+          fi
+          raw="${raw%-dryrun}"
+          if [[ ! "$raw" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            echo "::error::Version '$raw' is not numeric; use 1, 1.2, or 1.2.3"
+            exit 1
+          fi
+          IFS=. read -r major minor patch <<< "$raw"
+          version="$major.${minor:-0}.${patch:-0}"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version $version"
+
+  linux:
+    name: Linux x64
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
+          distribution: temurin
           java-version: '21'
-          distribution: 'temurin'
+          cache: maven
 
-      - name: Build with Maven
-        run: mvn clean package
+      - name: Build jar
+        run: mvn -B clean package
 
-      - name: Install AppImage tooling
+      - name: Stage jar
         run: |
-          sudo apt-get update
-          sudo apt-get install -y fakeroot libfuse2
+          mkdir -p staging
+          jar=$(find target -maxdepth 1 -name '*-jar-with-dependencies.jar' -print -quit)
+          test -n "$jar"
+          cp "$jar" staging/
+          echo "JAR=$(basename "$jar")" >> "$GITHUB_ENV"
 
-      - name: Build AppImage using jpackage
+      - name: Build app image
         run: |
           jpackage \
-            --input target \
-            --name "github-releases-manager" \
-            --main-jar github-releases-manager-1.0-jar-with-dependencies.jar \
-            --main-class cz.cuni.mff.releasemanager.Main \
             --type app-image \
+            --input staging \
             --dest output \
-            --app-version "${GITHUB_REF_NAME#v}" \
-            --verbose
+            --name "$APP_NAME" \
+            --main-jar "$JAR" \
+            --main-class cz.cuni.mff.releasemanager.Main \
+            --app-version "${{ needs.prepare.outputs.version }}"
 
-      - name: Compress AppImage
+      - name: Smoke test
         run: |
-          cd output
-          tar -czvf github-releases-manager-linux.tar.gz "github-releases-manager"
+          home=$(mktemp -d)
+          HOME="$home" XDG_DATA_HOME="$home/.local/share" \
+            "output/$APP_NAME/bin/$APP_NAME" list --json > "$home/list.json"
+          python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$home/list.json"
 
-      - uses: actions/upload-artifact@v4
+      - name: Package
+        run: |
+          tar -C output -czf "output/$APP_NAME-linux-x64.tar.gz" "$APP_NAME"
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: github-releases-manager-linux
-          path: output/github-releases-manager-linux.tar.gz
+          name: linux-x64
+          path: output/${{ env.APP_NAME }}-linux-x64.tar.gz
+          retention-days: 7
 
-  build-windows:
+  windows:
+    name: Windows x64
+    needs: prepare
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
+          distribution: temurin
           java-version: '21'
-          distribution: 'temurin'
+          cache: maven
 
-      - name: Build with Maven
-        run: mvn clean package
-
-      - name: Build MSI installer
-        shell: cmd
+      - name: Install Windows tooling
+        shell: pwsh
         run: |
-          jpackage ^
-            --input target ^
-            --name "github-releases-manager" ^
-            --main-jar github-releases-manager-1.0-jar-with-dependencies.jar ^
-            --main-class cz.cuni.mff.releasemanager.Main ^
-            --type msi ^
-            --dest output ^
-            --runtime-image "%JAVA_HOME%" ^
-            --app-version %GITHUB_REF_NAME:v=% ^
+          $nsisDir = 'C:\Program Files (x86)\NSIS'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            choco install nsis -y --no-progress
+            if (Test-Path (Join-Path $nsisDir 'makensis.exe')) { break }
+            Start-Sleep -Seconds 15
+          }
+          if (!(Test-Path (Join-Path $nsisDir 'makensis.exe'))) {
+            throw "makensis.exe not found in $nsisDir"
+          }
+
+          $wixDir = 'C:\Program Files (x86)\WiX Toolset v3.14\bin'
+          if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
+            $candle = Get-ChildItem 'C:\Program Files (x86)' -Filter candle.exe -Recurse `
+              -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($candle) { $wixDir = $candle.DirectoryName }
+          }
+          if (!(Test-Path (Join-Path $wixDir 'candle.exe'))) {
+            throw "WiX candle.exe not found"
+          }
+
+          $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $wixDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Build jar
+        shell: pwsh
+        run: mvn -B clean package
+
+      - name: Stage jar
+        shell: pwsh
+        run: |
+          $jar = Get-ChildItem target -Filter '*-jar-with-dependencies.jar' | Select-Object -First 1
+          if (-not $jar) { throw 'fat jar not found' }
+          New-Item -ItemType Directory -Force staging | Out-Null
+          Copy-Item $jar.FullName staging/
+          "JAR=$($jar.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build MSI
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          jpackage `
+            --type msi `
+            --input staging `
+            --dest output `
+            --name $env:APP_NAME `
+            --main-jar $env:JAR `
+            --main-class cz.cuni.mff.releasemanager.Main `
+            --app-version $env:VERSION `
+            --win-menu `
+            --win-shortcut `
             --verbose
+          if ($LASTEXITCODE -ne 0) { throw "jpackage failed: $LASTEXITCODE" }
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: github-releases-manager-windows
-          path: output/*.msi
-
-      - name: Check installer contents
+      - name: Smoke test MSI
+        shell: pwsh
         run: |
-          dir output
-
-      - name: Smoke test installer file
-        run: |
-          for %%f in ("%GITHUB_WORKSPACE%\output\*.msi") do (
-          echo Installing %%f
-          msiexec /a "%%f" /qn /log install-test.log
+          $msi = Get-ChildItem output -Filter '*.msi' | Select-Object -First 1
+          if (-not $msi) { throw 'MSI not found' }
+          $install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            '/i', "`"$($msi.FullName)`"", '/qn', '/norestart'
           )
-        shell: cmd
+          if ($install.ExitCode -notin 0, 3010) { throw "install failed: $($install.ExitCode)" }
 
-  build-macos:
-    runs-on: macos-latest
+          $exe = Join-Path $env:ProgramFiles "$env:APP_NAME\$env:APP_NAME.exe"
+          if (-not (Test-Path $exe)) { throw "installed exe not found: $exe" }
+
+          $state = Join-Path $env:RUNNER_TEMP 'ape-get-state'
+          New-Item -ItemType Directory -Force $state | Out-Null
+          $savedLocal = $env:LOCALAPPDATA
+          $env:LOCALAPPDATA = $state
+          & $exe list --json | Out-Null
+          $code = $LASTEXITCODE
+          $env:LOCALAPPDATA = $savedLocal
+          if ($code -ne 0) { throw "installed app failed: $code" }
+
+          $remove = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            '/x', "`"$($msi.FullName)`"", '/qn', '/norestart'
+          )
+          if ($remove.ExitCode -notin 0, 3010) { throw "uninstall failed: $($remove.ExitCode)" }
+          if (Test-Path (Join-Path $env:ProgramFiles $env:APP_NAME)) {
+            throw 'install directory still present after uninstall'
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64
+          path: output/*.msi
+          retention-days: 7
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
+          distribution: temurin
           java-version: '21'
-          distribution: 'temurin'
+          cache: maven
 
-      - name: Build with Maven
-        run: mvn clean package
+      - name: Build jar
+        run: mvn -B clean package
 
-      - name: Build DMG installer
+      - name: Stage jar
+        run: |
+          mkdir -p staging
+          jar=$(find target -maxdepth 1 -name '*-jar-with-dependencies.jar' -print -quit)
+          test -n "$jar"
+          cp "$jar" staging/
+          echo "JAR=$(basename "$jar")" >> "$GITHUB_ENV"
+
+      - name: Build app bundle
         run: |
           jpackage \
-            --input target \
-            --name "github-releases-manager" \
-            --main-jar github-releases-manager-1.0-jar-with-dependencies.jar \
-            --main-class cz.cuni.mff.releasemanager.Main \
-            --type dmg \
+            --type app-image \
+            --input staging \
             --dest output \
-            --app-version "${GITHUB_REF_NAME#v}" \
-            --verbose
+            --name "$APP_NAME" \
+            --main-jar "$JAR" \
+            --main-class cz.cuni.mff.releasemanager.Main \
+            --app-version "${{ needs.prepare.outputs.version }}" \
+            --mac-package-identifier cz.cuni.mff.releasemanager
 
-      - uses: actions/upload-artifact@v4
+      - name: Sign ad hoc
+        run: |
+          app="output/$APP_NAME.app"
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Smoke test
+        run: |
+          home=$(mktemp -d)
+          HOME="$home" "output/$APP_NAME.app/Contents/MacOS/$APP_NAME" list --json > "$home/list.json"
+          python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$home/list.json"
+
+      - name: Create DMG
+        run: |
+          mkdir -p dmg
+          cp -R "output/$APP_NAME.app" dmg/
+          ln -s /Applications dmg/Applications
+          created=false
+          for attempt in 1 2 3; do
+            if hdiutil create \
+              -volname "$APP_NAME" \
+              -srcfolder dmg \
+              -ov -format UDZO \
+              "output/$APP_NAME-macos-${{ matrix.arch }}.dmg"; then
+              created=true
+              break
+            fi
+            echo "hdiutil failed (attempt $attempt), retrying"
+            sleep 10
+          done
+          if [[ "$created" != "true" ]]; then
+            echo "hdiutil create failed after retries"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: github-releases-manager-macos
-          path: output/*.dmg
+          name: macos-${{ matrix.arch }}
+          path: output/${{ env.APP_NAME }}-macos-${{ matrix.arch }}.dmg
+          retention-days: 7
 
   release:
-    needs: [build-linux, build-windows, build-macos]
+    name: Publish release
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-dryrun') }}
+    needs: [prepare, linux, windows, macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
         with:
           path: dist
+          merge-multiple: true
+
+      - name: Write checksums
+        run: |
+          cd dist
+          sha256sum ./* > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Publish to GitHub Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/**/*.*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --generate-notes --verify-tag
+          fi
