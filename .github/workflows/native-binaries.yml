@@ -3,13 +3,13 @@ name: Build Native Installers
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Numeric version to build (for example 1.2.3)'
+        description: "Numeric version to build (for example 1.2.3)"
         required: true
-        default: '1.0.0'
+        default: "1.0.0"
 
 permissions:
   contents: read
@@ -64,7 +64,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
           cache: maven
 
       - name: Build jar
@@ -118,7 +118,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
           cache: maven
 
       - name: Install Windows tooling
@@ -150,6 +150,7 @@ jobs:
             --main-jar $env:JAR `
             --main-class cz.cuni.mff.releasemanager.Main `
             --app-version $env:VERSION `
+            --win-console `
             --win-menu `
             --win-shortcut `
             --verbose
@@ -173,6 +174,15 @@ jobs:
           $savedLocal = $env:LOCALAPPDATA
           $env:LOCALAPPDATA = $state
           & $exe list --json | Out-Null
+
+          $helpText = & $exe help 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) {
+              throw "CLI help failed: $LASTEXITCODE"
+          }
+          if ($helpText -notmatch 'Commands:') {
+              throw "Windows launcher produced no help output"
+          }
+
           $code = $LASTEXITCODE
           $env:LOCALAPPDATA = $savedLocal
           if ($code -ne 0) { throw "installed app failed: $code" }
@@ -211,7 +221,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
           cache: maven
 
       - name: Build jar
