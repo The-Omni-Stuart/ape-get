@@ -1,17 +1,15 @@
 package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.Locale;
 
 import cz.cuni.mff.releasemanager.state.AppManifest;
@@ -20,6 +18,7 @@ import cz.cuni.mff.releasemanager.utils.CommandNames;
 import cz.cuni.mff.releasemanager.utils.Executables;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 import cz.cuni.mff.releasemanager.utils.Output;
+import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 // Linux installs live in versioned dirs behind a stable launcher symlink
@@ -52,6 +51,9 @@ public final class LinuxHandler extends PlatformHandler {
 
     @Override
     public Path install(InstallRequest request) {
+        if (!supportsKind(request, Platform.OS.LINUX, "Linux")) {
+            return null;
+        }
         if (request.kind().isPortable()) {
             return installPortable(request);
         }
@@ -71,27 +73,34 @@ public final class LinuxHandler extends PlatformHandler {
                 Output.error("Refusing to replace directory " + launcher);
                 return null;
             }
-            if (Files.exists(launcher, LinkOption.NOFOLLOW_LINKS)
-                && isOwnedByAnotherRepo(
-                    launcher, request.provider(), repoFullName)) {
-                Output.error(
-                    "Refusing to overwrite " + launcher + " owned by another release.");
-                return null;
-            }
-
             String provider = request.provider() == null ? "github" : request.provider();
             Path appDir = statePaths().appDir(provider, repoFullName);
+            if (Files.exists(launcher, LinkOption.NOFOLLOW_LINKS)) {
+                if (isOwnedByAnotherRepo(
+                    launcher, request.provider(), repoFullName)) {
+                    Output.error(
+                        "Refusing to overwrite " + launcher + " owned by another release.");
+                    return null;
+                }
+                if (!isManagedLauncher(launcher, appDir)
+                    && !hasManifestFor(request.provider(), repoFullName)) {
+                    Output.error(
+                        "Refusing to overwrite unmanaged launcher " + launcher + ".");
+                    return null;
+                }
+            }
+
             Path versionDir = appDir.resolve("versions")
-                .resolve(sanitizeVersion(request.version()));
+                .resolve(FileUtils.sanitizeVersion(request.version()));
             Files.createDirectories(versionDir);
 
             Path target = versionDir.resolve(assetPath.getFileName());
             FileUtils.replaceFile(assetPath, target);
             Files.setPosixFilePermissions(target, EXECUTABLE);
 
-            replaceSymlink(appDir.resolve("current"),
+            FileUtils.replaceSymlink(appDir.resolve("current"),
                 Paths.get("versions").resolve(versionDir.getFileName().toString()));
-            replaceSymlink(launcher,
+            FileUtils.replaceSymlink(launcher,
                 appDir.resolve("current").resolve(target.getFileName()));
 
             Output.info("Installed to: " + target);
@@ -161,17 +170,17 @@ public final class LinuxHandler extends PlatformHandler {
             String provider = request.provider() == null ? "github" : request.provider();
             Path appDir = statePaths().appDir(provider, repoFullName);
             Path versionDir = appDir.resolve("versions")
-                .resolve(sanitizeVersion(request.version()));
+                .resolve(FileUtils.sanitizeVersion(request.version()));
             Files.createDirectories(versionDir);
 
             Path target = versionDir.resolve(assetPath.getFileName());
             FileUtils.replaceFile(assetPath, target);
             Files.setPosixFilePermissions(target, EXECUTABLE);
 
-            replaceSymlink(appDir.resolve("current"),
+            FileUtils.replaceSymlink(appDir.resolve("current"),
                 Paths.get("versions").resolve(versionDir.getFileName().toString()));
             if (launcher != null) {
-                replaceSymlink(launcher,
+                FileUtils.replaceSymlink(launcher,
                     appDir.resolve("current").resolve(target.getFileName()));
                 Path entry = desktopEntryPath(request.provider(), repoFullName, command);
                 if (request.noDesktop()) {
@@ -305,23 +314,39 @@ public final class LinuxHandler extends PlatformHandler {
             return null;
         }
         Path output = ape.resolveSibling(ape.getFileName() + ".native");
-        Process process = new ProcessBuilder(
-            "assimilate", "-e", "-o", output.toString(), ape.toString())
-            .inheritIO()
-            .start();
+        ProcessRunner.Result result;
         try {
-            if (process.waitFor() != 0) {
-                Output.error("Failed to assimilate " + ape.getFileName() + ".");
-                StagedAsset.discard(output);
-                return null;
-            }
+            result = ProcessRunner.run(new ProcessBuilder(
+                "assimilate", "-e", "-o", output.toString(), ape.toString()),
+                Duration.ofMinutes(5));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             StagedAsset.discard(output);
             return null;
         }
+        if (result.timedOut() || result.exitCode() != 0) {
+            String reason = result.timedOut() ? "timed out" : result.output().strip();
+            Output.error("Failed to assimilate " + ape.getFileName()
+                + (reason.isBlank() ? "." : ": " + reason));
+            StagedAsset.discard(output);
+            return null;
+        }
         StagedAsset.discard(ape);
         return output;
+    }
+
+    // the launcher already points at this app's current version
+    private static boolean isManagedLauncher(Path launcher, Path appDir) {
+        if (!Files.isSymbolicLink(launcher) || launcher.getParent() == null) {
+            return false;
+        }
+        try {
+            Path target = launcher.getParent().resolve(
+                Files.readSymbolicLink(launcher)).normalize();
+            return target.startsWith(appDir.resolve("current").normalize());
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     @Override
@@ -362,13 +387,13 @@ public final class LinuxHandler extends PlatformHandler {
             if (versionDir == null || versionDir.equals(versions)) {
                 return;
             }
-            replaceSymlink(appDir.resolve("current"),
+            FileUtils.replaceSymlink(appDir.resolve("current"),
                 Paths.get("versions").resolve(versionDir.getFileName().toString()));
             AppManifest.Uninstall uninstall = manifest.install() == null
                 ? null : manifest.install().uninstall();
             if (uninstall != null && uninstall.path() != null
                 && !uninstall.path().equals(manifest.install().path())) {
-                replaceSymlink(Path.of(uninstall.path()),
+                FileUtils.replaceSymlink(Path.of(uninstall.path()),
                     appDir.resolve("current").resolve(restored.getFileName()));
             }
         } catch (IOException e) {
@@ -452,35 +477,4 @@ public final class LinuxHandler extends PlatformHandler {
         return getInstallDir();
     }
 
-    // one safe path segment for the version directory
-    static String sanitizeVersion(String version) {
-        if (version == null || version.isBlank()) {
-            return "unknown";
-        }
-        String value = version.trim()
-            .replaceAll("[^A-Za-z0-9._+-]+", "-");
-        while (value.startsWith(".") || value.startsWith("-")) {
-            value = value.substring(1);
-        }
-        value = value.replace("..", ".");
-        while (value.startsWith(".") || value.startsWith("-")) {
-            value = value.substring(1);
-        }
-        return value.isBlank() ? "unknown" : value;
-    }
-
-    private static void replaceSymlink(Path link, Path target) throws IOException {
-        Files.createDirectories(link.toAbsolutePath().getParent());
-        Path temp = link.resolveSibling(
-            "." + link.getFileName() + ".tmp-" + UUID.randomUUID());
-        Files.createSymbolicLink(temp, target);
-        try {
-            Files.move(temp, link, StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(temp, link, StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            Files.deleteIfExists(temp);
-        }
-    }
 }

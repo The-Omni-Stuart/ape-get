@@ -21,7 +21,6 @@ import cz.cuni.mff.releasemanager.cmd.Prompt;
 import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.provider.GithubClient;
-import cz.cuni.mff.releasemanager.provider.ProviderConfig;
 import cz.cuni.mff.releasemanager.provider.ProviderFactory;
 import cz.cuni.mff.releasemanager.provider.SearchService;
 import cz.cuni.mff.releasemanager.state.AppManifest;
@@ -30,6 +29,7 @@ import cz.cuni.mff.releasemanager.state.BackupManager;
 import cz.cuni.mff.releasemanager.state.ConfigStore;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.GrmIndex;
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.verify.AssetVerifier;
@@ -93,6 +93,11 @@ abstract class ReleaseManagerTestSupport {
         when(mockStateStore.findRecoveryIssues(any(), any())).thenReturn(List.of());
         when(mockPlatformHandler.installState(any()))
             .thenReturn(PlatformHandler.InstallState.INSTALLED);
+        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {
+            ".appimage", ".exe", ".msi", ".dmg", ".ape", ".com",
+            ".bin", ".whl", ".zip"});
+        when(mockPlatformHandler.getArchitecture())
+            .thenReturn(Platform.Architecture.X86_64);
     }
 
     protected void setOs(Platform.OS os) {

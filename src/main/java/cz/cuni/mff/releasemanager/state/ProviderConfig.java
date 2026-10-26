@@ -1,4 +1,4 @@
-package cz.cuni.mff.releasemanager.provider;
+package cz.cuni.mff.releasemanager.state;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -8,6 +8,9 @@ import java.util.Optional;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+
+import cz.cuni.mff.releasemanager.types.ProviderType;
+import cz.cuni.mff.releasemanager.utils.ChildEnvironment;
 
 // one configured provider instance
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -41,7 +44,8 @@ public record ProviderConfig(
             return false;
         }
         if (tokenEnv != null && !tokenEnv.isBlank()
-            && !tokenEnv.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            && (!tokenEnv.matches("[A-Za-z_][A-Za-z0-9_]*")
+                || ChildEnvironment.isReserved(tokenEnv))) {
             return false;
         }
         return api == null || api.isBlank()
@@ -50,19 +54,7 @@ public record ProviderConfig(
 
     @JsonIgnore
     public String resolvedApi() {
-        if (api != null && !api.isBlank()) {
-            return stripTrailingSlash(api);
-        }
-        String base = stripTrailingSlash(url);
-        return switch (providerType().orElseThrow()) {
-            case GITHUB -> base.equals("https://github.com")
-                || base.equals("http://github.com")
-                ? "https://api.github.com"
-                : base + "/api/v3";
-            case GITEA -> base + "/api/v1";
-            case GITLAB -> base + "/api/v4";
-            case RNGIT -> base;
-        };
+        return providerType().orElseThrow().apiBase(url, api);
     }
 
     // only send the token to hosts that belong to this provider

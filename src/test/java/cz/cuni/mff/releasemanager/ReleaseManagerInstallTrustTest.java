@@ -37,7 +37,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new ReleaseAssets(
-                List.of(asset, checksum), List.of(asset)));
+                List.of(asset, checksum)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), checksum.name()));
@@ -57,7 +57,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -78,7 +78,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -98,7 +98,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -121,7 +121,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -145,7 +145,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Path downloaded = Path.of("/tmp/downloaded.exe");
         Path installed = Path.of("/ProgramFiles/installer.msi");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(asset.name(), "checksum"));
@@ -169,7 +169,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.mismatch(
@@ -188,7 +188,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.missing(asset.name()));
@@ -209,7 +209,7 @@ class ReleaseManagerInstallTrustTest extends ReleaseManagerTestSupport {
         Asset asset = new Asset("http://url", "example.exe");
         Path downloaded = Path.of("/tmp/downloaded.exe");
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
         when(mockGithubClient.downloadAsset(asset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.missing(asset.name()));

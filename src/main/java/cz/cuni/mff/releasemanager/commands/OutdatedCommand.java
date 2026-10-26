@@ -7,9 +7,9 @@ import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.install.UpdateChecker;
 import cz.cuni.mff.releasemanager.json.JsonViews.OutdatedEntry;
 import cz.cuni.mff.releasemanager.json.JsonViews.OutdatedList;
-import cz.cuni.mff.releasemanager.provider.UpdateChannel;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.StateStore;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 import cz.cuni.mff.releasemanager.utils.Output;
 
 // checks installed packages without changing anything

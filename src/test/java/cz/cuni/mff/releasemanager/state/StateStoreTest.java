@@ -99,6 +99,18 @@ class StateStoreTest {
     }
 
     @Test
+    void sortsSameRepoNamesByProvider() throws Exception {
+        StateStore store = store();
+        store.saveManifest(manifest("work", "owner/repo"));
+        store.saveManifest(manifest("github", "owner/repo"));
+
+        List<AppManifest> manifests = store.scanManifests();
+
+        assertEquals(List.of("github", "work"),
+            manifests.stream().map(AppManifest::provider).toList());
+    }
+
+    @Test
     void findsManifestByProviderAndPath() throws Exception {
         StateStore store = store();
         store.saveManifest(manifest("github", "owner/repo"));

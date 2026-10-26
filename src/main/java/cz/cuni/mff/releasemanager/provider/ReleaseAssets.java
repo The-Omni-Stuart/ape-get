@@ -10,10 +10,9 @@ import cz.cuni.mff.releasemanager.types.Asset;
 public record ReleaseAssets(
     String version,
     Long releaseId,
-    List<Asset> all,
-    List<Asset> installable
+    List<Asset> all
 ) {
-    public ReleaseAssets(List<Asset> all, List<Asset> installable) {
-        this(null, null, all, installable);
+    public ReleaseAssets(List<Asset> all) {
+        this(null, null, all);
     }
 }

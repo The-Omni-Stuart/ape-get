@@ -4,15 +4,16 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 

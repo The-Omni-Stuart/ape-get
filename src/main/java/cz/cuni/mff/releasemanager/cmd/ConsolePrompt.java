@@ -17,6 +17,14 @@ public final class ConsolePrompt implements Prompt {
         this(new Scanner(System.in)::nextLine, System.console() != null);
     }
 
+    public ConsolePrompt(CmdParser cmdParser) {
+        this(cmdParser, System.console() != null);
+    }
+
+    ConsolePrompt(CmdParser cmdParser, boolean interactive) {
+        this(cmdParser::nextLine, interactive);
+    }
+
     ConsolePrompt(Supplier<String> input, boolean interactive) {
         this.input = input;
         this.interactive = interactive;

@@ -18,6 +18,24 @@ class ProcessRunnerTest {
 
     @Test
     @Timeout(10)
+    void removesRegisteredTokensFromChildProcesses() throws Exception {
+        ChildEnvironment.register("GRM_TEST_RUNNER_TOKEN");
+        try {
+            ProcessBuilder builder = new ProcessBuilder(
+                "sh", "-c", "printf %s \"$GRM_TEST_RUNNER_TOKEN\"");
+            builder.environment().put("GRM_TEST_RUNNER_TOKEN", "secret");
+
+            ProcessRunner.Result result = ProcessRunner.run(
+                builder, Duration.ofSeconds(5));
+
+            assertEquals("", result.output().strip());
+        } finally {
+            ChildEnvironment.resetForTests();
+        }
+    }
+
+    @Test
+    @Timeout(10)
     void capturesOutputAndExitCode() throws Exception {
         ProcessRunner.Result result = ProcessRunner.run(
             new ProcessBuilder("sh", "-c", "echo hello; exit 0"), Duration.ofSeconds(5));

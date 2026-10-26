@@ -2,14 +2,7 @@ package cz.cuni.mff.releasemanager.provider;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
@@ -34,7 +27,7 @@ public final class SearchService {
     /**
      * @param providers providers to query
      * @param query free-text query
-     * @param timeout per-provider timeout
+     * @param timeout total timeout for the batch
      * @return one result per provider, in input order
      */
     public List<ProviderResult> searchAll(
@@ -42,54 +35,20 @@ public final class SearchService {
         if (providers == null || providers.isEmpty()) {
             return List.of();
         }
-
-        var executor = Executors.newVirtualThreadPerTaskExecutor();
-        try {
-            Map<ReleaseProvider, Future<SearchResult>> futures = new LinkedHashMap<>();
-            for (ReleaseProvider provider : providers) {
-                futures.put(provider, executor.submit(() -> provider.search(query)));
-            }
-
-            List<ProviderResult> results = new ArrayList<>();
-            long deadline = System.nanoTime() + timeout.toNanos();
-            for (Map.Entry<ReleaseProvider, Future<SearchResult>> entry : futures.entrySet()) {
-                String name = entry.getKey().config().name();
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) {
-                    entry.getValue().cancel(true);
-                    results.add(new ProviderResult(
-                        name, List.of(), "timed out",
-                        ProviderException.Reason.TIMEOUT));
-                    continue;
-                }
-                try {
-                    SearchResult result = entry.getValue().get(
-                        remaining, TimeUnit.NANOSECONDS);
-                    List<Repo> repos = result == null || result.items() == null
-                        ? List.of()
-                        : result.items();
-                    results.add(new ProviderResult(name, repos, null));
-                } catch (TimeoutException e) {
-                    entry.getValue().cancel(true);
-                    results.add(new ProviderResult(
-                        name, List.of(), "timed out",
-                        ProviderException.Reason.TIMEOUT));
-                } catch (ExecutionException e) {
-                    Throwable cause = e.getCause() == null ? e : e.getCause();
-                    results.add(new ProviderResult(
-                        name, List.of(), cause.getMessage() == null
-                            ? cause.getClass().getSimpleName()
-                            : cause.getMessage(),
-                        ProviderException.of(cause)));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    results.add(new ProviderResult(name, List.of(), "interrupted"));
-                    break;
-                }
-            }
-            return results;
-        } finally {
-            executor.shutdownNow();
+        List<ProviderTasks.Task<SearchResult>> tasks = new ArrayList<>();
+        for (ReleaseProvider provider : providers) {
+            tasks.add(new ProviderTasks.Task<>(
+                provider.config().name(), () -> provider.search(query)));
         }
+        List<ProviderResult> results = new ArrayList<>();
+        for (ProviderTasks.Outcome<SearchResult> outcome
+            : ProviderTasks.run(tasks, timeout)) {
+            List<Repo> repos = outcome.value() == null
+                || outcome.value().items() == null
+                ? List.of() : outcome.value().items();
+            results.add(new ProviderResult(
+                outcome.provider(), repos, outcome.error(), outcome.reason()));
+        }
+        return results;
     }
 }

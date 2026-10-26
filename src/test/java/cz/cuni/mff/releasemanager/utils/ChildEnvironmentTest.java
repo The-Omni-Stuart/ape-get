@@ -7,6 +7,17 @@ import org.junit.jupiter.api.Test;
 class ChildEnvironmentTest {
 
     @Test
+    void neverRemovesReservedProcessVariables() {
+        ChildEnvironment.register("PATH");
+        ProcessBuilder builder = new ProcessBuilder("true");
+        builder.environment().put("PATH", "/bin");
+
+        ChildEnvironment.sanitize(builder);
+
+        assertTrue(builder.environment().containsKey("PATH"));
+    }
+
+    @Test
     void removesRegisteredTokenVariables() {
         ChildEnvironment.register("GRM_TEST_TOKEN");
         ProcessBuilder builder = new ProcessBuilder("true");

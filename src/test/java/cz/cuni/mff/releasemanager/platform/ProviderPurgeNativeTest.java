@@ -19,10 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cz.cuni.mff.releasemanager.ReleaseManager;
-import cz.cuni.mff.releasemanager.provider.ProviderConfig;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.state.StateStore;
 
 /**

@@ -1,10 +1,13 @@
 package cz.cuni.mff.releasemanager.install;
 
 import java.nio.file.Path;
+import java.util.List;
 
+import cz.cuni.mff.releasemanager.platform.AssetSelector;
 import cz.cuni.mff.releasemanager.platform.InstallRequest;
 import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
@@ -14,6 +17,11 @@ public final class PlatformInstaller {
 
     public PlatformInstaller(PlatformHandler platformHandler) {
         this.platformHandler = platformHandler;
+    }
+
+    public List<Asset> installableAssets(List<Asset> assets) {
+        return AssetSelector.installable(
+            assets, platformHandler.getFormats(), platformHandler.getArchitecture());
     }
 
     public Path install(

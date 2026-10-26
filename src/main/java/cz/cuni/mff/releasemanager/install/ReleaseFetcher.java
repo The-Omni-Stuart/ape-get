@@ -4,7 +4,7 @@ import java.io.IOException;
 
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
-import cz.cuni.mff.releasemanager.provider.UpdateChannel;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 import cz.cuni.mff.releasemanager.utils.NetworkErrors;
 import cz.cuni.mff.releasemanager.utils.Output;
 

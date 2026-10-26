@@ -98,25 +98,4 @@ public final class Platform {
         return instance;
     }
 
-    /**
-     * Returns the appropriate PlatformHandler based on the current OS.
-     * @return the PlatformHandler for the current OS
-     */
-    public static PlatformHandler getPlatformHandler() {
-        if (instance == null) {
-            instance = new Platform();
-        }
-        switch (instance.getOS()) {
-            case WINDOWS -> {
-                return WindowsHandler.getInstance();
-            }
-            case LINUX -> {
-                return LinuxHandler.getInstance();
-            }
-            case MAC -> {
-                return MacHandler.getInstance();
-            }
-            default -> throw new IllegalStateException("Unsupported OS: " + instance.getOS());
-        }
-    }
 }

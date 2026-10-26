@@ -4,7 +4,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import cz.cuni.mff.releasemanager.provider.UpdateChannel;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;

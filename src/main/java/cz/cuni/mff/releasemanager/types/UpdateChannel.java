@@ -1,4 +1,4 @@
-package cz.cuni.mff.releasemanager.provider;
+package cz.cuni.mff.releasemanager.types;
 
 import java.util.Locale;
 

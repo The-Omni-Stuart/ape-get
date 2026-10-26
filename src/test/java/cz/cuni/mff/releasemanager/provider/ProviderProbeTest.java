@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -24,7 +25,7 @@ class ProviderProbeTest {
     void reportsPresenceNotFoundRateLimitsAndUnsupportedProviders() throws Exception {
         ReleaseProvider present = provider("github");
         when(present.latest("owner/repo")).thenReturn(
-            new ReleaseAssets("1.0", 1L, List.of(), List.of()));
+            new ReleaseAssets("1.0", 1L, List.of()));
 
         ReleaseProvider missing = provider("codeberg");
         when(missing.latest("owner/repo")).thenThrow(
@@ -62,7 +63,7 @@ class ProviderProbeTest {
         ReleaseProvider slow = provider("slow");
         when(slow.latest("owner/repo")).thenAnswer(invocation -> {
             Thread.sleep(2000);
-            return new ReleaseAssets(List.of(), List.of());
+            return new ReleaseAssets(List.of());
         });
 
         ProviderProbe.Result result = new ProviderProbe().probeAll(

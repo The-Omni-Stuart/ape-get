@@ -18,11 +18,11 @@ import cz.cuni.mff.releasemanager.verify.VerificationResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,7 +43,7 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -72,7 +72,7 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
                     "/ProgramFiles/uninstall.exe"),
                 "FPR")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -103,7 +103,7 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
                     "/ProgramFiles/uninstall.exe"),
                 "FPR")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -132,7 +132,7 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -167,7 +167,7 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -197,7 +197,7 @@ class ReleaseManagerUpdateSignerTest extends ReleaseManagerTestSupport {
                     "/ProgramFiles/uninstall.exe"),
                 "OLD")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));

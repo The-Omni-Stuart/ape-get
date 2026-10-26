@@ -1,6 +1,7 @@
 package cz.cuni.mff.releasemanager.cmd;
 
 import java.util.List;
+import java.util.Scanner;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,12 @@ class CmdParserTest {
     @BeforeEach
     void setUp() {
         cmdParser = new CmdParser();
+    }
+
+    @Test
+    void getUserInputParsesNumbersAndStopsAtEof() {
+        assertEquals(2, new CmdParser(new Scanner(" 2 \n")).getUserInput());
+        assertEquals(-1, new CmdParser(new Scanner("")).getUserInput());
     }
 
     @Test

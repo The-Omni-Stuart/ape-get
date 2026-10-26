@@ -3,8 +3,10 @@ package cz.cuni.mff.releasemanager.provider;
 import java.io.IOException;
 import java.nio.file.Path;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 
 /**
  * A configured provider instance that can resolve releases and download assets.
@@ -45,7 +47,7 @@ public interface ReleaseProvider {
      * Reads a specific release by tag.
      * @param path repository path on the provider
      * @param tag release tag
-     * @return all assets and the installable subset
+     * @return all release assets for the caller to choose from
      * @throws IOException if the provider request fails
      * @throws InterruptedException if the request is interrupted
      */

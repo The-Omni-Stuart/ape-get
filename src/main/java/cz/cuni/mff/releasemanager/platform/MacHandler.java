@@ -1,17 +1,15 @@
 package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.UUID;
 
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.StateStore;
@@ -20,6 +18,7 @@ import cz.cuni.mff.releasemanager.utils.CommandNames;
 import cz.cuni.mff.releasemanager.utils.Executables;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 import cz.cuni.mff.releasemanager.utils.Output;
+import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
 // macOS installs DMGs into Applications and portable binaries into ~/.local/bin
@@ -54,6 +53,9 @@ public final class MacHandler extends PlatformHandler {
 
     @Override
     public Path install(InstallRequest request) {
+        if (!supportsKind(request, Platform.OS.MAC, "macOS")) {
+            return null;
+        }
         if (request.kind().isPortable()) {
             return installPortable(request);
         }
@@ -239,16 +241,16 @@ public final class MacHandler extends PlatformHandler {
             String provider = request.provider() == null ? "github" : request.provider();
             Path appDir = statePaths().appDir(provider, request.repoFullName());
             Path versionDir = appDir.resolve("versions")
-                .resolve(sanitizeVersion(request.version()));
+                .resolve(FileUtils.sanitizeVersion(request.version()));
             Files.createDirectories(versionDir);
             Path target = versionDir.resolve(assetPath.getFileName());
             FileUtils.replaceFile(assetPath, target);
             Files.setPosixFilePermissions(target, EXECUTABLE);
 
-            replaceSymlink(appDir.resolve("current"),
+            FileUtils.replaceSymlink(appDir.resolve("current"),
                 Paths.get("versions").resolve(versionDir.getFileName().toString()));
             if (launcher != null) {
-                replaceSymlink(launcher,
+                FileUtils.replaceSymlink(launcher,
                     appDir.resolve("current").resolve(target.getFileName()));
             }
             Output.info("Installed to: " + target);
@@ -274,18 +276,20 @@ public final class MacHandler extends PlatformHandler {
             return null;
         }
         Path output = ape.resolveSibling(ape.getFileName() + ".native");
-        Process process = new ProcessBuilder(
-            "assimilate", "-o", output.toString(), ape.toString())
-            .inheritIO()
-            .start();
+        ProcessRunner.Result result;
         try {
-            if (process.waitFor() != 0) {
-                Output.error("Failed to assimilate " + ape.getFileName() + ".");
-                StagedAsset.discard(output);
-                return null;
-            }
+            result = ProcessRunner.run(new ProcessBuilder(
+                "assimilate", "-o", output.toString(), ape.toString()),
+                Duration.ofMinutes(5));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            StagedAsset.discard(output);
+            return null;
+        }
+        if (result.timedOut() || result.exitCode() != 0) {
+            String reason = result.timedOut() ? "timed out" : result.output().strip();
+            Output.error("Failed to assimilate " + ape.getFileName()
+                + (reason.isBlank() ? "." : ": " + reason));
             StagedAsset.discard(output);
             return null;
         }
@@ -343,41 +347,12 @@ public final class MacHandler extends PlatformHandler {
             return;
         }
         try {
-            replaceSymlink(Path.of(uninstall.path()), restoredPath);
+            FileUtils.replaceSymlink(Path.of(uninstall.path()), restoredPath);
         } catch (IOException e) {
             Output.error("Warning: could not update portable launcher: " + e.getMessage());
         }
     }
 
-    private static void replaceSymlink(Path link, Path target) throws IOException {
-        Files.createDirectories(link.toAbsolutePath().getParent());
-        Path temp = link.resolveSibling(
-            "." + link.getFileName() + ".tmp-" + UUID.randomUUID());
-        Files.createSymbolicLink(temp, target);
-        try {
-            Files.move(temp, link, StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(temp, link, StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            Files.deleteIfExists(temp);
-        }
-    }
-
-    private static String sanitizeVersion(String version) {
-        if (version == null || version.isBlank()) {
-            return "unknown";
-        }
-        String value = version.trim().replaceAll("[^A-Za-z0-9._+-]+", "-");
-        while (value.startsWith(".") || value.startsWith("-")) {
-            value = value.substring(1);
-        }
-        value = value.replace("..", ".");
-        while (value.startsWith(".") || value.startsWith("-")) {
-            value = value.substring(1);
-        }
-        return value.isBlank() ? "unknown" : value;
-    }
 
     @Override
     public boolean uninstall(Path asset) {

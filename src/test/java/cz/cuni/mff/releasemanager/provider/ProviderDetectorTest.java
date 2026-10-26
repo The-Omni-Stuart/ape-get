@@ -6,11 +6,12 @@ import java.net.http.HttpClient;
 
 import com.sun.net.httpserver.HttpServer;
 
+import cz.cuni.mff.releasemanager.types.ProviderType;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
 
 class ProviderDetectorTest {
 

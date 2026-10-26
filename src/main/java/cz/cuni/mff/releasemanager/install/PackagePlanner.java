@@ -51,7 +51,9 @@ public final class PackagePlanner {
                 + "; use --kind.");
             return null;
         }
-        if (kind.isPortable() && !kind.supportsOn(os)) {
+        // automatic candidates are already platform-filtered; --kind/--asset can bypass that
+        boolean forced = requested != null || cmdParser.getAsset() != null;
+        if (forced && !kind.supportsOn(os)) {
             Output.error("Package kind " + kind.manifestName()
                 + " is not supported on " + os + ".");
             return null;

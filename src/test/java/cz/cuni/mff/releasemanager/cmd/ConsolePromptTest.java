@@ -1,7 +1,9 @@
 package cz.cuni.mff.releasemanager.cmd;
 
 import java.util.NoSuchElementException;
+import java.util.Scanner;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -14,6 +16,14 @@ class ConsolePromptTest {
         assertTrue(new ConsolePrompt(() -> "YES", true).confirm("question", false));
         assertFalse(new ConsolePrompt(() -> "n", true).confirm("question", false));
         assertFalse(new ConsolePrompt(() -> "", true).confirm("question", false));
+    }
+
+    @Test
+    void sharesTheParserInputSource() {
+        CmdParser parser = new CmdParser(new Scanner("2\ny\n"));
+
+        assertEquals(2, parser.getUserInput());
+        assertTrue(new ConsolePrompt(parser, true).confirm("question", false));
     }
 
     @Test

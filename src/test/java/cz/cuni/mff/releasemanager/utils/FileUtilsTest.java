@@ -20,6 +20,17 @@ public class FileUtilsTest {
     private static final String TEST_DIR = "tempTestDir";
 
     @Test
+    public void sanitizeVersionKeepsOneSafePathSegment() {
+        assertEquals("v1.2.3", FileUtils.sanitizeVersion("v1.2.3"));
+        assertEquals("v1-2", FileUtils.sanitizeVersion("v1/2"));
+        assertEquals("v1.2", FileUtils.sanitizeVersion("v1..2"));
+        assertEquals("1.0", FileUtils.sanitizeVersion("...1.0"));
+        assertEquals("unknown", FileUtils.sanitizeVersion(".."));
+        assertEquals("unknown", FileUtils.sanitizeVersion("  "));
+        assertEquals("unknown", FileUtils.sanitizeVersion(null));
+    }
+
+    @Test
     public void testCopyRecursively() throws IOException {
         Path source = Files.createTempDirectory(TEST_DIR);
         Path target = source.resolveSibling("copy-" + System.nanoTime());

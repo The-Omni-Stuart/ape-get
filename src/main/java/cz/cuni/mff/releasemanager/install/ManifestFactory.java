@@ -8,10 +8,10 @@ import java.util.Locale;
 
 import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
-import cz.cuni.mff.releasemanager.provider.ProviderConfig;
 import cz.cuni.mff.releasemanager.provider.ReleaseAssets;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.verify.SignatureResult;

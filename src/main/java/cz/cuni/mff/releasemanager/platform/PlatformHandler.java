@@ -9,6 +9,7 @@ import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AppPaths;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.RepoRef;
+import cz.cuni.mff.releasemanager.utils.Output;
 
 // shared install and uninstall contract for each platform
 public abstract class PlatformHandler {
@@ -23,7 +24,7 @@ public abstract class PlatformHandler {
     private Path installRoot;
 
     protected PlatformHandler() {
-        this(new StateStore(AppPaths.forCurrentPlatform()));
+        this(new StateStore(PlatformPaths.current()));
     }
 
     protected PlatformHandler(StateStore stateStore) {
@@ -42,6 +43,17 @@ public abstract class PlatformHandler {
 
     // provider and repo identify the install; version is used for versioned layouts
     public abstract Path install(InstallRequest request);
+
+    // --kind and --asset can bypass platform filtering, so handlers re-check
+    protected static boolean supportsKind(
+        InstallRequest request, Platform.OS os, String platformName) {
+        if (request.kind().supportsOn(os)) {
+            return true;
+        }
+        Output.error("Package kind " + request.kind().manifestName()
+            + " is not supported on " + platformName + ".");
+        return false;
+    }
 
     // platforms without a stable launcher return null
     public Path launcherPath(String provider, String repoFullName) {
@@ -104,6 +116,11 @@ public abstract class PlatformHandler {
 
     // installed, missing, or unknown from the live path
     public InstallState installState(AppManifest manifest) {
+        return defaultInstallState(manifest);
+    }
+
+    // file-existence check shared with platform-specific state readers
+    protected InstallState defaultInstallState(AppManifest manifest) {
         if (manifest == null || manifest.install() == null
             || manifest.install().path() == null) {
             return InstallState.UNKNOWN;
@@ -119,6 +136,11 @@ public abstract class PlatformHandler {
 
     // extensions this platform can install
     public abstract String[] getFormats();
+
+    // overridable when the caller already knows the machine
+    public Platform.Architecture getArchitecture() {
+        return Platform.detectPlatform().getArchitecture();
+    }
 
     // where this platform installs apps
     public abstract Path getInstallRoot();

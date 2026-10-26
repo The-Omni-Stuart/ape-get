@@ -1,5 +1,7 @@
 package cz.cuni.mff.releasemanager.provider;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
+
 // builds the adapter for a configured provider instance
 public final class ProviderFactory {
 
@@ -18,7 +20,7 @@ public final class ProviderFactory {
             case GITHUB -> new GithubProvider(
                 "github".equals(config.name())
                     ? defaultGithub
-                    : new GithubClient(config.resolvedApi(), config.tokenEnv()),
+                    : new GithubClient(config),
                 config);
             case GITEA -> new GiteaProvider(config);
             case GITLAB -> new GitLabProvider(config);

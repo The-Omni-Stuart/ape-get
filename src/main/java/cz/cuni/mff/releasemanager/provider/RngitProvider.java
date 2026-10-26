@@ -10,8 +10,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.stream.Stream;
 
-import cz.cuni.mff.releasemanager.platform.AssetSelector;
-import cz.cuni.mff.releasemanager.platform.Platform;
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 import cz.cuni.mff.releasemanager.utils.FileUtils;
@@ -117,11 +116,7 @@ public final class RngitProvider implements ReleaseProvider {
         for (String name : parseArtifacts(result.output())) {
             all.add(new Asset(assetUrl(path, tag, name), name));
         }
-        List<Asset> installable = AssetSelector.installable(
-            all,
-            Platform.getPlatformHandler().getFormats(),
-            Platform.detectPlatform().getArchitecture());
-        return new ReleaseAssets(tag, null, all, installable);
+        return new ReleaseAssets(tag, null, all);
     }
 
     static String parseTag(String output) {

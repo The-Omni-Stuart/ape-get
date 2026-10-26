@@ -1,4 +1,4 @@
-package cz.cuni.mff.releasemanager.provider;
+package cz.cuni.mff.releasemanager.commands;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -10,7 +10,14 @@ import cz.cuni.mff.releasemanager.json.JsonViews.SearchEntry;
 import cz.cuni.mff.releasemanager.json.JsonViews.SearchError;
 import cz.cuni.mff.releasemanager.json.JsonViews.SearchReport;
 import cz.cuni.mff.releasemanager.json.JsonViews.SearchResults;
+import cz.cuni.mff.releasemanager.provider.NetworkSettings;
+import cz.cuni.mff.releasemanager.provider.ProviderNotices;
+import cz.cuni.mff.releasemanager.provider.ProviderRegistry;
+import cz.cuni.mff.releasemanager.provider.ProviderResolver;
+import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
+import cz.cuni.mff.releasemanager.provider.SearchService;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 import cz.cuni.mff.releasemanager.utils.Output;

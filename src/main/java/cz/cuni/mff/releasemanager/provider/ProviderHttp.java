@@ -5,6 +5,7 @@ import java.net.ConnectException;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
@@ -12,17 +13,30 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Asset;
-import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
-// shared HTTP plumbing for the Gitea and GitLab adapters
+/**
+ * Shared HTTP plumbing for every HTTP provider.
+ */
 final class ProviderHttp {
+    record Response(int status, String body, HttpHeaders headers) {}
+
     private final ProviderConfig config;
-    private final HttpClient client;
     private final String label;
     private final String authHeader;
     private final String authPrefix;
+
+    private volatile HttpClient client;
+
+    ProviderHttp(
+        ProviderConfig config,
+        String label,
+        String authHeader,
+        String authPrefix) {
+        this(config, null, label, authHeader, authPrefix);
+    }
 
     ProviderHttp(
         ProviderConfig config,
@@ -37,63 +51,121 @@ final class ProviderHttp {
         this.authPrefix = authPrefix;
     }
 
+    String apiBase() {
+        return config.resolvedApi();
+    }
+
     String get(String url, String context) throws IOException, InterruptedException {
-        HttpRequest request = request(url, NetworkSettings.apiTimeout())
-            .header("Accept", "application/json")
-            .GET()
-            .build();
-        HttpResponse<String> response;
-        try {
-            response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        } catch (IOException e) {
-            throw networkError(e, request.uri(), "request");
-        }
-        authenticate(response.statusCode());
-        if (response.statusCode() == 404) {
-            throw new ProviderException(
-                ProviderException.Reason.NOT_FOUND, "repository or release not found");
-        }
-        if (response.statusCode() == 429) {
-            throw new ProviderException(
-                ProviderException.Reason.RATE_LIMITED, "rate limit exceeded");
-        }
-        if (response.statusCode() != 200) {
-            throw new IOException(label + " API returned " + response.statusCode()
-                + " for " + context);
-        }
+        Response response = send(url, "application/json", context);
+        requireSuccess(response, context);
         return response.body();
     }
 
+    Response send(String url, String accept, String context)
+        throws IOException, InterruptedException {
+        HttpRequest request = request(url, NetworkSettings.apiTimeout())
+            .header("Accept", accept)
+            .GET()
+            .build();
+        try {
+            HttpResponse<String> response =
+                client().send(request, HttpResponse.BodyHandlers.ofString());
+            return new Response(
+                response.statusCode(), response.body(), response.headers());
+        } catch (IOException e) {
+            throw networkError(e, request.uri(), "request");
+        }
+    }
+
+    void requireSuccess(Response response, String context) throws IOException {
+        requireStatus(response.status(), null, context, "API", "resource not found");
+    }
+
     Path download(Asset asset) throws IOException, InterruptedException {
+        return download(asset, NetworkSettings.downloadTimeout());
+    }
+
+    Path download(Asset asset, Duration timeout)
+        throws IOException, InterruptedException {
         Path destination = StagedAsset.create(asset.name());
         try {
-            HttpRequest request = request(
-                asset.url(), NetworkSettings.downloadTimeout()).GET().build();
+            HttpRequest request = request(asset.url(), timeout)
+                .header("Accept", "application/octet-stream")
+                .GET()
+                .build();
             HttpResponse<Path> response;
             try {
-                response = client.send(
+                response = client().send(
                     request, HttpResponse.BodyHandlers.ofFile(destination));
             } catch (IOException e) {
                 throw networkError(e, request.uri(), "download");
             }
-            if (response.statusCode() == 404) {
-                throw new ProviderException(
-                    ProviderException.Reason.NOT_FOUND, "asset not found");
-            }
-            if (response.statusCode() == 429) {
-                throw new ProviderException(
-                    ProviderException.Reason.RATE_LIMITED, "rate limit exceeded");
-            }
-            if (response.statusCode() != 200) {
-                throw new IOException(label + " download returned "
-                    + response.statusCode() + " for " + asset.name());
-            }
+            requireDownloadSuccess(
+                response.statusCode(), response.headers(), asset.name());
             StagedAsset.requireContent(destination, asset.name());
             return destination.toAbsolutePath();
         } catch (IOException | InterruptedException e) {
             StagedAsset.discard(destination);
             throw e;
         }
+    }
+
+    HttpClient client() {
+        HttpClient current = client;
+        if (current == null) {
+            synchronized (this) {
+                current = client;
+                if (current == null) {
+                    HttpClient.Builder builder = HttpClient.newBuilder()
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .version(HttpClient.Version.HTTP_2);
+                    NetworkSettings.apply(builder);
+                    current = builder.build();
+                    client = current;
+                }
+            }
+        }
+        return current;
+    }
+
+    private void requireDownloadSuccess(
+        int status, HttpHeaders headers, String name) throws IOException {
+        requireStatus(status, headers, name, "download", "asset not found");
+    }
+
+    private void requireStatus(
+        int status,
+        HttpHeaders headers,
+        String context,
+        String action,
+        String notFoundMessage) throws IOException {
+        if (status == 200) {
+            return;
+        }
+        if (status == 401) {
+            throw new ProviderException(
+                ProviderException.Reason.UNAUTHORIZED, "authentication failed");
+        }
+        if (status == 403 && headers != null
+            && headers.firstValueAsLong("X-RateLimit-Remaining").orElse(-1) == 0) {
+            throw new ProviderException(
+                ProviderException.Reason.RATE_LIMITED,
+                "Rate limit exceeded; try again later.");
+        }
+        if (status == 403) {
+            throw new ProviderException(
+                ProviderException.Reason.UNAUTHORIZED, "access denied");
+        }
+        if (status == 404) {
+            throw new ProviderException(
+                ProviderException.Reason.NOT_FOUND, notFoundMessage);
+        }
+        if (status == 429) {
+            throw new ProviderException(
+                ProviderException.Reason.RATE_LIMITED, "rate limit exceeded");
+        }
+        throw new IOException(label + " " + action + " returned " + status
+            + " for " + context);
     }
 
     private HttpRequest.Builder request(String url, Duration timeout) {
@@ -130,24 +202,13 @@ final class ProviderHttp {
         return error;
     }
 
-    private void authenticate(int status) throws IOException {
-        if (status == 401 || status == 403) {
-            throw new ProviderException(
-                ProviderException.Reason.UNAUTHORIZED, "authentication failed");
-        }
-    }
-
     private Optional<String> token() {
         String env = config.tokenEnv();
         if (env == null || env.isBlank()) {
             return Optional.empty();
         }
         String value = System.getenv(env);
-        if (value == null || value.isBlank()) {
-            Output.error("Warning: provider " + config.name()
-                + " expects a token in " + env + ".");
-            return Optional.empty();
-        }
-        return Optional.of(value);
+        return value == null || value.isBlank()
+            ? Optional.empty() : Optional.of(value);
     }
 }

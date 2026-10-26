@@ -181,6 +181,39 @@ public class FileUtils {
         });
     }
 
+    // one safe path segment for a release version
+    public static String sanitizeVersion(String version) {
+        if (version == null || version.isBlank()) {
+            return "unknown";
+        }
+        String value = version.trim()
+            .replaceAll("[^A-Za-z0-9._+-]+", "-");
+        while (value.startsWith(".") || value.startsWith("-")) {
+            value = value.substring(1);
+        }
+        value = value.replace("..", ".");
+        while (value.startsWith(".") || value.startsWith("-")) {
+            value = value.substring(1);
+        }
+        return value.isBlank() ? "unknown" : value;
+    }
+
+    // atomically replace a symlink, keeping the old link on failure
+    public static void replaceSymlink(Path link, Path target) throws IOException {
+        Files.createDirectories(link.toAbsolutePath().getParent());
+        Path temp = link.resolveSibling(
+            "." + link.getFileName() + ".tmp-" + UUID.randomUUID());
+        Files.createSymbolicLink(temp, target);
+        try {
+            Files.move(temp, link, StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(temp, link, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
     // delete a tree without following symlinks
     public static void deleteRecursively(Path path) throws IOException {
         Files.walkFileTree(path, new SimpleFileVisitor<>() {

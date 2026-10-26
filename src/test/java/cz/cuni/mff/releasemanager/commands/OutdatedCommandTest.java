@@ -15,8 +15,8 @@ import static org.mockito.Mockito.when;
 
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.install.UpdateChecker;
-import cz.cuni.mff.releasemanager.provider.UpdateChannel;
 import cz.cuni.mff.releasemanager.state.StateStore;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 
 class OutdatedCommandTest {
 

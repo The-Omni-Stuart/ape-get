@@ -2,13 +2,11 @@ package cz.cuni.mff.releasemanager.state;
 
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import cz.cuni.mff.releasemanager.platform.Platform;
 
 class AppPathsTest {
 
@@ -59,30 +57,4 @@ class AppPathsTest {
             AppPaths.repoDirectoryName("group/sub/project"));
     }
 
-    @Test
-    void usesLocalShareOnLinux() {
-        AppPaths paths = AppPaths.forPlatform(
-            Platform.OS.LINUX, "/home/me", "/local");
-
-        assertEquals(Path.of("/home/me", ".local", "share", AppPaths.APP_DIR)
-            .toAbsolutePath().normalize(), paths.root());
-    }
-
-    @Test
-    void usesApplicationSupportOnMac() {
-        AppPaths paths = AppPaths.forPlatform(
-            Platform.OS.MAC, "/Users/me", "/local");
-
-        assertEquals(Path.of("/Users/me", "Library", "Application Support", AppPaths.APP_DIR)
-            .toAbsolutePath().normalize(), paths.root());
-    }
-
-    @Test
-    void usesLocalAppDataOnWindows() {
-        AppPaths paths = AppPaths.forPlatform(
-            Platform.OS.WINDOWS, "/home/me", "/local");
-
-        assertEquals(Path.of("/local", AppPaths.APP_DIR).toAbsolutePath().normalize(),
-            paths.root());
-    }
 }

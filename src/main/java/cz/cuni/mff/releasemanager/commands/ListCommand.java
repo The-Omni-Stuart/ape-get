@@ -9,7 +9,6 @@ import cz.cuni.mff.releasemanager.json.JsonViews.AppList;
 import cz.cuni.mff.releasemanager.json.JsonViews.AppView;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.state.AppManifest;
-import cz.cuni.mff.releasemanager.state.ManifestViews;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.utils.Output;
 

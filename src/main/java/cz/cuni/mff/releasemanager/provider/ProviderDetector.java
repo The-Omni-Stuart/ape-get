@@ -1,5 +1,6 @@
 package cz.cuni.mff.releasemanager.provider;
 
+import cz.cuni.mff.releasemanager.types.ProviderType;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;

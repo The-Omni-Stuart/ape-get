@@ -61,7 +61,10 @@ public final class StateStore {
                 readManifest(file).ifPresent(manifests::add);
             }
         }
-        manifests.sort(Comparator.comparing(AppManifest::repo));
+        manifests.sort(Comparator
+            .comparing(AppManifest::repo)
+            .thenComparing(AppManifest::provider,
+                Comparator.nullsFirst(String::compareTo)));
         return manifests;
     }
 

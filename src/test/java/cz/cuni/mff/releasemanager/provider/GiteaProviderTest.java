@@ -15,10 +15,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import cz.cuni.mff.releasemanager.platform.Platform;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
 
+import cz.cuni.mff.releasemanager.platform.Platform;
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -59,10 +60,7 @@ class GiteaProviderTest {
 
     @Test
     @Timeout(60)
-    void readsLatestReleaseAndFiltersArchitecture() throws Exception {
-        Platform.Architecture architecture = Platform.detectPlatform().getArchitecture();
-        assumeTrue(architecture == Platform.Architecture.ARM_64
-            || architecture == Platform.Architecture.X86_64);
+    void readsLatestReleaseWithEveryAsset() throws Exception {
 
         String extension = switch (Platform.detectPlatform().getOS()) {
             case LINUX -> ".AppImage";
@@ -93,9 +91,8 @@ class GiteaProviderTest {
         assertEquals("v1.2.3", release.version());
         assertEquals(42L, release.releaseId());
         assertEquals(2, release.all().size());
-        assertEquals(1, release.installable().size());
-        assertEquals(architecture == Platform.Architecture.ARM_64 ? arm : x86,
-            release.installable().get(0).name());
+        assertTrue(release.all().stream().anyMatch(asset -> asset.name().equals(arm)));
+        assertTrue(release.all().stream().anyMatch(asset -> asset.name().equals(x86)));
         assertEquals("token " + System.getenv("PATH"), authorization.get());
     }
 

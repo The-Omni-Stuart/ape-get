@@ -3,6 +3,7 @@ package cz.cuni.mff.releasemanager.cmd;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 
 import cz.cuni.mff.releasemanager.utils.Output;
@@ -13,7 +14,7 @@ import cz.cuni.mff.releasemanager.utils.Output;
  */
 public class CmdParser {
 
-    private final Scanner scanner = new Scanner(System.in);
+    private final Scanner scanner;
     private boolean strict;
     private boolean assumeYes;
     private boolean requireSignature;
@@ -35,6 +36,14 @@ public class CmdParser {
     private boolean all;
     private boolean outdated;
     private String channel;
+
+    public CmdParser() {
+        this(new Scanner(System.in));
+    }
+
+    CmdParser(Scanner scanner) {
+        this.scanner = scanner;
+    }
 
     /**
      * Parses the command line arguments and returns the corresponding Command.
@@ -337,13 +346,26 @@ public class CmdParser {
      * This method handles invalid input by recursively calling itself until an integer is entered.
      * @return the user input as an integer
      */
-    public int getUserInput() {
+    // one shared line reader for choices and confirmations
+    String nextLine() {
         try {
-            String input = scanner.nextLine();
-            return Integer.parseInt(input);
-        } catch (NumberFormatException e) {
-            Output.error("Invalid input. Please enter a number.");
-            return getUserInput();
+            return scanner.nextLine();
+        } catch (NoSuchElementException e) {
+            return null;
+        }
+    }
+
+    public int getUserInput() {
+        while (true) {
+            String input = nextLine();
+            if (input == null) {
+                return -1;
+            }
+            try {
+                return Integer.parseInt(input.trim());
+            } catch (NumberFormatException e) {
+                Output.error("Invalid input. Please enter a number.");
+            }
         }
     }
 

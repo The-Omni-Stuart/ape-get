@@ -72,15 +72,19 @@ public final class AssetChooser {
             Output.error((i + 1) + ": " + assets.get(i).name());
         }
         int choice = choice(1, assets.size());
-        return assets.get(choice - 1);
+        return choice < 1 ? null : assets.get(choice - 1);
     }
 
     private int choice(int min, int max) {
-        int input = cmdParser.getUserInput();
-        if (input < min || input > max) {
+        while (true) {
+            int input = cmdParser.getUserInput();
+            if (input < 0) {
+                return -1;
+            }
+            if (input >= min && input <= max) {
+                return input;
+            }
             Output.error("Invalid choice. Valid options are: " + min + " - " + max);
-            return choice(min, max);
         }
-        return input;
     }
 }

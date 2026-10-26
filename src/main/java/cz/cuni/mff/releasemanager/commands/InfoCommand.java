@@ -8,11 +8,11 @@ import cz.cuni.mff.releasemanager.cmd.CmdParser;
 import cz.cuni.mff.releasemanager.cmd.Command;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.state.AppManifest;
-import cz.cuni.mff.releasemanager.state.ManifestViews;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.types.RepoRef;
 import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.RepoParser;
+import cz.cuni.mff.releasemanager.verify.SignatureDescriptions;
 
 // shows everything we know about one installed application
 public final class InfoCommand {
@@ -69,8 +69,8 @@ public final class InfoCommand {
         if (manifest.install().desktopEntry() != null) {
             Output.data("Desktop entry: " + manifest.install().desktopEntry());
         }
-        Output.data("Checksum: " + ManifestViews.describeVerification(manifest.verification()));
-        Output.data("Signature: " + ManifestViews.describePinnedSignature(manifest.signature()));
+        Output.data("Checksum: " + SignatureDescriptions.describeVerification(manifest.verification()));
+        Output.data("Signature: " + SignatureDescriptions.describePinnedSignature(manifest.signature()));
         if (manifest.install().uninstall() != null) {
             String productCode = manifest.install().uninstall().productCode();
             if (productCode != null && !productCode.isBlank()) {

@@ -4,12 +4,12 @@ import java.io.IOException;
 import java.util.List;
 
 import cz.cuni.mff.releasemanager.cmd.CmdParser;
-import cz.cuni.mff.releasemanager.provider.UpdateChannel;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.AutoUpdateMode;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
 import cz.cuni.mff.releasemanager.state.StateStore;
 import cz.cuni.mff.releasemanager.state.UpdateLog;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 import cz.cuni.mff.releasemanager.utils.Output;
 
 // runs the configured automatic check or update, at most once per interval
@@ -68,10 +68,17 @@ public final class AutoUpdater {
     }
 
     private void apply(UpdateChannel channel) {
-        boolean ok = installService.updateAll(false, false);
+        InstallService.Batch batch = installService.updateAllBatch(false, false);
         log.append("apply channel=" + channel.id() + ": "
-            + (ok ? "completed" : "completed with errors"));
-        Output.info(ok
+            + (batch.ok() ? "completed" : "completed with errors"));
+        for (UpdateResult result : batch.results()) {
+            if (result.status() == UpdateResult.Status.FAILED) {
+                log.append("apply failed " + result.provider() + ":" + result.repo()
+                    + ": " + (result.message() == null || result.message().isBlank()
+                        ? "update failed" : result.message()));
+            }
+        }
+        Output.info(batch.ok()
             ? "Automatic update completed."
             : "Automatic update completed with errors; see the update log.");
     }

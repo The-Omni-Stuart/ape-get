@@ -1,8 +1,8 @@
-package cz.cuni.mff.releasemanager.provider;
+package cz.cuni.mff.releasemanager.state;
 
+import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.Test;
 
 class ProviderConfigTest {
 
@@ -20,6 +20,8 @@ class ProviderConfigTest {
         assertFalse(config("A B").isValid());
         assertTrue(config("GITEA_TOKEN").isValid());
         assertTrue(config(null).isValid());
+        assertFalse(config("PATH").isValid());
+        assertFalse(config("HOME").isValid());
     }
 
     private static ProviderConfig config(String tokenEnv) {

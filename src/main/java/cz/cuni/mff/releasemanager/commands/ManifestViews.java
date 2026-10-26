@@ -1,4 +1,4 @@
-package cz.cuni.mff.releasemanager.state;
+package cz.cuni.mff.releasemanager.commands;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,9 +12,10 @@ import cz.cuni.mff.releasemanager.json.JsonViews.SignatureView;
 import cz.cuni.mff.releasemanager.json.JsonViews.VerificationView;
 import cz.cuni.mff.releasemanager.platform.PackageKind;
 import cz.cuni.mff.releasemanager.platform.PlatformHandler;
+import cz.cuni.mff.releasemanager.state.AppManifest;
 
-// json and text views of an installed app
-public final class ManifestViews {
+// json views of an installed app
+final class ManifestViews {
 
     private final PlatformHandler platformHandler;
 
@@ -101,43 +102,5 @@ public final class ManifestViews {
             install == null ? null : install.kind(),
             install == null ? null : install.command(),
             install == null ? null : install.desktopEntry());
-    }
-
-    public static String describeVerification(AppManifest.Verification verification) {
-        if (verification == null) {
-            return "not recorded";
-        }
-        StringBuilder value = new StringBuilder(verification.status());
-        if (verification.method() != null) {
-            value.append(" (").append(verification.method());
-            if (verification.checksumAsset() != null) {
-                value.append(", ").append(verification.checksumAsset());
-            }
-            value.append(")");
-        }
-        return value.toString();
-    }
-
-    public static String describePinnedSignature(AppManifest.Signature signature) {
-        if (signature == null) {
-            return "not recorded";
-        }
-        if (signature.isVerified()) {
-            String value = "verified (" + signature.mechanism() + ") by "
-                + describeSignature(signature);
-            if (signature.notarized() != null) {
-                value += signature.notarized() ? ", notarized" : ", not notarized";
-            }
-            return value;
-        }
-        return signature.status()
-            + (signature.mechanism() == null ? "" : " (" + signature.mechanism() + ")");
-    }
-
-    public static String describeSignature(AppManifest.Signature signature) {
-        String signer = signature.signer() == null ? "unknown signer" : signature.signer();
-        return signature.identity() == null
-            ? signer
-            : signer + " (" + signature.identity() + ")";
     }
 }

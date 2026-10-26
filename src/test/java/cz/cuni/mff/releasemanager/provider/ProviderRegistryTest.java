@@ -2,9 +2,10 @@ package cz.cuni.mff.releasemanager.provider;
 
 import java.util.Map;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
+import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.Test;
 
 class ProviderRegistryTest {
 

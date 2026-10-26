@@ -3,8 +3,10 @@ package cz.cuni.mff.releasemanager.provider;
 import java.io.IOException;
 import java.nio.file.Path;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 
 /**
  * GitHub API provider implementation.

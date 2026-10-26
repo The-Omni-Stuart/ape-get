@@ -115,6 +115,16 @@ class PackagePlannerTest {
     }
 
     @Test
+    void rejectsNativeInstallersOnTheWrongPlatform() {
+        RepoRef ref = new RepoRef("github", "owner/tool");
+        PackagePlanner linux = new PackagePlanner(Platform.OS.LINUX, cmdParser);
+        assertNull(linux.plan(ref, new Asset("url", "tool.msi"), PackageKind.MSI, null));
+
+        PackagePlanner windows = new PackagePlanner(Platform.OS.WINDOWS, cmdParser);
+        assertNull(windows.plan(ref, new Asset("url", "tool.dmg"), PackageKind.DMG, null));
+    }
+
+    @Test
     void rejectsInvalidKindOption() {
         when(cmdParser.getKind()).thenReturn("nonsense");
         PackagePlanner planner = new PackagePlanner(Platform.OS.LINUX, cmdParser);

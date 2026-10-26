@@ -6,8 +6,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import cz.cuni.mff.releasemanager.provider.ProviderConfig;
-import cz.cuni.mff.releasemanager.provider.UpdateChannel;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 
 /**
  * Persistent tool configuration.

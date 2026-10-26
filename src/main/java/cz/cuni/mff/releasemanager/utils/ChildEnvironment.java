@@ -8,6 +8,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ChildEnvironment {
     private static final Set<String> TOKEN_VARIABLES = ConcurrentHashMap.newKeySet();
+    private static final Set<String> RESERVED = Set.of(
+        "PATH", "HOME", "TMPDIR", "LD_PRELOAD", "LD_LIBRARY_PATH");
 
     static {
         TOKEN_VARIABLES.add("GRM_GITHUB_TOKEN");
@@ -20,9 +22,17 @@ public final class ChildEnvironment {
      * @param name environment variable name
      */
     public static void register(String name) {
-        if (name != null && !name.isBlank()) {
+        if (name != null && !name.isBlank() && !isReserved(name)) {
             TOKEN_VARIABLES.add(name);
         }
+    }
+
+    /**
+     * @param name environment variable name
+     * @return true when the variable must never be treated as a provider token
+     */
+    public static boolean isReserved(String name) {
+        return name != null && RESERVED.contains(name);
     }
 
     /**

@@ -13,11 +13,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import cz.cuni.mff.releasemanager.platform.AssetSelector;
-import cz.cuni.mff.releasemanager.platform.Platform;
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.Repo;
 import cz.cuni.mff.releasemanager.types.SearchResult;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 
 // Gitea, Forgejo, and Codeberg API v1 provider
 public final class GiteaProvider implements ReleaseProvider {
@@ -107,11 +107,7 @@ public final class GiteaProvider implements ReleaseProvider {
                 .map(asset -> new Asset(
                     resolveDownloadUrl(asset.downloadUrl()), asset.name()))
                 .toList();
-        List<Asset> installable = AssetSelector.installable(
-            all,
-            Platform.getPlatformHandler().getFormats(),
-            Platform.detectPlatform().getArchitecture());
-        return new ReleaseAssets(release.tagName(), release.id(), all, installable);
+        return new ReleaseAssets(release.tagName(), release.id(), all);
     }
 
     @Override

@@ -10,7 +10,6 @@ import cz.cuni.mff.releasemanager.cmd.Confirmer;
 import cz.cuni.mff.releasemanager.provider.ReleaseProvider;
 import cz.cuni.mff.releasemanager.state.AppManifest;
 import cz.cuni.mff.releasemanager.state.GrmConfig;
-import cz.cuni.mff.releasemanager.state.ManifestViews;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.utils.Output;
 import cz.cuni.mff.releasemanager.utils.StagedAsset;
@@ -122,9 +121,9 @@ public final class TrustGate {
         }
 
         String reason = unsigned
-            ? "it is pinned to " + ManifestViews.describeSignature(pinned)
+            ? "it is pinned to " + SignatureDescriptions.describeSignature(pinned)
                 + ", but no verified signature is available"
-            : "the signer changed from " + ManifestViews.describeSignature(pinned)
+            : "the signer changed from " + SignatureDescriptions.describeSignature(pinned)
                 + " to " + describe(signature);
         if (!cmdParser.isAllowSignerChange()) {
             Output.error("Unable to " + operation + " " + previous.repo() + ".");
@@ -142,11 +141,11 @@ public final class TrustGate {
 
         String question = unsigned
             ? "Clear the signer pin for " + previous.repo() + "?\n"
-                + "  pinned: " + ManifestViews.describeSignature(pinned) + "\n"
+                + "  pinned: " + SignatureDescriptions.describeSignature(pinned) + "\n"
                 + "  now:    no verified signature\n"
                 + "Only continue if you trust this release."
             : "Accept the signer change for " + previous.repo() + "?\n"
-                + "  from: " + ManifestViews.describeSignature(pinned) + "\n"
+                + "  from: " + SignatureDescriptions.describeSignature(pinned) + "\n"
                 + "  to:   " + describe(signature) + "\n"
                 + "Only continue if you trust the new signer.";
         if (!confirm.confirm(question)) {

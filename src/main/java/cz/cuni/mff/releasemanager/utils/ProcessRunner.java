@@ -19,7 +19,7 @@ public final class ProcessRunner {
         Path log = Files.createTempFile("grm-process-", ".log");
         Process process = null;
         try {
-            process = builder
+            process = ChildEnvironment.sanitize(builder)
                 .redirectErrorStream(true)
                 .redirectOutput(log.toFile())
                 .redirectInput(ProcessBuilder.Redirect.PIPE)

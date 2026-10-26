@@ -3,12 +3,11 @@ package cz.cuni.mff.releasemanager.provider;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.lang.reflect.Field;
-import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -23,11 +22,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 
-import cz.cuni.mff.releasemanager.platform.Platform;
-import cz.cuni.mff.releasemanager.platform.PlatformHandler;
 import cz.cuni.mff.releasemanager.types.Asset;
 import cz.cuni.mff.releasemanager.types.SearchResult;
 
+import cz.cuni.mff.releasemanager.state.ProviderConfig;
+import cz.cuni.mff.releasemanager.types.UpdateChannel;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,22 +42,14 @@ class GithubClientTest {
 
     private GithubClient githubClient;
     private HttpClient mockHttpClient;
-    private PlatformHandler mockPlatformHandler;
 
     @BeforeEach
     void setUp() throws Exception {
-        githubClient = new GithubClient();
-
-        // use reflection to set the private fields - replace with dependency injection framework
         mockHttpClient = mock(HttpClient.class);
-        Field clientField = GithubClient.class.getDeclaredField("client");
-        clientField.setAccessible(true);
-        clientField.set(githubClient, mockHttpClient);
-
-        mockPlatformHandler = mock(PlatformHandler.class);
-        Field handlerField = GithubClient.class.getDeclaredField("platformHandler");
-        handlerField.setAccessible(true);
-        handlerField.set(githubClient, mockPlatformHandler);
+        githubClient = new GithubClient(
+            new ProviderConfig("github", "github", "https://github.com",
+                "https://api.github.com", "GRM_GITHUB_TOKEN"),
+            mockHttpClient, null);
     }
 
     @Test
@@ -72,7 +63,6 @@ class GithubClientTest {
             """);
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
             .thenReturn(mockResponse);
-        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".bin"});
 
         ReleaseAssets release = githubClient.getRelease("owner/repo", "v1.2.3");
 
@@ -86,24 +76,12 @@ class GithubClientTest {
     }
 
     @Test
-    void followsRedirectsWithoutAllowingHttpsDowngrade() throws Exception {
-        GithubClient client = new GithubClient();
-        java.lang.reflect.Method clientMethod =
-            GithubClient.class.getDeclaredMethod("client");
-        clientMethod.setAccessible(true);
-
-        HttpClient http = (HttpClient) clientMethod.invoke(client);
-
-        assertEquals(HttpClient.Redirect.NORMAL, http.followRedirects());
-    }
-
-    @Test
     void sendsGitHubTokenFromEnvironment() throws Exception {
         assumeTrue(System.getenv("PATH") != null);
-        GithubClient tokenClient = new GithubClient("https://api.github.com", "PATH");
-        Field clientField = GithubClient.class.getDeclaredField("client");
-        clientField.setAccessible(true);
-        clientField.set(tokenClient, mockHttpClient);
+        GithubClient tokenClient = new GithubClient(
+            new ProviderConfig("github", "github", "https://github.com",
+                "https://api.github.com", "PATH"),
+            mockHttpClient, null);
 
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
         when(mockResponse.statusCode()).thenReturn(200);
@@ -159,11 +137,10 @@ class GithubClientTest {
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
         when(mockResponse.statusCode()).thenReturn(200);
         when(mockResponse.body()).thenReturn(json);
-        when(mockPlatformHandler.getFormats()).thenReturn(new String[]{"exe", "msi"});
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
                 .thenReturn(mockResponse);
 
-        List<Asset> assets = githubClient.getLatestRelease(repoFullName).installable();
+        List<Asset> assets = githubClient.getLatestRelease(repoFullName).all();
 
         assertEquals(2, assets.size());
         assertEquals("file1.exe", assets.get(0).name());
@@ -191,7 +168,6 @@ class GithubClientTest {
             """);
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
             .thenReturn(mockResponse);
-        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".bin"});
 
         ReleaseAssets release = githubClient.getLatestRelease(
             "owner/repo", UpdateChannel.BETA);
@@ -203,13 +179,15 @@ class GithubClientTest {
     }
 
     @Test
-    void getLatestRelease_returnsEmptyForInvalidRepoName() throws Exception {
-        List<Asset> assets = githubClient.getLatestRelease("invalidRepoName").installable();
-        assertTrue(assets.isEmpty());
+    void getLatestRelease_rejectsInvalidRepoName() throws Exception {
+        ProviderException error = assertThrows(ProviderException.class,
+            () -> githubClient.getLatestRelease("invalidRepoName"));
+
+        assertTrue(error.getMessage().contains("owner/repo"), error.getMessage());
     }
 
     @Test
-    void getLatestRelease_exposesAllAndInstallableAssets() throws Exception {
+    void getLatestReleaseExposesEveryAsset() throws Exception {
         String json = """
             {
               "assets": [
@@ -223,70 +201,12 @@ class GithubClientTest {
         HttpResponse<String> mockResponse = mock(HttpResponse.class);
         when(mockResponse.statusCode()).thenReturn(200);
         when(mockResponse.body()).thenReturn(json);
-        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".appimage"});
         when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
             .thenReturn(mockResponse);
 
         ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
 
         assertEquals(4, release.all().size());
-        assertEquals(1, release.installable().size());
-        assertEquals("Example-1.0.AppImage", release.installable().get(0).name());
-    }
-
-    @Test
-    void getLatestReleasePrefersCurrentArchitecture() throws Exception {
-        String json = """
-            {
-              "assets": [
-                { "name": "app-arm64.AppImage", "url": "http://example.com/arm64" },
-                { "name": "app-x86_64.AppImage", "url": "http://example.com/x86_64" }
-              ]
-            }
-            """;
-        HttpResponse<String> mockResponse = mock(HttpResponse.class);
-        when(mockResponse.statusCode()).thenReturn(200);
-        when(mockResponse.body()).thenReturn(json);
-        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".appimage"});
-        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
-            .thenReturn(mockResponse);
-
-        Platform.Architecture architecture = Platform.detectPlatform().getArchitecture();
-        assumeTrue(architecture == Platform.Architecture.ARM_64
-            || architecture == Platform.Architecture.X86_64);
-
-        ReleaseAssets release = githubClient.getLatestRelease("owner/repo");
-
-        assertEquals(1, release.installable().size());
-        assertEquals(architecture == Platform.Architecture.ARM_64
-                ? "app-arm64.AppImage"
-                : "app-x86_64.AppImage",
-            release.installable().get(0).name());
-    }
-
-    @Test
-    void getLatestRelease_ignoresChecksumAndSignatureFiles() throws Exception {
-        String json = """
-            {
-              "assets": [
-                { "name": "Example-1.0.AppImage", "url": "http://example.com/Example-1.0.AppImage" },
-                { "name": "Example-1.0.AppImage.DIGEST", "url": "http://example.com/digest" },
-                { "name": "Example-1.0.AppImage.sig", "url": "http://example.com/sig" },
-                { "name": "Example-1.0.AppImage.zsync", "url": "http://example.com/zsync" }
-              ]
-            }
-            """;
-        HttpResponse<String> mockResponse = mock(HttpResponse.class);
-        when(mockResponse.statusCode()).thenReturn(200);
-        when(mockResponse.body()).thenReturn(json);
-        when(mockPlatformHandler.getFormats()).thenReturn(new String[] {".appimage"});
-        when(mockHttpClient.send(any(HttpRequest.class), eq(HttpResponse.BodyHandlers.ofString())))
-            .thenReturn(mockResponse);
-
-        List<Asset> assets = githubClient.getLatestRelease("owner/repo").installable();
-
-        assertEquals(1, assets.size());
-        assertEquals("Example-1.0.AppImage", assets.get(0).name());
     }
 
     @Test

@@ -46,7 +46,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(previous));
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new ReleaseAssets(
-                "1.1.0", 2L, List.of(newAsset), List.of(newAsset)));
+                "1.1.0", 2L, List.of(newAsset)));
 
         int[] code = new int[1];
         String error = captureErr(() -> code[0] = releaseManager.execute(
@@ -90,7 +90,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(previous));
         when(mockPlatformHandler.supportsInstallerRollback(previous)).thenReturn(false);
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -116,7 +116,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(previous));
         when(mockPlatformHandler.supportsInstallerRollback(previous)).thenReturn(true);
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -143,7 +143,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
                 "user/example", oldAsset.url(), oldAsset.name(), installed.toString())));
         when(mockGithubClient.getLatestRelease("user/example"))
             .thenReturn(new ReleaseAssets(
-                "2.0.0", 2L, List.of(newAsset), List.of(newAsset)));
+                "2.0.0", 2L, List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -170,7 +170,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "github:user/example"}));
 
@@ -193,7 +193,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -227,7 +227,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -257,7 +257,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.verified(newAsset.name(), "checksum"));
@@ -283,7 +283,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenReturn(downloaded);
         when(mockVerifier.verify(any(), any(), any(), any()))
             .thenReturn(VerificationResult.mismatch(
@@ -307,7 +307,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", oldAsset.url(), oldAsset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(newAsset), List.of(newAsset)));
+            .thenReturn(new ReleaseAssets(List.of(newAsset)));
         when(mockGithubClient.downloadAsset(newAsset)).thenThrow(new IOException("boom"));
 
         assertEquals(1, releaseManager.execute(new String[]{"update", "github:user/example"}));
@@ -338,9 +338,9 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
         Asset oneAsset = new Asset("http://one/new", "example.exe");
         Asset twoAsset = new Asset("http://two/new", "example.exe");
         when(mockGithubClient.getLatestRelease("user/one"))
-            .thenReturn(new ReleaseAssets("2.0.0", 2L, List.of(oneAsset), List.of(oneAsset)));
+            .thenReturn(new ReleaseAssets("2.0.0", 2L, List.of(oneAsset)));
         when(mockGithubClient.getLatestRelease("user/two"))
-            .thenReturn(new ReleaseAssets("2.0.0", 2L, List.of(twoAsset), List.of(twoAsset)));
+            .thenReturn(new ReleaseAssets("2.0.0", 2L, List.of(twoAsset)));
         when(mockGithubClient.downloadAsset(oneAsset))
             .thenReturn(Path.of("/tmp/one.exe"));
         when(mockGithubClient.downloadAsset(twoAsset))
@@ -370,7 +370,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", asset.url(), asset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
 
         assertEquals(0, releaseManager.execute(new String[]{"update", "github:user/example"}));
 
@@ -390,7 +390,7 @@ class ReleaseManagerUpdateTest extends ReleaseManagerTestSupport {
             .thenReturn(Optional.of(manifest(
                 "user/example", asset.url(), asset.name(), "/ProgramFiles/uninstall.exe")));
         when(mockGithubClient.getLatestRelease("user/example"))
-            .thenReturn(new ReleaseAssets(List.of(asset), List.of(asset)));
+            .thenReturn(new ReleaseAssets(List.of(asset)));
 
         String output = captureOut(
             () -> releaseManager.execute(

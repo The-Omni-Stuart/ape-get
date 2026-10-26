@@ -2,6 +2,7 @@ package cz.cuni.mff.releasemanager.platform;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -14,19 +15,25 @@ import java.util.stream.Stream;
 
 import cz.cuni.mff.releasemanager.utils.FileUtils;
 import cz.cuni.mff.releasemanager.utils.Output;
+import cz.cuni.mff.releasemanager.utils.ProcessRunner;
 
 // pulls the embedded desktop file and icon out of an AppImage
 final class AppImageDesktop {
 
     private static final long MAX_ICON_BYTES = 5 * 1024 * 1024;
+    private static final Duration EXTRACT_TIMEOUT = Duration.ofSeconds(30);
 
     private AppImageDesktop() {}
 
     static Optional<Metadata> read(Path appImage) {
+        return read(appImage, EXTRACT_TIMEOUT);
+    }
+
+    static Optional<Metadata> read(Path appImage, Duration timeout) {
         Path fullDir = null;
         try {
             fullDir = Files.createTempDirectory("grm-desktop-");
-            if (!extract(appImage, fullDir)) {
+            if (!extract(appImage, fullDir, timeout)) {
                 return Optional.empty();
             }
             Path desktopFile;
@@ -64,16 +71,14 @@ final class AppImageDesktop {
         }
     }
 
-    private static boolean extract(Path appImage, Path directory)
+    private static boolean extract(
+        Path appImage, Path directory, Duration timeout)
         throws IOException, InterruptedException {
         ProcessBuilder builder = new ProcessBuilder()
-            .command(appImage.toString(), "--appimage-extract");
-        Process process = builder
-            .directory(directory.toFile())
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            .redirectError(ProcessBuilder.Redirect.DISCARD)
-            .start();
-        return process.waitFor() == 0;
+            .command(appImage.toString(), "--appimage-extract")
+            .directory(directory.toFile());
+        ProcessRunner.Result result = ProcessRunner.run(builder, timeout);
+        return !result.timedOut() && result.exitCode() == 0;
     }
 
     static Map<String, String> parse(Path desktopFile) throws IOException {

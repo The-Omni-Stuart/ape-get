@@ -5,11 +5,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Checks which providers host an exact repository path.
@@ -35,65 +30,31 @@ public final class ProviderProbe {
         }
 
         Map<String, Result> results = new LinkedHashMap<>();
+        List<ProviderTasks.Task<ReleaseAssets>> tasks = new ArrayList<>();
         for (ReleaseProvider provider : providers) {
-            results.put(provider.config().name(), null);
+            String name = provider.config().name();
+            results.put(name, null);
+            if (!provider.supportsRepositoryLookup()) {
+                results.put(name, new Result(name, false,
+                    "repository lookup is not supported",
+                    ProviderException.Reason.UNSUPPORTED));
+                continue;
+            }
+            tasks.add(new ProviderTasks.Task<>(name, () -> provider.latest(path)));
         }
 
-        var executor = Executors.newVirtualThreadPerTaskExecutor();
-        try {
-            Map<ReleaseProvider, Future<ReleaseAssets>> futures = new LinkedHashMap<>();
-            for (ReleaseProvider provider : providers) {
-                String name = provider.config().name();
-                if (!provider.supportsRepositoryLookup()) {
-                    results.put(name, new Result(name, false,
-                        "repository lookup is not supported",
-                        ProviderException.Reason.UNSUPPORTED));
-                    continue;
-                }
-                futures.put(provider, executor.submit(() -> provider.latest(path)));
+        for (ProviderTasks.Outcome<ReleaseAssets> outcome
+            : ProviderTasks.run(tasks, timeout)) {
+            if (outcome.reason() == ProviderException.Reason.NOT_FOUND) {
+                results.put(outcome.provider(),
+                    new Result(outcome.provider(), false, null));
+            } else if (outcome.error() != null) {
+                results.put(outcome.provider(), new Result(
+                    outcome.provider(), false, outcome.error(), outcome.reason()));
+            } else {
+                results.put(outcome.provider(), new Result(
+                    outcome.provider(), outcome.value() != null, null));
             }
-
-            long deadline = System.nanoTime() + timeout.toNanos();
-            for (Map.Entry<ReleaseProvider, Future<ReleaseAssets>> entry
-                : futures.entrySet()) {
-                String name = entry.getKey().config().name();
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) {
-                    entry.getValue().cancel(true);
-                    results.put(name, new Result(name, false, "timed out",
-                        ProviderException.Reason.TIMEOUT));
-                    continue;
-                }
-                try {
-                    ReleaseAssets release = entry.getValue().get(
-                        remaining, TimeUnit.NANOSECONDS);
-                    results.put(name, new Result(name, release != null, null));
-                } catch (TimeoutException e) {
-                    entry.getValue().cancel(true);
-                    results.put(name, new Result(name, false, "timed out",
-                        ProviderException.Reason.TIMEOUT));
-                } catch (ExecutionException e) {
-                    Throwable cause = e.getCause() == null ? e : e.getCause();
-                    ProviderException.Reason reason = ProviderException.of(cause);
-                    if (reason == ProviderException.Reason.NOT_FOUND) {
-                        results.put(name, new Result(name, false, null));
-                    } else {
-                        results.put(name, new Result(
-                            name, false,
-                            cause.getMessage() == null
-                                ? cause.getClass().getSimpleName()
-                                : cause.getMessage(),
-                            reason));
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    results.put(name, new Result(name, false, "interrupted",
-                        ProviderException.Reason.OTHER));
-                    break;
-                }
-            }
-        } finally {
-            executor.shutdownNow();
         }
 
         List<Result> ordered = new ArrayList<>();

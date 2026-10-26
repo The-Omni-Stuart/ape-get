@@ -259,6 +259,31 @@ class LinuxHandlerTest {
     }
 
     @Test
+    void refusesNativeKindsThatDoNotBelongOnLinux() throws Exception {
+        Path asset = Files.writeString(tempDir.resolve("tool.msi"), "payload");
+
+        Path installed = handler.install(new InstallRequest(
+            asset, "github", "owner/repo", "v1.0.0",
+            PackageKind.MSI, null, false));
+
+        assertNull(installed);
+    }
+
+    @Test
+    void refusesToOverwriteAnUnmanagedNativeLauncher() throws Exception {
+        Files.createDirectories(bin);
+        Path launcher = bin.resolve("github__owner__repo");
+        Files.writeString(launcher, "manual");
+        Path asset = Files.writeString(tempDir.resolve("native.AppImage"), "payload");
+
+        Path installed = handler.install(new InstallRequest(
+            asset, "github", "owner/repo", "v1.0.0"));
+
+        assertNull(installed);
+        assertEquals("manual", Files.readString(launcher));
+    }
+
+    @Test
     void uninstallPortableRemovesLauncherAndRoot() throws Exception {
         Path asset = Files.writeString(tempDir.resolve("tool.AppImage"), "payload");
         Path installed = handler.install(new InstallRequest(

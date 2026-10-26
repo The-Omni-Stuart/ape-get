@@ -2,8 +2,8 @@ package cz.cuni.mff.releasemanager.platform;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import cz.cuni.mff.releasemanager.types.Asset;
 
@@ -82,6 +82,26 @@ class AssetSelectorTest {
     void doesNotTreatX86_64AsX86_32() {
         assertEquals(Platform.Architecture.X86_64,
             AssetSelector.detect("tool-x86_64.zip"));
+    }
+
+    @Test
+    void filtersBySupportedFormats() {
+        List<Asset> assets = List.of(
+            asset("app.AppImage"),
+            asset("app.AppImage.sig"),
+            asset("app.exe"),
+            asset("notes.txt"));
+
+        assertEquals(List.of("app.AppImage"),
+            names(AssetSelector.installable(assets, new String[] {".appimage"})));
+    }
+
+    @Test
+    void returnsNothingWhenNoFormatsAreSupported() {
+        List<Asset> assets = List.of(asset("app.AppImage"));
+
+        assertEquals(List.of(), AssetSelector.installable(assets, new String[0]));
+        assertEquals(List.of(), AssetSelector.installable(assets, null));
     }
 
     @Test

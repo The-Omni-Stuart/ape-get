@@ -12,16 +12,44 @@ import cz.cuni.mff.releasemanager.utils.Executables;
 
 // runs the rngit CLI; release fetch verifies the signed manifest itself
 final class ProcessRngitCommand implements RngitCommand {
+    // rngit creates its client identity/config on first use, so starts must not race
+    private static final Object SERIAL = new Object();
+
+    private final String executable;
+
+    ProcessRngitCommand() {
+        this("rngit");
+    }
+
+    ProcessRngitCommand(Path executable) {
+        this(executable.toString());
+    }
+
+    private ProcessRngitCommand(String executable) {
+        this.executable = executable;
+    }
 
     @Override
     public Result run(List<String> args, Path directory, Duration timeout)
         throws IOException, InterruptedException {
-        if (!Executables.isAvailable("rngit")) {
+        if ("rngit".equals(executable)) {
+            if (!Executables.isAvailable("rngit")) {
+                throw new ProviderException(ProviderException.Reason.UNREACHABLE,
+                    "rngit is not installed; install RNS with 'pip install rns'.");
+            }
+        } else if (!Files.isExecutable(Path.of(executable))) {
             throw new ProviderException(ProviderException.Reason.UNREACHABLE,
-                "rngit is not installed; install RNS with 'pip install rns'.");
+                "rngit is not executable: " + executable);
         }
+        synchronized (SERIAL) {
+            return runSerial(args, directory, timeout);
+        }
+    }
+
+    private Result runSerial(List<String> args, Path directory, Duration timeout)
+        throws IOException, InterruptedException {
         ProcessBuilder builder = new ProcessBuilder();
-        builder.command("rngit");
+        builder.command(executable);
         builder.command().addAll(args);
         builder.directory(directory.toFile());
         builder.redirectErrorStream(true);
