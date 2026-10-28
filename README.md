@@ -1,4 +1,4 @@
-# GitHub Releases Manager
+# ape-get
 
 A multi-platform command-line tool for GitHub, Gitea/Forgejo/Codeberg, and GitLab releases.
 
