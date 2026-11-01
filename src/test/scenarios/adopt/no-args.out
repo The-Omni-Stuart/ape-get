@@ -1,0 +1,3 @@
+Usage: <ENTRYPOINT> adopt <name> [options]
+
+Common: --json --quiet --yes --colour <auto|always|never>

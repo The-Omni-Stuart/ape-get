@@ -1,0 +1,8 @@
+HTTP/1.1 204 No Content
+Transfer-Encoding: chunked;ext=1
+
+a;v=2
+0123456789
+0
+Trailer: x
+

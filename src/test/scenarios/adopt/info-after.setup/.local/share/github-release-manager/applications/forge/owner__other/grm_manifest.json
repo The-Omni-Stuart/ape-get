@@ -1,0 +1,38 @@
+{
+  "schema_version" : 1,
+  "release_id" : null,
+  "installed_at" : "2026-01-02T03:04:05Z",
+  "updated_at" : "2026-01-02T03:04:05Z",
+  "provider_type" : "gitea",
+  "provider_api" : "https://forge.example/api/v1",
+  "kind" : "grm.manifest",
+  "provider" : "forge",
+  "repo" : "owner/other",
+  "version" : null,
+  "asset" : {
+    "name" : "forge__owner__other",
+    "url" : "file://{home}/.local/bin/forge__owner__other",
+    "sha256" : null
+  },
+  "install" : {
+    "kind" : "unknown",
+    "path" : "{home}/.local/bin/forge__owner__other",
+    "root" : "{home}/.local/share/github-release-manager/applications/forge",
+    "command" : null,
+    "desktopEntry" : null,
+    "uninstall" : {
+      "product_code" : null,
+      "path" : "{home}/.local/bin/forge__owner__other",
+      "args" : [ ]
+    }
+  },
+  "verification" : {
+    "checksum_asset" : null,
+    "status" : "unknown",
+    "method" : "none",
+    "expected" : null,
+    "actual" : null
+  },
+  "backups" : [ ],
+  "signature" : null
+}

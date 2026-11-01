@@ -1,0 +1,3 @@
+#!/bin/sh
+printf "%s\n" "No releases published for this repository"
+exit 1

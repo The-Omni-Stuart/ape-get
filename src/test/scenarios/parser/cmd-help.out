@@ -1,0 +1,22 @@
+Usage: <ENTRYPOINT> install <name> [options]
+
+Options:
+  --provider <name> - use a configured provider for search or install
+  --version <tag> - install or update to a specific release
+  --asset <name|index> - choose a release asset non-interactively
+  --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg
+  --name <command> - command name for a portable package
+  --no-command - install without creating a command
+  --desktop - create a desktop entry (Linux)
+  --no-desktop - remove an existing desktop entry
+  --terminal - run the desktop entry in a terminal
+  --icon <path> - icon for the desktop entry
+  --assimilate - convert an APE with the cosmocc assimilate tool
+  --channel <stable|beta> - choose the release channel
+  --strict - fail when a checksum is missing or unusable
+  --require-signature - fail when no verified signature is available
+  --allow-signer-change - accept a changed signer after confirmation
+  --dry-run - show what would happen without changing anything
+  --experimental-compat - enable the compatibility path for this run
+
+Common: --json --quiet --yes --colour <auto|always|never>

@@ -1,0 +1,39 @@
+--- .local/share/github-release-manager/applications/forge/owner__other/grm_manifest.json (0600) ---
+{
+  "schema_version" : 1,
+  "release_id" : null,
+  "installed_at" : "<INSTANT>",
+  "updated_at" : "<INSTANT>",
+  "provider_type" : "gitea",
+  "provider_api" : "https://forge.example/api/v1",
+  "kind" : "grm.manifest",
+  "provider" : "forge",
+  "repo" : "owner/other",
+  "version" : null,
+  "asset" : {
+    "name" : "forge__owner__other",
+    "url" : "file://<INSTALL_ROOT>/forge__owner__other",
+    "sha256" : null
+  },
+  "install" : {
+    "kind" : "unknown",
+    "path" : "<INSTALL_ROOT>/forge__owner__other",
+    "root" : "<STATE_ROOT>/applications/forge/owner__other",
+    "command" : null,
+    "desktopEntry" : null,
+    "uninstall" : {
+      "product_code" : null,
+      "path" : "<INSTALL_ROOT>/forge__owner__other",
+      "args" : [ ]
+    }
+  },
+  "verification" : {
+    "checksum_asset" : null,
+    "status" : "unknown",
+    "method" : "none",
+    "expected" : null,
+    "actual" : null
+  },
+  "backups" : [ ],
+  "signature" : null
+}

@@ -1,0 +1,8 @@
+[GNUPG:] 
+GOODSIG
+VALIDSIG
+BADSIG
+NO_PUBKEY
+BAD signature
+\n
+gpg: BAD signature from "x"

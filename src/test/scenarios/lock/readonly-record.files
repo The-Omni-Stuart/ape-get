@@ -1,0 +1,2 @@
+--- .local/share/github-release-manager/applications/forge/owner__tool/grm_manifest.json (0644) ---
+{"kind":"grm.manifest","schema_version":1,"provider":"forge","repo":"owner/tool","version":"1.0.0","asset":{"name":"tool-1.0.0.tar.gz","url":"https://forge.example/owner/tool/releases/download/v1.0.0/tool-1.0.0.tar.gz"},"install":{"kind":"appimage","path":"<INSTALL_ROOT>/tool"},"installed_at":"<INSTANT>","locked":true}

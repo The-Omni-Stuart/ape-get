@@ -1,0 +1,10 @@
+#!/bin/sh
+if [ "$1 $3" = "release view" ]; then
+  printf 'Release : 1.0.0\nArtifacts (1):\n  - app-1.0.0.AppImage (2 KiB)\n'
+  exit 0
+fi
+if [ "$1 $3" = "release fetch" ]; then
+  printf 'Fetched file app-1.0.0.AppImage does not match manifest, aborting\n' >&2
+  exit 1
+fi
+exit 1

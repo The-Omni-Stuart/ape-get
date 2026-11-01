@@ -1,0 +1,2 @@
+Error: Failed to read releases from rn:group/repo: rngit could not read rns://some.dest/group/repo: Link establishment failed for /some.dest.group.repo/ after 3 attempts
+Error: Failed to retrieve the release.

@@ -1,0 +1,1 @@
+{"state_root":"<STATE_ROOT>","signature_tools":[{"name":"gpg","required":true,"available":<TOOL_AVAILABLE>}],"free_bytes":<FREE_BYTES>,"healthy":true,"config":"<STATE_ROOT>/grm_config.json","index":"<STATE_ROOT>/grm_index.json","manifests":0,"issues":[],"warnings":[],"pins":[]}

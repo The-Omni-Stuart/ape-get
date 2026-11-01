@@ -1,0 +1,4 @@
+codeberg (gitea, https://codeberg.org/api/v1) packages=0 [built-in]
+forge (gitea, https://forge.example/api/v1) packages=2
+github (github, https://api.github.com) packages=0 [built-in]
+gitlab (gitlab, https://gitlab.com/api/v4) packages=0 [built-in]

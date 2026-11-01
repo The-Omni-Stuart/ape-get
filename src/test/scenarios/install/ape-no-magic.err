@@ -1,0 +1,3 @@
+Warning: No checksum found for tool-1.0.0.ape. Continuing without verification.
+Warning: No signature found for tool-1.0.0.ape. Continuing without a verified signature.
+Error: Asset is not an APE: tool-1.0.0.ape

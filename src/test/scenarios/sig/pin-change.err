@@ -1,0 +1,6 @@
+Warning: No checksum found for tool-1.1.0.AppImage. Continuing without verification.
+Signature verified for tool-1.1.0.AppImage by ape-get test key <test@example.invalid> (AAAA11112222333344445555666677778888999A).
+Error: Unable to update owner/tool.
+Reason: the signer changed from ape-get test key <test@example.invalid> (0F53F0B1855499B9841C61B4A8F23F320D9C40A5) to ape-get test key <test@example.invalid> (AAAA11112222333344445555666677778888999A).
+Warning: Be careful: this can mean the release was replaced or tampered with.
+If you trust the new signer, rerun with --allow-signer-change to accept it and update the pin.

@@ -1,0 +1,1 @@
+{"kind":"grm.manifest","schema_version":1,"provider":"forge","repo":"owner/tool","version":"backup","asset":{"name":"b","url":"https://forge.example/b"},"install":{"kind":"dir","path":"{home}/.local/bin/tool"},"installed_at":"2026-01-02T03:04:05Z"}

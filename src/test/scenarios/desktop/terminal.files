@@ -1,0 +1,8 @@
+--- .local/share/applications/tool.desktop (0644) ---
+[Desktop Entry]
+Type=Application
+Name=tool
+Exec="<INSTALL_ROOT>/tool"
+Terminal=true
+Categories=Utility;
+X-ApeGet-Managed=true

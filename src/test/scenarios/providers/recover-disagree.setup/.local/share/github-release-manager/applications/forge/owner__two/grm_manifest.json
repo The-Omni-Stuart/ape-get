@@ -1,0 +1,1 @@
+{"kind":"grm.manifest","schema_version":1,"provider":"forge","repo":"owner/two","version":"2.0.0","asset":{"name":"two.AppImage","url":"https://b.example/two.AppImage"},"install":{"kind":"appimage","path":"{home}/.local/bin/two"},"installed_at":"2026-01-02T03:04:05Z","provider_type":"github","provider_api":"https://b.example/api/v3"}

@@ -1,0 +1,15 @@
+Usage: <ENTRYPOINT> update <name>|--all [options]
+
+Options:
+  --all - update every installed package
+  --version <tag> - install or update to a specific release
+  --asset <name|index> - choose a release asset non-interactively
+  --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg
+  --channel <stable|beta> - choose the release channel
+  --strict - fail when a checksum is missing or unusable
+  --require-signature - fail when no verified signature is available
+  --allow-signer-change - accept a changed signer after confirmation
+  --dry-run - show what would happen without changing anything
+  --experimental-compat - enable the compatibility path for this run
+
+Common: --json --quiet --yes --colour <auto|always|never>

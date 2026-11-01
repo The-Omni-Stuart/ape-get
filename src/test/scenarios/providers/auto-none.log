@@ -1,0 +1,1 @@
+<INSTANT> providers add det:- - error Could not detect the provider type at https://127.0.0.1:18081. Pass --type github|gitea|gitlab|rngit, or --api if the API is on another host.

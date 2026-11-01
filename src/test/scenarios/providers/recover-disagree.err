@@ -1,0 +1,3 @@
+Error: Installed manifests disagree about this provider:
+  types: [gitea, github]
+  APIs:  [https://b.example/api/v3, https://a.example/api/v1]

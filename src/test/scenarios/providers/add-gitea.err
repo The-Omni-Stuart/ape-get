@@ -1,0 +1,4 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Added provider forge (gitea, https://forge.example/api/v1).

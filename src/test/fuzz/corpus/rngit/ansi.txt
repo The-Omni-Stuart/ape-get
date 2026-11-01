@@ -1,0 +1,4 @@
+[31mRelease : [0mv1
+Artifacts ([1m1):[0m
+  - a.bin (1 B)
+[0Ktrailing

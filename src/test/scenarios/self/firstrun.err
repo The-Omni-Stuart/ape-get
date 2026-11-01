@@ -1,0 +1,6 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Added provider forge (gitea, https://forge.example/api/v1).
+ape-get configured: <INSTALL_ROOT>/ape-get. If you ran it from a download, you can safely delete that file.
+Add <INSTALL_ROOT> to your PATH.

@@ -1,0 +1,9 @@
+{"kind":"grm.transaction","schema_version":1,
+"phase":"committing"
+"op":"uninstall"
+"pid":
+"history_written":true
+"manifest":null
+"old":{
+"new":{
+null

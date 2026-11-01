@@ -1,0 +1,1 @@
+{"kind": "grm.manifest", "schema_version": 1, "provider": "gone", "repo": "owner/bad", "version": "0.1.0", "asset": {"name": "bad-0.1.0.AppImage", "url": "https://unreachable.invalid/bad"}, "install": {"kind": "appimage", "command": "bad", "path": "{home}/.local/bin/bad"}, "installed_at": "2026-01-02T03:04:05Z"}

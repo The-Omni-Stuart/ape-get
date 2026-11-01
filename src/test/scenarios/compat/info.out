@@ -1,0 +1,16 @@
+Repository: owner/tool
+Provider: mock
+Version: 1.0.0
+Installed: <INSTANT>
+Updated: null
+Path: <STATE_ROOT>/applications/mock/owner__tool/versions/1.0.0/tool-1.0.0.exe
+Install state: installed
+Asset: tool-1.0.0.exe
+Kind: portable-exe
+Compat: wine.
+Command: tool
+
+Checksum: not recorded
+Signature: not recorded
+
+Backups: 0

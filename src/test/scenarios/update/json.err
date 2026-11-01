@@ -1,0 +1,3 @@
+Warning: No checksum found for tool-1.1.0.AppImage. Continuing without verification.
+Warning: No signature found for tool-1.1.0.AppImage. Continuing without a verified signature.
+Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/tool directly.

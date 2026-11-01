@@ -1,0 +1,5 @@
+--- victim (0644) ---
+do not delete me
+--- .local/bin/tool (0644) ---
+#!/bin/sh
+echo tool

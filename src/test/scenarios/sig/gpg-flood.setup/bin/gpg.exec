@@ -1,0 +1,4 @@
+#!/bin/sh
+# never-ending output: at the 8 MiB capture cap the reader must
+# still honour the timeout instead of draining forever
+while :; do echo "gpg: flooding stdout to overrun the capture buffer"; done

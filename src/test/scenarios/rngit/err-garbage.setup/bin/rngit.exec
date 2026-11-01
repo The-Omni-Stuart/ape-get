@@ -1,0 +1,3 @@
+#!/bin/sh
+printf "%s\n" "!! rngit said wat rc=69 on the wire"
+exit 1

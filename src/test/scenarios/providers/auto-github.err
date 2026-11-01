@@ -1,0 +1,5 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Detected github at https://127.0.0.1:18081 (API https://127.0.0.1:18081/api/v3).
+Added provider det (github, https://127.0.0.1:18081/api/v3).

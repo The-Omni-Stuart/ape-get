@@ -1,0 +1,5 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Detected github at https://github.com/acme/toolkit (API https://api.github.com).
+Added provider gh (github, https://api.github.com).

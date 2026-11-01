@@ -1,0 +1,5 @@
+Release : v1.2.3
+Artifacts (2):
+  - app.bin (1.2 KiB)
+  - other.tar.gz (3 B)
+notes - dash

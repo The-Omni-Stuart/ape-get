@@ -1,0 +1,14 @@
+Repository: owner/tool
+Provider: forge
+Version: 1.0.0
+Installed: <INSTANT>
+Updated: null
+Path: <INSTALL_ROOT>/tool
+Install state: installed
+Asset: tool-1.0.0.AppImage
+Kind: appimage
+
+Checksum: not recorded
+Signature: not recorded
+
+Backups: 0

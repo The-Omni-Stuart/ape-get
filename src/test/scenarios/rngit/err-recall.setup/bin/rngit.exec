@@ -1,0 +1,3 @@
+#!/bin/sh
+printf "%s\n" "Could not recall destination hash from the path table"
+exit 1

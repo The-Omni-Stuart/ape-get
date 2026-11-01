@@ -1,0 +1,4 @@
+Looking for group/repo across 4 provider(s)...
+Warning: github: access denied
+Warning: rn: repository lookup is not supported (use provider:owner/repo)
+Error: No repository with a published release matching 'group/repo'; try 'search repo' or use provider:owner/repo.

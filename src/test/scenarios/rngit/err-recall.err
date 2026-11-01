@@ -1,0 +1,2 @@
+Error: Failed to read releases from rn:group/repo: rngit could not read rns://some.dest/group/repo: Could not recall destination hash from the path table
+Error: Failed to retrieve the release.

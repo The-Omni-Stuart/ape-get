@@ -1,0 +1,5 @@
+--- .local/share/github-release-manager/grm_transaction.json (absent) ---
+--- .local/share/github-release-manager/applications/mock/owner__tool/grm_manifest.json (0644) ---
+{"kind": "grm.manifest", "schema_version": 1, "provider": "mock", "repo": "owner/tool", "version": "1.1.0", "asset": {"name": "tool-1.1.0.AppImage", "url": "https://127.0.0.1:18081/assets/tool-1.1.0.AppImage"}, "install": {"kind": "appimage", "path": "<STATE_ROOT>/applications/mock/owner__tool/versions/1.1.0/tool-1.1.0.AppImage", "command": "tool"}, "installed_at": "<INSTANT>"}--- .local/share/github-release-manager/applications/mock/owner__tool/grm_manifest.json.tmp-aabbccddeeff0011 (absent) ---
+--- .local/share/github-release-manager/applications/mock/owner__tool/versions/1.1.0/tool-1.1.0.AppImage (0644) ---
+#!/bin/sh

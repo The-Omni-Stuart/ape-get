@@ -1,0 +1,6 @@
+Rebuilt index at <STATE_ROOT>/grm_index.json
+Warning: No checksum found for ape-get.ape. Continuing without verification.
+Warning: No signature found for ape-get.ape. Continuing without a verified signature.
+Installed to: <STATE_ROOT>/applications/self/ape-get/versions/2.0.0/ape-get.ape
+Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/ape-get directly.
+Successfully updated.

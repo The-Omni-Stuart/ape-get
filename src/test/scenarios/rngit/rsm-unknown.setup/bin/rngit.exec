@@ -1,0 +1,4 @@
+#!/bin/sh
+[ "$1 $3" = "release view" ] || exit 1
+printf 'Release : 1.0.0\nArtifacts (3):\n  - app-1.0.0.AppImage (2 KiB)\n  - manifest.rsm (1 KiB)\n  - release.rsg (1 KiB)\n'
+exit 0

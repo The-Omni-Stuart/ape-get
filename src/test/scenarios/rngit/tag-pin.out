@@ -1,0 +1,5 @@
+Dry run: would install rn:group/repo v9.9.9.
+  Asset:  app-v9.9.9.AppImage
+  Source: rngit://Z3JvdXAvcmVwbwB2OS45LjkAYXBwLXY5LjkuOS5BcHBJbWFnZQA
+  Launcher: <INSTALL_ROOT>/app
+No changes were made.

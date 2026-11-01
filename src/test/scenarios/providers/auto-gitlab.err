@@ -1,0 +1,5 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Detected gitlab at https://127.0.0.1:18081 (API https://127.0.0.1:18081/api/v4).
+Added provider det (gitlab, https://127.0.0.1:18081/api/v4).

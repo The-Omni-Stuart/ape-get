@@ -1,0 +1,162 @@
+name: C Build & Test
+
+# build the static x86_64 binary with cosmocc, then run every gate a
+# local check runs: ctest (deps graph, free-order, provenance, help smoke)
+# and the full CLI scenario suite. The companion c-fuzz.yml owns the
+# parser fuzz smoke.
+
+on:
+  push:
+    branches: [main, master, c-port]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & test (linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve cosmocc cache dir
+        run: echo "COSMO_DIR=$HOME/.cosmocc" >> "$GITHUB_ENV"
+
+      - name: Restore cosmocc
+        id: cosmo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cosmocc
+          # toolchain/PIN pins the exact release + hash; re-key on its edit.
+          key: cosmocc-${{ runner.os }}-${{ hashFiles('toolchain/PIN') }}
+
+      - name: Install cosmocc (PIN)
+        if: steps.cosmo.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url=$(awk '/^url:/{print $2}' toolchain/PIN)
+          sha=$(awk '/^sha256:/{print $2}' toolchain/PIN)
+          curl -fL --retry 3 "$url" -o /tmp/cosmocc.zip
+          echo "$sha  /tmp/cosmocc.zip" | sha256sum -c -
+          mkdir -p "$COSMO_DIR"
+          unzip -q /tmp/cosmocc.zip -d "$COSMO_DIR"
+          test -x "$COSMO_DIR/bin/apelink"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/toolchain/cosmo.cmake" \
+            -DCOSMO_DIR="$COSMO_DIR"
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Static checks + help smoke (ctest)
+        run: ctest --test-dir build --output-on-failure
+
+      # probe-skip fans out to the live built-ins; the runner has egress,
+      # and the rate-limited 403 shape is pinned by a .flaky golden.
+      - name: Scenario suite
+        run: python3 src/test/scenarios/run.py --bin ./build/ape-get
+
+      - name: Build artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ape-get-linux-x64
+          path: build/ape-get
+          if-no-files-found: error
+          compression-level: 0
+
+  package:
+    name: Package APE + size gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve cosmocc cache dir
+        run: echo "COSMO_DIR=$HOME/.cosmocc" >> "$GITHUB_ENV"
+
+      - name: Restore cosmocc
+        id: cosmo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cosmocc
+          key: cosmocc-${{ runner.os }}-${{ hashFiles('toolchain/PIN') }}
+
+      - name: Install cosmocc (PIN)
+        if: steps.cosmo.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url=$(awk '/^url/{print $2}' toolchain/PIN)
+          sha=$(awk '/^sha256/{print $2}' toolchain/PIN)
+          curl -fL --retry 3 "$url" -o /tmp/cosmocc.zip
+          echo "$sha  /tmp/cosmocc.zip" | sha256sum -c -
+          mkdir -p "$COSMO_DIR"
+          unzip -q /tmp/cosmocc.zip -d "$COSMO_DIR"
+
+      # fat APE = apelink of the two per-arch ELFs; both cross-compiled
+      # from linux by the bundled drivers. package.sh re-checks magic and
+      # the 1.5 MB fat / 1 MB single size gates, failing the job on drift.
+      - name: Build per-arch ELFs
+        run: |
+          for a in x86_64 aarch64; do
+            cmake -S . -B "build/$a" \
+              -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/toolchain/cosmo.cmake" \
+              -DCOSMO_DIR="$COSMO_DIR" -DAPEGET_ARCH="$a"
+            cmake --build "build/$a" -j"$(nproc)"
+          done
+
+      - name: Package + gates
+        run: bash bin/package.sh build/x86_64 build/aarch64 dist
+
+      - name: Upload APE artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ape-get-ape
+          path: dist/ape-get*.com
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-test, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download artefacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ape-get-ape
+          path: dist
+
+      - name: Name and checksum
+        run: |
+          set -euo pipefail
+          ver=${GITHUB_REF_NAME#v}
+          cd dist
+          mv ape-get.com      "ape-get-${ver}-fat.com"
+          mv ape-get-x86_64.com   "ape-get-${ver}-x86_64.com"
+          mv ape-get-aarch64.com  "ape-get-${ver}-aarch64.com"
+          sha256sum ape-get-*.com > SHA256SUMS.txt
+          ls -l
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ape-get-*.com
+            dist/SHA256SUMS.txt
+          generate_release_notes: true

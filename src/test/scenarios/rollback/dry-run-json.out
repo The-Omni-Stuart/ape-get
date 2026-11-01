@@ -1,0 +1,1 @@
+{"dry_run":true,"action":"rollback","provider":"forge","repo":"owner/tool","from":"2.0.0","to":"1.0.0","backup":"<STATE_ROOT>/applications/forge/owner__tool/backups/1-aaa/tool"}

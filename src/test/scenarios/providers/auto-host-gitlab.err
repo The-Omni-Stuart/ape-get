@@ -1,0 +1,5 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Detected gitlab at https://gitlab.com/acme/toolkit (API https://gitlab.com/acme/toolkit/api/v4).
+Added provider gl (gitlab, https://gitlab.com/acme/toolkit/api/v4).

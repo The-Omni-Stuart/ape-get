@@ -1,0 +1,49 @@
+name: C Fuzz
+
+# fuzz smoke: replay every parser corpus and run the
+# deterministic mutation loop under ASan/UBSan. A crash, hang or leak
+# fails the job. Longer runs are a nightly concern, not a merge gate.
+
+on:
+  push:
+    paths:
+      - 'src/main/**'
+      - 'src/test/fuzz/**'
+      - '.github/workflows/c-fuzz.yml'
+  pull_request:
+    paths:
+      - 'src/main/**'
+      - 'src/test/fuzz/**'
+      - '.github/workflows/c-fuzz.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c-fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz smoke (linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      #: the pinned host clang is the one permitted second
+      # compiler (sanitiser runtimes only, never an artefact). The
+      # version pin here mirrors toolchain/PIN discipline: bump
+      # deliberately, together with the local clang pin.
+      CC: clang-18
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pinned clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18
+          clang-18 --version
+
+      - name: Fuzz gate
+        run: bash src/test/fuzz/run.sh

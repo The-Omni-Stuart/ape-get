@@ -1,0 +1,4 @@
+#!/bin/sh
+[ "$1 $3" = "release view" ] || exit 1
+printf "Release : bad:tag\nArtifacts (1):\n  - app-1.0.0.AppImage (2 KiB)\n"
+exit 0

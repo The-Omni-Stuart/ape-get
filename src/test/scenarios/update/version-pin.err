@@ -1,0 +1,5 @@
+Warning: No checksum found for tool-0.9.0.AppImage. Continuing without verification.
+Warning: No signature found for tool-0.9.0.AppImage. Continuing without a verified signature.
+Installed to: <STATE_ROOT>/applications/mock/owner__tool/versions/0.9.0/tool-0.9.0.AppImage
+Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/tool directly.
+Successfully updated.

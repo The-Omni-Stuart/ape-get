@@ -1,0 +1,5 @@
+Colour forced on (--colour always).
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+[1;31mError:[0m[31m Provider 'github' is built-in; choose another name.[0m

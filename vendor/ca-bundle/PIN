@@ -1,0 +1,6 @@
+url: https://curl.se/ca/cacert.pem (Mozilla bundle)
+sha256: 796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe
+certificates: 118
+fetched: 2026-10-28
+notes: embedded read-only byte array at build time (SPEC §11.4); refresh is a
+  dedicated commit re-running the TLS spike and size gates.

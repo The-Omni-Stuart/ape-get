@@ -1,0 +1,6 @@
+Warning: codeberg: tls handshake failed: X509 - certificate verification failed
+Warning: github: tls handshake failed: X509 - certificate verification failed
+Warning: gitlab: tls handshake failed: X509 - certificate verification failed
+Warning: No checksum found for apegetzzq99-1.0.0.AppImage. Continuing without verification.
+Warning: No signature found for apegetzzq99-1.0.0.AppImage. Continuing without a verified signature.
+Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/apegetzzq99 directly.

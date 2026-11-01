@@ -1,0 +1,11 @@
+--- .local/share/applications/tool.desktop (0644) ---
+[Desktop Entry]
+Type=Application
+Name=tool
+Exec="<INSTALL_ROOT>/tool"
+Terminal=false
+Categories=Utility;
+Icon=<STATE_ROOT>/applications/mock/owner__tool/desktop/icon.png
+X-ApeGet-Managed=true
+--- .local/share/github-release-manager/applications/mock/owner__tool/desktop/icon.png (0644) ---
+PNG-FAKE-ICON-BYTES-v1

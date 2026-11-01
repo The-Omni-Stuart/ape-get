@@ -1,0 +1,12 @@
+# ape-get completion. Enable with:
+#   eval "$(ape-get completions bash)"      # ~/.bashrc
+_ape_get() {
+    local cur
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "--json --quiet -y --yes --colour --no-progress --experimental-compat" -- "$cur") )
+    elif [ "$COMP_CWORD" -le 1 ]; then
+        COMPREPLY=( $(compgen -W "search install uninstall update list info providers rollback doctor adopt about lock unlock completions help" -- "$cur") )
+    fi
+}
+complete -F _ape_get ape-get <ENTRYPOINT>

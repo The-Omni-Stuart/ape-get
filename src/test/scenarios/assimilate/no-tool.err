@@ -1,0 +1,4 @@
+Warning: No checksum found for tool-1.0.0.ape. Continuing without verification.
+Warning: No signature found for tool-1.0.0.ape. Continuing without a verified signature.
+Error: --assimilate requires the cosmocc assimilate tool on PATH.
+Error: Installation failed.

@@ -1,0 +1,11 @@
+Ignoring foreign manifest: <STATE_ROOT>/applications/forge/foreign__repo/grm_manifest.json
+Warning: corrupt manifest moved to <STATE_ROOT>/applications/forge/broken__repo/grm_manifest.json.corrupt-<EPOCH_MILLIS>
+Ignoring foreign manifest: <STATE_ROOT>/applications/forge/foreign__repo/grm_manifest.json
+Rebuilt index at <STATE_ROOT>/grm_index.json
+Ignoring foreign manifest: <STATE_ROOT>/applications/forge/foreign__repo/grm_manifest.json
+Provider forge (gitea, https://forge.example/api/v1) has 2 installed package(s):
+  forge:owner/tool 1.0.0
+  forge:owner/two unknown
+Error: Refusing to remove the provider while packages are installed.
+  --purge     uninstall them, delete their state, then remove it
+  --abandon   remove only the provider config; packages remain

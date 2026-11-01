@@ -1,0 +1,5 @@
+Dry run: would install mock:owner/tool 1.0.0.
+  Asset:  tool-1.0.0.ape
+  Source: https://127.0.0.1:18081/assets/tool-1.0.0.ape
+  Launcher: <INSTALL_ROOT>/tool
+No changes were made.

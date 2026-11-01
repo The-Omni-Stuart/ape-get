@@ -1,0 +1,2 @@
+--- .local/share/github-release-manager/grm_transaction.json (0644) ---
+{"kind": "grm.transaction", "schema_version": 1, "id": "<ID>", "op": "update", "ref": "mock:owner/tool", "phase": "committing", "created_at": "<INSTANT>", "new": {"manifest_tmp": "<HOME>/nowhere/tmp.json", "manifest": "<HOME>/nowhere/m.json"}}

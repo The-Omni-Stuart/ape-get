@@ -1,0 +1,1 @@
+{"installed":{"provider":"mock","repo":"owner/tool","version":"1.0.0","asset":"tool-1.0.0.AppImage","path":"<STATE_ROOT>/applications/mock/owner__tool/versions/1.0.0/tool-1.0.0.AppImage","launcher":"<INSTALL_ROOT>/tool","kind":"appimage","command":"tool"}}

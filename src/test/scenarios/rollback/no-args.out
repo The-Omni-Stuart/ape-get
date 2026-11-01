@@ -1,0 +1,6 @@
+Usage: <ENTRYPOINT> rollback <name> [options]
+
+Options:
+  --dry-run - show what would happen without changing anything
+
+Common: --json --quiet --yes --colour <auto|always|never>

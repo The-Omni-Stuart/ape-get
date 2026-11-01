@@ -1,0 +1,5 @@
+Warning: No checksum found for tool-1.1.0.AppImage. Continuing without verification.
+Signature verified for tool-1.1.0.AppImage by ape-get test key <test@example.invalid> (0F53F0B1855499B9841C61B4A8F23F320D9C40A5).
+Installed to: <STATE_ROOT>/applications/mock/owner__tool/versions/1.1.0/tool-1.1.0.AppImage
+Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/tool directly.
+Successfully updated.

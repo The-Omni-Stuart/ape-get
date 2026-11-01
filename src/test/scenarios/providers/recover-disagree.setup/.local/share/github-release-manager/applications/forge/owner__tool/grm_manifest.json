@@ -1,0 +1,1 @@
+{"kind":"grm.manifest","schema_version":1,"provider":"forge","repo":"owner/tool","version":"1.0.0","asset":{"name":"tool.AppImage","url":"https://a.example/tool.AppImage"},"install":{"kind":"appimage","path":"{home}/.local/bin/tool"},"installed_at":"2026-01-02T03:04:05Z","provider_type":"gitea","provider_api":"https://a.example/api/v1"}

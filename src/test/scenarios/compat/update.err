@@ -1,0 +1,6 @@
+Warning: tool-2.0.0.exe is a Windows program and is not officially supported on Linux; it may not work at all, or may not work as expected. A compatibility layer (wine) was detected.
+Warning: No checksum found for tool-2.0.0.exe. Continuing without verification.
+Warning: No signature found for tool-2.0.0.exe. Continuing without a verified signature.
+Installed to: <STATE_ROOT>/applications/mock/owner__tool/versions/2.0.0/tool-2.0.0.exe
+Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/tool directly.
+Successfully updated.

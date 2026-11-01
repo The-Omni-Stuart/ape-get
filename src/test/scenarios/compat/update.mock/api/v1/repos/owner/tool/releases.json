@@ -1,0 +1,30 @@
+[
+  {
+    "id": 8,
+    "tag_name": "2.0.0",
+    "name": "v2.0.0",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {
+        "id": 701,
+        "name": "tool-2.0.0.exe",
+        "browser_download_url": "https://127.0.0.1:18081/assets/tool-2.0.0.exe"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "tag_name": "1.0.0",
+    "name": "v1.0.0",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {
+        "id": 601,
+        "name": "tool-1.0.0.exe",
+        "browser_download_url": "https://127.0.0.1:18081/assets/tool-1.0.0.exe"
+      }
+    ]
+  }
+]

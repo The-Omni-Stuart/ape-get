@@ -1,0 +1,5 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Detected gitea at https://127.0.0.1:18081 (API https://127.0.0.1:18081/api/v1).
+Added provider det (gitea, https://127.0.0.1:18081/api/v1).

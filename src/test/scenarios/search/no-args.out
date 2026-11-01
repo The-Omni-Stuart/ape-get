@@ -1,0 +1,6 @@
+Usage: <ENTRYPOINT> search <name> [options]
+
+Options:
+  --provider <name> - use a configured provider for search or install
+
+Common: --json --quiet --yes --colour <auto|always|never>

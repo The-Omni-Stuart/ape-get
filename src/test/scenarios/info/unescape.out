@@ -1,0 +1,17 @@
+Repository: owner/tool
+Provider: forge
+Version: 2.0.0
+Installed: <INSTANT>
+Updated: null
+Path: <INSTALL_ROOT>/tool
+Install state: installed
+Asset: café😀/x.AppImage
+Kind: appimage
+Command: tool
+Desktop entry: <STATE_ROOT>/tool.desktop
+
+Checksum: verified (sha256, tool.sha256)
+Signature: verified (cosign) by alice (alice@key), not notarized
+
+Backups: 1
+  - 1.0.0 (<INSTANT>) <STATE_ROOT>/applications/forge/owner__tool/backups/1-aaa

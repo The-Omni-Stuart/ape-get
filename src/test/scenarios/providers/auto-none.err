@@ -1,0 +1,4 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Error: Could not detect the provider type at https://127.0.0.1:18081. Pass --type github|gitea|gitlab|rngit, or --api if the API is on another host.

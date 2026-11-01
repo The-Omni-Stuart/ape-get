@@ -1,0 +1,2 @@
+Error: Failed to read releases from rn:group/repo: rngit could not read rns://some.dest/group/repo: Could not resolve path for destination /some.dest.group.repo/ (check the Reticulum interfaces or start rnsd)
+Error: Failed to retrieve the release.

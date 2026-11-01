@@ -1,0 +1,2 @@
+Error: Refusing to uninstall path outside <INSTALL_ROOT>: <INSTALL_ROOT>/../../victim
+Error: Failed to uninstall owner/tool.

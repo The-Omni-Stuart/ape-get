@@ -1,0 +1,5 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Added provider forge (gitea, https://forge.example/api/v1).
+self-integration: <INSTALL_ROOT>/ape-get already exists; leaving it alone.

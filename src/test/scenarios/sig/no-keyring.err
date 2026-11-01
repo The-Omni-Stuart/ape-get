@@ -1,0 +1,2 @@
+Warning: No checksum found for tool-1.0.0.ape. Continuing without verification.
+Error: Signature verification failed for tool-1.0.0.ape: public key not found. Refusing to install.

@@ -1,0 +1,10 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Usage:
+  providers list
+  providers show <name>
+  providers add <name> <url> [--type auto|github|gitea|gitlab|rngit] [--api URL] [--token-env VAR]
+  providers update <name> [--type ...] [--api URL] [--url URL] [--token-env VAR] [--force]
+  providers remove <name> [--abandon | --purge]
+  providers recover <name> [--type ...] [--api URL]

@@ -1,0 +1,1 @@
+{"kind":"grm.manifest","schema_version":1,"provider":"forge","repo":"owner/two","asset":{"name":"two","url":"https://forge.example/x"},"install":{"kind":"dir","path":"{home}/.local/bin/two"},"installed_at":"2026-01-02T03:04:05Z"}

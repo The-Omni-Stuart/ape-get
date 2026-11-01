@@ -1,0 +1,4 @@
+Warning: tool-1.0.0.exe is a Windows program and is not officially supported on Linux; it may not work at all, or may not work as expected. A compatibility layer (wine) was detected.
+Install mock:owner/tool 1.0.0 (tool-1.0.0.exe)?
+Confirmation required. Re-run with --yes (or -y) to approve.
+Warning: Install declined.

@@ -1,0 +1,4 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Error: Multiple provider APIs responded at https://127.0.0.1:18081: gitea (https://127.0.0.1:18081/api/v1) gitlab (https://127.0.0.1:18081/api/v4) - pass --type github|gitea|gitlab|rngit

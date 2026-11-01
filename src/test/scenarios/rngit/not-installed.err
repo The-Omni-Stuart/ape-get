@@ -1,0 +1,2 @@
+Error: Failed to read releases from rn:group/repo: rngit is not installed; install RNS with 'pip install rns'.
+Error: Failed to retrieve the release.

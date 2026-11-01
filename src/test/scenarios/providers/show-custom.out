@@ -1,0 +1,7 @@
+Name: forge
+Type: gitea
+URL: https://forge.example
+API: https://forge.example/api/v1
+Token env: FORGE_TOKEN
+Built-in: false
+Packages: 0

@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK\r\n
+\r\n\r\n
+Transfer-Encoding: chunked\r\n
+Content-Length: 0\r\n
+Location: https://x.test/\r\n
+1\r\nx\r\n0\r\n\r\n
+;
+chunked

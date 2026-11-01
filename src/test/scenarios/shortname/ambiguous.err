@@ -1,0 +1,4 @@
+Multiple sources found for 'tool':
+  1: forge:owner/tool - 1.0.0
+  2: other:someone/tool - 1.0.0
+Use provider:owner/repo to choose one.

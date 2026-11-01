@@ -1,0 +1,6 @@
+#!/bin/sh
+line=E
+i=0
+while [ $i -lt 40 ]; do line="${line}xxxxxxxxxx"; i=$((i+1)); done
+printf "%s\n" "$line"
+exit 1

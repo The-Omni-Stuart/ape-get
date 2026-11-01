@@ -1,0 +1,8 @@
+Looking for zzq-apeget/apegetzzq99 across 5 provider(s)...
+Warning: codeberg: tls handshake failed: X509 - certificate verification failed
+Warning: github: tls handshake failed: X509 - certificate verification failed
+Warning: gitlab: tls handshake failed: X509 - certificate verification failed
+Multiple sources found for 'zzq-apeget/apegetzzq99':
+  1: mock-a:zzq-apeget/apegetzzq99
+  2: mock-b:zzq-apeget/apegetzzq99
+Install with provider:owner/repo to choose one.

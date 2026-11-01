@@ -1,0 +1,1 @@
+{"kind":"grm.manifest","schema_version":1,"provider":"zeta","repo":"other/x","version":"0.9","asset":{"name":"x","url":"https://zeta.example/x"},"install":{"kind":"dir","path":"{home}/.local/bin/x"},"installed_at":"2026-01-02T03:04:05Z"}

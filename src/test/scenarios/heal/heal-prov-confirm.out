@@ -1,0 +1,1 @@
+{"state_root":"<STATE_ROOT>","signature_tools":[{"name":"gpg","required":true,"available":<TOOL_AVAILABLE>}],"free_bytes":<FREE_BYTES>,"healthy":false,"config":"<STATE_ROOT>/grm_config.json","index":"<STATE_ROOT>/grm_index.json","manifests":1,"issues":[],"warnings":["PATH: <INSTALL_ROOT> is not on PATH"],"pins":[],"healed":[],"heal_declined":["forge"]}

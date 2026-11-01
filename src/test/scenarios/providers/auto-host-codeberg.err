@@ -1,0 +1,5 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Detected gitea at https://codeberg.org/acme/toolkit (API https://codeberg.org/acme/toolkit/api/v1).
+Added provider cb (gitea, https://codeberg.org/acme/toolkit/api/v1).

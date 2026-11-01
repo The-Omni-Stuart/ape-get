@@ -1,0 +1,5 @@
+Warning: No checksum found for tool-1.1.0.AppImage. Continuing without verification.
+Error: Unable to update owner/tool.
+Reason: it is pinned to ape-get test key <test@example.invalid> (0F53F0B1855499B9841C61B4A8F23F320D9C40A5), but no verified signature is available.
+Warning: Be careful: this can mean the release was replaced or tampered with.
+If you trust this release, rerun with --allow-signer-change to clear the pinned signer.

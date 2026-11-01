@@ -1,0 +1,14 @@
+State root: <STATE_ROOT>
+Config: <STATE_ROOT>/grm_config.json
+Index: <STATE_ROOT>/grm_index.json
+Manifests: 0
+Free space: <FREE>
+
+Signature tool: gpg <TOOL_STATE>
+Compatibility tools: <WINE>
+Tor status: <TOR>
+Reticulum status: <RETICULUM>
+Error: Index: missing or corrupt (run a stateful command to rebuild)
+
+Error: Diagnosis: 1 issue(s) remain.
+Run 'ape-get doctor --heal' to attempt repairs.

@@ -1,0 +1,29 @@
+Error: Unknown command: bogus
+Usage: <ENTRYPOINT> [command] [options]
+
+Commands:
+  search [name] - search for a release by name
+  install [name] - install provider:owner/repo, or a bare owner/repo across providers
+  uninstall [name] - uninstall the release by name
+  update [name] - update one release, or use --all
+  list - list all installed releases
+  info [name] - show details for an installed release
+  providers - list, add, update, remove, or recover provider instances
+  rollback [name] - restore the latest backup
+  doctor - diagnose state and orphaned installs
+  adopt [name] - adopt an existing Linux install
+  lock [name] - keep a release at its installed version
+  unlock [name] - let a locked release update again
+  about - about ape-get: version, licence, source
+  completions <bash|zsh> - print a shell completion script
+  help - display this help message
+
+Global options:
+  --json - machine-readable output
+  --quiet - suppress progress messages
+  -y, --yes - assume yes for confirmation prompts
+  --colour <auto|always|never> - terminal styling (default auto)
+  --no-progress - never render progress bars
+  --experimental-compat - enable the compatibility path for this run
+
+Run 'ape-get help <command>' for a command's options.

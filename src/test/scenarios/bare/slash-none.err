@@ -1,0 +1,5 @@
+Looking for zzq-apeget/nothere99 across 4 provider(s)...
+Warning: codeberg: tls handshake failed: X509 - certificate verification failed
+Warning: github: tls handshake failed: X509 - certificate verification failed
+Warning: gitlab: tls handshake failed: X509 - certificate verification failed
+Error: No repository with a published release matching 'zzq-apeget/nothere99'; try 'search nothere99' or use provider:owner/repo.

@@ -1,0 +1,1 @@
+{"kind":"grm.manifest","schema_version":1,"provider":"forge","repo":"owner/two","version":"1.1.0","asset":{"name":"two-1.0.0.tar.gz","url":"https://forge.example/owner/two/releases/download/v1.0.0/two-1.0.0.tar.gz"},"install":{"kind":"appimage","path":"{home}/.local/bin/two"},"installed_at":"2026-01-03T03:04:05Z"}

@@ -1,0 +1,3 @@
+Recover provider forge as gitea (https://forge.example/api/v1) for 1 installed package(s)?
+Confirmation required. Re-run with --yes (or -y) to approve.
+Warning: Provider recovery declined.

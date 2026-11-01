@@ -1,0 +1,3 @@
+#!/bin/sh
+printf "%s\n" "Could not resolve path for destination /some.dest.group.repo/"
+exit 1

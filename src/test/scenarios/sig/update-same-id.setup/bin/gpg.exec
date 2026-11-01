@@ -1,0 +1,11 @@
+#!/bin/sh
+sig=""
+prev=""
+for a in "$@"; do
+    if [ "$prev" = "--verify" ]; then sig="$a"; break; fi
+    prev="$a"
+done
+[ -f "$sig" ] || exit 2
+echo "[GNUPG:] GOODSIG A8F23F320D9C40A5 ape-get test key <test@example.invalid>"
+echo "[GNUPG:] VALIDSIG 0F53F0B1855499B9841C61B4A8F23F320D9C40A5 2026-10-29 1793269643 0 4 0 1 10 00 0F53F0B1855499B9841C61B4A8F23F320D9C40A5"
+exit 0

@@ -1,0 +1,4 @@
+--- .local/bin/tool (0644) ---
+#!/bin/sh
+--- .local/share/github-release-manager/applications/forge/owner__tool/grm_manifest.json (0644) ---
+{"kind":"grm.manifest","schema_version":1,"provider":"forge","repo":"owner/tool","version":"1.0.0","asset":{"name":"tool-1.0.0.AppImage","url":"https://forge.example/x"},"install":{"kind":"appimage","path":"<INSTALL_ROOT>/tool","root":"<INSTALL_ROOT>","uninstall":{"path":"<INSTALL_ROOT>/tool"}},"installed_at":"<INSTANT>"}

@@ -1,0 +1,2 @@
+Error: Installed manifests do not record the provider type and API.
+Error: Pass --type and --api to recover this provider.

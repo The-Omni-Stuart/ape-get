@@ -1,0 +1,5 @@
+Dry run: would install rn:group/repo 1.4.2.
+  Asset:  app-1.4.2.AppImage
+  Source: rngit://Z3JvdXAvcmVwbwAxLjQuMgBhcHAtMS40LjIuQXBwSW1hZ2UA
+  Launcher: <INSTALL_ROOT>/app
+No changes were made.

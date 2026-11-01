@@ -1,0 +1,2 @@
+mock:owner/tool 1.0.0 -> 1.1.0 (locked)
+Run 'ape-get unlock mock:owner/tool' to include it in updates.

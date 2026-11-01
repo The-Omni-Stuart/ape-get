@@ -1,0 +1,6 @@
+Colour forced on (--colour always).
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+[36mDetected gitea at https://127.0.0.1:18081 (API https://127.0.0.1:18081/api/v1).[0m
+[1;32mAdded provider det (gitea, https://127.0.0.1:18081/api/v1).[0m

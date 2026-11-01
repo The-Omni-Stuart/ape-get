@@ -1,0 +1,3 @@
+#!/bin/sh
+printf "%s\n" "Link establishment failed for /some.dest.group.repo/ after 3 attempts"
+exit 1

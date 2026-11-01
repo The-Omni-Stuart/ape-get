@@ -1,191 +1,146 @@
 # ape-get
 
-A multi-platform command-line tool for GitHub, Gitea/Forgejo/Codeberg, and GitLab releases.
+The Actually Portable Package Manager.
+
+![Build status](https://github.com/The-Omni-Stuart/ape-get/actions/workflows/c-build.yml/badge.svg)
+![License: GPL v3](https://img.shields.io/github/license/The-Omni-Stuart/ape-get)
+![Latest release](https://img.shields.io/github/v/release/The-Omni-Stuart/ape-get?label=latest%20release&include_prereleases)
+
+A command-line tool for managing GitHub, Gitea/Forgejo/Codeberg, GitLab, and rngit releases packaged as a Cosmopolitan Libc 'Actually Portable Executable'.
 
 ## Features
 
-- **Search** repositories across every configured provider
-- **Install** the latest release, a specific tag, or a specific asset
-- **Verify** SHA-256 checksums and publisher signatures before installing
-- **Update** one release or every installed release (`update --all`)
-- **Check** for newer releases without changing anything (`list --outdated`)
-- **Roll back** to the previous version from a local backup
-- **Uninstall** installed releases
-- **List** and **inspect** installed releases
-- **Diagnose** state, PATH, disk space, mounts, and verification tools with `doctor`
+- **Search** for public repositories by name, across all configured providers
+- **Install** the latest release of a repository
+- **Update** installed releases if newer versions are available
+- **Uninstall** installed release
+- **List** all installed releases
+- **Help** for usage guidance
 
-Supported formats: AppImage, Actually Portable Executable (APE), portable Windows exe, MSI, NSIS exe, and DMG.
+Supported formats: appimage, ape, portable exe (incl. through wine)
 
 ---
 
-## Prerequisites
+## Quick Start
 
-For building from source: Java 21+ and Maven 3.6+. The prebuilt installers include a Java runtime.
+Download `ape-get.com` from the
+[latest release](https://github.com/The-Omni-Stuart/ape-get/releases/latest).
+
+On Linux and macOS:
+
+```bash
+chmod +x ape-get.com
+./ape-get.com list
+```
+
+On Windows, run it from Command Prompt (`ape-get.com list`) or from PowerShell (`.\ape-get.com list`).
+
+The first run registers `ape-get` (pun intended) as a command by installing a copy to `~/.local/bin/ape-get`; the downloaded file can then be deleted. From there `ape-get` updates itself like any release it manages:
+
+```bash
+ape-get update ape-get
+```
 
 ---
 
-## Installing a release
+## Supported commands
 
-Tagged releases publish self-contained builds and a `SHA256SUMS` file:
+A repository is `owner/repo`, or `provider:owner/repo` to name one provider. `github`, `codeberg`, and `gitlab` are built in; `providers add` registers more. Experimental support for `rngit` repositories is also included.
 
-| Platform | File |
+| Command | Description |
 | --- | --- |
-| Linux x64 | `github-releases-manager-linux-x64.tar.gz` |
-| Windows x64 | `github-releases-manager-windows-x64.msi` |
-| macOS arm64 | `github-releases-manager-macos-arm64.dmg` |
-| macOS x64 | `github-releases-manager-macos-x64.dmg` |
+| `search [name]` | Search for repositories by name |
+| `install [owner/repo]` | Install the latest release of a repository |
+| `install --version <tag> [owner/repo]` | Install a specific release |
+| `uninstall [owner/repo]` | Uninstall a previously installed release |
+| `update [owner/repo]` | Update an installed release if a newer version is available |
+| `update --all` | Update every installed release |
+| `rollback [owner/repo]` | Restore the latest local backup |
+| `lock` / `unlock [owner/repo]` | Keep updates away from a release |
+| `list` | List all installed releases |
+| `info [owner/repo]` | Show version, path, checksums, and backups |
+| `providers ...` | List, add, update, remove, or recover providers |
+| `doctor` | Diagnose state and platform issues, `--heal` applies fixes |
+| `adopt [owner/repo]` | Adopt an existing Linux install |
+| `completions bash\|zsh` | Print a shell completion script |
+| `help` | Show usage instructions |
 
-Extract the Linux archive and run `github-releases-manager/bin/github-releases-manager`, or install
-the MSI/DMG. The macOS build is ad-hoc signed but not notarised, so the first launch needs
-right-click → Open.
+Example repositories:
 
-Verify downloads with `sha256sum -c SHA256SUMS` (`shasum -a 256 -c SHA256SUMS` on macOS).
+- github:keepassxreboot/keepassxc
+- github:ip7z/7zip
+- github:obsproject/obs-studio
 
-## Building the application
+---
+
+## Advanced
+
+### Prerequisites
+
+- CMake 3.20+
+- The pinned cosmocc toolchain (URL and SHA-256 in `toolchain/PIN`)
+
+### Building the application
 
 To build the project:
 
 ```bash
-mvn package
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain/cosmo.cmake
+cmake --build build
 ```
 
-This will produce `target/github-releases-manager-1.9.10-jar-with-dependencies.jar`
+This will produce `build/ape-get`, the host binary.
 
+To package the portable binaries:
+
+```bash
+for a in x86_64 aarch64; do
+  cmake -B build/$a -DCMAKE_TOOLCHAIN_FILE=toolchain/cosmo.cmake -DAPEGET_ARCH=$a
+  cmake --build build/$a
+done
+bin/package.sh build/x86_64 build/aarch64 build/
+```
+
+This produces three portable binaries:
+
+| File | Runs on | Size |
+| --- | --- | --- |
+| `ape-get.com` | everywhere (in theory) | ~1.5 MB |
+| `ape-get-x86_64.com` | everywhere x86 (in theory) | < 1 MB |
+| `ape-get-aarch64.com` | everywhere arm (in theory) | < 1 MB |
+
+Unfortunately macOS has not yet been tested, but any and all reports are welcome.
+
+Packagers can build with `-DAPEGET_SELF=OFF`: self-registration and self-update are compiled out entirely, leaving the package manager in charge of upgrades.
 
 To remove the generated files:
 
 ```bash
-mvn clean
+rm -rf build
 ```
 
-## Running the application
+### Running the application
 
 ```bash
-java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar [command] [options]
+./build/ape-get.com [command] [options]
 ```
 
 Example:
 
 ```bash
-java -jar target/github-releases-manager-1.9.10-jar-with-dependencies.jar list
+./build/ape-get.com list
 ```
 
-## Supported commands
-
-`<repo>` is `provider:owner/repo` or `provider:group/subgroup/project`. `install` also accepts a
-bare `owner/repo`: it checks each configured provider for that repository, installs directly when
-one has it, and asks you to pick when several do. A name without a slash is searched across
-providers. Use the provider-qualified form to skip detection. rngit lookups run over Reticulum and
-can be slower; `rngit:group/repo` skips detection entirely.
-
-| Command | Description |
-| --- | --- |
-| `search <query>` | Search all configured providers |
-| `install <repo>` | Install the latest release; a bare `owner/repo` is resolved across providers |
-| `install --version <tag> <repo>` | Install a specific release |
-| `install --asset <name\|index> <repo>` | Choose an asset non-interactively |
-| `update <repo>` | Update an installed release |
-| `update --all` | Update every installed release |
-| `list --outdated` | List installed releases with newer releases available |
-| `uninstall <repo>` | Uninstall a previously installed release |
-| `rollback <repo>` | Restore the latest local backup |
-| `list` | List installed releases |
-| `info <repo>` | Show version, path, checksums, signatures, and backups |
-| `providers ...` | List, add, update, remove, or recover providers (GitHub, Gitea, GitLab, rngit) |
-| `doctor` | Diagnose state and platform issues |
-| `adopt <repo>` | Adopt an existing Linux install |
-| `help` | Show usage instructions |
-
-Example repositories:
-
-- keepassxreboot/keepassxc — searches providers; one match installs, several prompt
-- github:keepassxreboot/keepassxc — explicit source
-- github:ip7z/7zip
-- github:obsproject/obs-studio
-
-## Providers and common options
-
-Built-in providers are `github`, `codeberg`, and `gitlab`. `update`, `uninstall`, `rollback`, and
-`info` require the provider prefix, for example `github:owner/repo`.
-
-rngit nodes are configured as custom providers with the Reticulum node destination or a local
-alias. The repository path is `group/repo`, as rngit expects:
+### Running the tests
 
 ```bash
-providers add rns rns://7649a50d84610232d1416b41d2896aff --type rngit
-install rns:group/repo
+python3 src/test/scenarios/run.py --bin ./build/ape-get
 ```
 
-The type is detected from the `rns://` scheme when `--type` is omitted, and a name such as
-`rns-7649a50d` is derived. rngit needs the RNS `rngit` client and a reachable Reticulum interface;
-when a destination cannot be resolved ape-get points at the RNS interface or `rnsd`. rngit verifies
-the signed release manifest and every fetched artifact, so the detached-signature check used by the
-HTTP providers does not apply.
+### Documentation
+
+To see usage instructions:
 
 ```bash
-search neovim                    # queries every configured provider
-search --provider github neovim  # one provider only
-install codeberg:forgejo/forgejo
-install gitlab:group/subgroup/project
-install --version v1.2.3 github:owner/repo
-install --dry-run --json github:owner/repo
-install --name ff github:fastfetch-cli/fastfetch
-install --kind portable-exe github:owner/tool
-install --desktop --terminal github:owner/tool
-update --all
-list --outdated
+ape-get help
 ```
-
-Add a custom Gitea, Forgejo, or GitLab instance:
-
-```bash
-providers add work https://git.example.com --type auto
-```
-
-Provider tokens are read from the environment variable named by `token_env`; secrets are never
-stored in the config.
-
-Common flags: `--asset`, `--version`, `--kind`, `--name`, `--no-command`, `--all`,
-`--outdated`, `--channel`, `--dry-run`, `--desktop`, `--no-desktop`, `--terminal`, `--icon`,
-`--assimilate`, `--provider`, `--json`, `--quiet`, `-y`/`--yes`.
-`--json` writes one document to stdout; progress, warnings, and prompts go to stderr.
-`-y`/`--yes` is required for non-interactive use. Without it, install, update (including
-`--all`, which asks once), uninstall, rollback, adopt, and destructive provider changes refuse when
-no TTY is available.
-
-Portable packages create a command in the user bin directory by default. `--name` changes it and
-`--no-command` suppresses it. A command already owned by another installed package is refused, so
-pass `--name` when two providers host packages with the same asset name. Plain `.exe` assets are
-treated as NSIS installers; use `--kind portable-exe` for a portable Windows executable. `--desktop` creates a Linux menu entry,
-using the AppImage's embedded name, comment, categories, and icon when available; `--no-desktop`
-removes it on update.
-
-`--channel beta` follows prereleases where the provider exposes them. Automatic updates are
-configured in `grm_config.json` with `auto_update` (`off`, `check`, or `apply`),
-`update_channel` (`stable` or `beta`), and `update_interval_hours`. `network_timeout_seconds`
-(default 30) sets the API and connection timeout; downloads keep at least five minutes and rngit
-fetches at least thirty. `proxy` takes an `http://host:port` proxy for the HTTP providers. Only
-HTTP CONNECT proxies are supported: for Tor, enable `HTTPTunnelPort` and point `proxy` at it; SOCKS
-is not supported by the Java HTTP client. An unreachable provider or a timeout reports the provider
-and repository, and `update --all` carries on with the remaining packages. When a provider cannot be
-checked — unsupported, rate limited, or offline — one warning or note is printed for that provider
-and the remaining sources are still checked. A `list` command performs a
-due check or update and records it in `grm_updates.log`. `--desktop` creates a Linux application-menu entry; `--terminal`
-marks it as terminal-based and `--icon` points at an icon file. `--assimilate` converts an APE to a
-native binary using the cosmocc `assimilate` tool; it is never used unless requested.
-
-## Running the tests
-
-```bash
-mvn test
-```
-
-## Documentation
-
-To generate the full API documentation:
-
-```bash
-mvn javadoc:javadoc
-```
-
-The javadoc will be available at `target/reports/apidocs/index.html`

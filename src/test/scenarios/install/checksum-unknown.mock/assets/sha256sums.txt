@@ -1,0 +1,1 @@
+43d52c89a1463a731a52a73024c0cb0bc64a2c7e7bb81d920bb006fb1abad7a5  other-1.0.0.AppImage

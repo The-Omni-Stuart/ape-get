@@ -1,0 +1,1 @@
+Error: Wine not usable at wine_path: <HOME>/nope/wine. Fix the config, or unset wine_path to fall back to auto-detection.

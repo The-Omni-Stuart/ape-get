@@ -1,0 +1,3 @@
+#!/bin/sh
+# managed by ape-get (compat: wine)
+exec '{home}/bin/wine' '{home}/.local/share/github-release-manager/applications/mock/owner__tool/versions/1.0.0/tool-1.0.0.exe' "$@"
