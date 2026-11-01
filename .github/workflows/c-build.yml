@@ -159,4 +159,7 @@ jobs:
           files: |
             dist/ape-get-*.com
             dist/SHA256SUMS.txt
+          # tags with a suffix (2.0.0-rc) publish as prereleases, so
+          # /releases/latest keeps pointing at stable
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
