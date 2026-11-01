@@ -8,6 +8,7 @@ name: C Build & Test
 on:
   push:
     branches: [main, master, develop]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
