@@ -1,6 +1,6 @@
-url: https://github.com/jart/cosmopolitan/releases/download/3.9.2/cosmocc-4.0.2.zip
+url: https://github.com/jart/cosmopolitan/releases/download/4.0.2/cosmocc-4.0.2.zip
 sha256: 85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3f44
 size: 441763966
 version: 4.0.2
-notes: URL pattern to confirm against the release that served our copy at
-  install time (fill on first clean-clone CI run); hash is ground truth.
+notes: hash is ground truth; URL confirmed against the 4.0.2 GitHub release
+  that carries an asset of this exact size.
