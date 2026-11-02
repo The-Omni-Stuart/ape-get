@@ -13,6 +13,8 @@ Options:
   --icon <path> - icon for the desktop entry
   --assimilate - convert an APE with the cosmocc assimilate tool
   --channel <stable|beta> - choose the release channel
+  --reinstall - reinstall a release that is already installed
+  -l, --lock - lock the release at the installed version
   --strict - fail when a checksum is missing or unusable
   --require-signature - fail when no verified signature is available
   --allow-signer-change - accept a changed signer after confirmation

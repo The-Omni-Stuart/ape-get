@@ -2,5 +2,6 @@ Usage: <ENTRYPOINT> rollback <name> [options]
 
 Options:
   --dry-run - show what would happen without changing anything
+  -l, --lock - keep the rolled-back version pinned
 
 Common: --json --quiet --yes --colour <auto|always|never>

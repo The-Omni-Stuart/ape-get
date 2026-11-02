@@ -1,12 +1,120 @@
 # ape-get completion. Enable with:
 #   eval "$(ape-get completions bash)"      # ~/.bashrc
-_ape_get() {
-    local cur
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    if [[ "$cur" == -* ]]; then
-        COMPREPLY=( $(compgen -W "--json --quiet -y --yes --colour --no-progress --experimental-compat" -- "$cur") )
-    elif [ "$COMP_CWORD" -le 1 ]; then
-        COMPREPLY=( $(compgen -W "search install uninstall update list info providers rollback doctor adopt about lock unlock completions help" -- "$cur") )
-    fi
+# Optional menu-style Tab (first match inserts, ties cycle;
+# affects every completion in the shell):
+#   bind '"\t": menu-complete'
+# first Tab should list even when ambiguous; without this a
+# tie like 'install info' prints nothing until the second Tab
+bind 'set show-all-if-ambiguous on' 2>/dev/null || :
+_apg_refs() {
+    ape-get list --json 2>/dev/null |
+      grep -o '"provider":"[^"]*","repo":"[^"]*"' |
+      sed -n 's/"provider":"\([^"]*\)","repo":"\([^"]*\)"/\1:\2/p'
 }
+_apg_providers() {
+    ape-get providers list --json 2>/dev/null |
+      grep -o '"name":"[^"]*"' | sed 's/.*:"\([^"]*\)"/\1/'
+}
+_apg_values() {
+    case "$1" in
+    --colour) echo auto always never ;;
+    --kind) echo appimage portable-exe ape nsis msi dmg ;;
+    --channel) echo stable beta ;;
+    --type) echo auto github gitea gitlab rngit ;;
+    --provider) _apg_providers ;;
+    esac
+}
+_apg_flags() {
+    case "$1" in
+    search)
+        echo --provider
+        ;;
+    install)
+        echo --provider --version --asset --kind --name --no-command --desktop --no-desktop --terminal --icon --assimilate --channel --reinstall -l --lock --strict --require-signature --allow-signer-change --dry-run --experimental-compat
+        ;;
+    uninstall)
+        echo --dry-run
+        ;;
+    update)
+        echo --all --version --asset --kind --channel --reinstall -l --lock --strict --require-signature --allow-signer-change --dry-run --experimental-compat
+        ;;
+    list)
+        echo --outdated
+        ;;
+    providers)
+        echo --type --api --token-env --url --force --purge --abandon
+        ;;
+    rollback)
+        echo --dry-run -l --lock
+        ;;
+    doctor)
+        echo --diagnose --heal
+        ;;
+    esac
+    echo --help --json --quiet -y --yes --colour --no-progress --experimental-compat
+}
+_apg_commands="search install uninstall update list info providers rollback doctor adopt about lock unlock completions help"
+_apg_value_flags=" --colour --provider --version --asset --kind --name --icon --channel --type --api --token-env --url "
+_apg_verbs="list show add update remove recover"
+_apg_ref_cmds=" uninstall update info rollback adopt lock unlock "
+_ape_get() {
+    local w cmd="" sub="" vals i=1
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+    vals=$(_apg_values "$prev")
+    if [ -n "$vals" ]; then
+        COMPREPLY=( $(compgen -W "$vals" -- "$cur") )
+        return
+    fi
+    while [ "$i" -lt "$COMP_CWORD" ]; do
+        w="${COMP_WORDS[i]}"
+        case "$w" in
+        -*)
+            case "$_apg_value_flags" in
+            *" $w "*) i=$((i + 2)); continue ;;
+            esac
+            ;;
+        *)
+            if [ -z "$cmd" ]; then cmd="$w"
+            elif [ -z "$sub" ]; then sub="$w"
+            fi
+            ;;
+        esac
+        i=$((i + 1))
+    done
+    case "$cur" in
+    -*)
+        COMPREPLY=( $(compgen -W "$(_apg_flags "$cmd")" -- "$cur") )
+        return
+        ;;
+    esac
+    if [ -z "$cmd" ]; then
+        COMPREPLY=( $(compgen -W "$_apg_commands" -- "$cur") )
+        return
+    fi
+    case "$cmd" in
+    help)
+        COMPREPLY=( $(compgen -W "$_apg_commands" -- "$cur") ) ;;
+    completions)
+        COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") ) ;;
+    install)
+        COMPREPLY=( $(compgen -W "$(_apg_providers | sed 's/$/:/') $(_apg_refs)" -- "$cur") ) ;;
+    providers)
+        case "$sub" in
+        show|update|remove|recover)
+            COMPREPLY=( $(compgen -W "$(_apg_providers)" -- "$cur") ) ;;
+        list|add)
+            COMPREPLY=() ;;
+        *)
+            COMPREPLY=( $(compgen -W "$_apg_verbs" -- "$cur") ) ;;
+        esac ;;
+    *)
+        case "$_apg_ref_cmds" in
+        *" $cmd "*)
+            COMPREPLY=( $(compgen -W "$(_apg_refs)" -- "$cur") ) ;;
+        esac ;;
+    esac
+}
+complete -r ape-get 2>/dev/null || :
+complete -r <ENTRYPOINT> 2>/dev/null || :
 complete -F _ape_get ape-get <ENTRYPOINT>

@@ -106,3 +106,11 @@ add_test(NAME smoke_help
          COMMAND ${CMAKE_COMMAND}
            -Dexe=$<TARGET_FILE:ape-get>
            -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_help.cmake)
+add_test(NAME completions_check
+         COMMAND ${CMAKE_COMMAND}
+           -Dexe=$<TARGET_FILE:ape-get>
+           -Dsrcdir=${CMAKE_SOURCE_DIR}
+           -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions.cmake)
+add_test(NAME completions_pty_check
+         COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions_pty.py
+                 $<TARGET_FILE:ape-get>)

@@ -6,6 +6,8 @@ Options:
   --asset <name|index> - choose a release asset non-interactively
   --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg
   --channel <stable|beta> - choose the release channel
+  --reinstall - refresh the asset even when the version is unchanged
+  -l, --lock - lock the release at the version updated to
   --strict - fail when a checksum is missing or unusable
   --require-signature - fail when no verified signature is available
   --allow-signer-change - accept a changed signer after confirmation

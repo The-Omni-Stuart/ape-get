@@ -18,6 +18,7 @@ Commands:
   help - display this help message
 
 Global options:
+  --help - show help for the command
   --json - machine-readable output
   --quiet - suppress progress messages
   -y, --yes - assume yes for confirmation prompts

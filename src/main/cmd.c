@@ -40,6 +40,7 @@ static const char *const HELP_COMMANDS[] = {
 };
 
 static const char *const GLOBAL_OPTIONS[] = {
+    "  --help - show help for the command",
     "  --json - machine-readable output",
     "  --quiet - suppress progress messages",
     "  -y, --yes - assume yes for confirmation prompts",
@@ -69,6 +70,8 @@ static const char *const OPTS_INSTALL[] = {
     "  --icon <path> - icon for the desktop entry",
     "  --assimilate - convert an APE with the cosmocc assimilate tool",
     "  --channel <stable|beta> - choose the release channel",
+    "  --reinstall - reinstall a release that is already installed",
+    "  -l, --lock - lock the release at the installed version",
     "  --strict - fail when a checksum is missing or unusable",
     "  --require-signature - fail when no verified signature is available",
     "  --allow-signer-change - accept a changed signer after confirmation",
@@ -83,6 +86,8 @@ static const char *const OPTS_UPDATE[] = {
     "  --asset <name|index> - choose a release asset non-interactively",
     "  --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg",
     "  --channel <stable|beta> - choose the release channel",
+    "  --reinstall - refresh the asset even when the version is unchanged",
+    "  -l, --lock - lock the release at the version updated to",
     "  --strict - fail when a checksum is missing or unusable",
     "  --require-signature - fail when no verified signature is available",
     "  --allow-signer-change - accept a changed signer after confirmation",
@@ -114,6 +119,7 @@ static const char *const OPTS_PROVIDERS[] = {
 
 static const char *const OPTS_ROLLBACK[] = {
     "  --dry-run - show what would happen without changing anything",
+    "  -l, --lock - keep the rolled-back version pinned",
     NULL
 };
 
@@ -156,6 +162,16 @@ const cmd_help *cmd_lookup(const char *name)
     for (size_t k = 0; k < sizeof(CMDS) / sizeof(CMDS[0]); k++)
         if (!strcmp(name, CMDS[k].name)) return &CMDS[k];
     return NULL;
+}
+
+// registry rows for generators (shell completion); fills at most cap
+// entries and returns how many
+int cmd_help_all(const cmd_help **out, int cap)
+{
+    int n = 0;
+    for (size_t k = 0; k < sizeof(CMDS) / sizeof(CMDS[0]) && n < cap; k++)
+        out[n++] = &CMDS[k];
+    return n;
 }
 
 const char *const *cmd_help_commands(void) { return HELP_COMMANDS; }

@@ -45,6 +45,7 @@ typedef struct {
     int id;
 } cmd_help;
 const cmd_help *cmd_lookup(const char *name);
+int cmd_help_all(const cmd_help **out, int cap);
 const char *const *cmd_help_commands(void);
 const char *const *cmd_global_options(void);
 
