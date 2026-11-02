@@ -73,7 +73,7 @@ static char *manifest_text(const pipe_ctx *pc, const char *now)
     if (rel.release_id != NULL) jb_lit(&b, rel.release_id);
     else jb_lit(&b, "null");
     jb_lit(&b, ",\"asset\":{\"name\":");
-    jb_json_string(&b, asset->name);
+    jb_json_string(&b, pc->base[0] != '\0' ? pc->base : asset->name);
     jb_lit(&b, ",\"url\":");
     jb_json_string(&b, asset->url);
     jb_lit(&b, ",\"sha256\":");
@@ -149,8 +149,9 @@ int phase_prepare(pipe_ctx *pc)
     char *sver = sanitize_version(pc->rel.version);
     pc->j_vdir = app0 != NULL && sver != NULL
         ? path_fmt("%s/versions/%s", app0, sver) : NULL;
-    const char *base = strrchr(pc->asset->name, '/') != NULL
-        ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name;
+    const char *base = pc->base[0] != '\0' ? pc->base
+        : (strrchr(pc->asset->name, '/') != NULL
+            ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name);
     pc->j_staged = pc->j_vdir != NULL
         ? path_fmt("%s/%s.tmp-%s", pc->j_vdir, base, pc->j_id) : NULL;
     pc->j_mfile = manifest_path(pc->st->root, pc->prov, pc->path);
@@ -206,8 +207,9 @@ int phase_install(pipe_ctx *pc)
     // the staged APE is assimilated first; the native file then
     // replaces it as the install source
     if (pc->o->assimilate) {
-        const char *base = strrchr(pc->asset->name, '/') != NULL
-            ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name;
+        const char *base = pc->base[0] != '\0' ? pc->base
+            : (strrchr(pc->asset->name, '/') != NULL
+                ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name);
         char *err = NULL;
         char *nat = assimilate_asset(pc->tmp, base, &err);
         if (nat == NULL) {
@@ -229,8 +231,9 @@ int phase_install(pipe_ctx *pc)
 
     if (pc->app_dir == NULL) pc->app_dir = manifest_app_dir(pc->st->root, pc->prov, pc->path);
     const char *fname = pc->native_name != NULL ? pc->native_name
-        : (strrchr(pc->asset->name, '/') != NULL
-            ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name);
+        : (pc->base[0] != '\0' ? pc->base
+            : (strrchr(pc->asset->name, '/') != NULL
+                ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name));
     if (pc->launcher != NULL && path_is_dir(pc->launcher)) {
         pc->detail = path_fmt("Refusing to replace directory %s", pc->launcher);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "directory");

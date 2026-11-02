@@ -289,11 +289,14 @@ int pipeline_outdated(const cmd_opts *o, state_ctx *st)
         prov_asset *pool = calloc((size_t)(rel.n > 0 ? rel.n : 1),
             sizeof(*pool));
         int pool_n = 0;
-        for (int a = 0; pool != NULL && a < rel.n; a++)
-            if (ci_endswith(rel.assets[a].name, ".appimage")
-                || ci_endswith(rel.assets[a].name, ".ape")
-                || ci_endswith(rel.assets[a].name, ".com"))
+        for (int a = 0; pool != NULL && a < rel.n; a++) {
+            char b[512];
+            artifact_base_name(rel.assets[a].name, b, sizeof b);
+            if (ci_endswith(b, ".appimage")
+                || ci_endswith(b, ".ape")
+                || ci_endswith(b, ".com"))
                 pool[pool_n++] = rel.assets[a];
+        }
         pool_n = arch_prefer(pool, pool_n);
         if (pool == NULL || pool_n == 0) {
             free(pool);
@@ -303,16 +306,30 @@ int pipeline_outdated(const cmd_opts *o, state_ctx *st)
         }
         int sel = -1;
         for (int a = 0; a < pool_n; a++)
-            if (ms[k].asset != NULL
-                && !strcmp(pool[a].name, ms[k].asset)) { sel = a; break; }
+            if (ms[k].asset_url != NULL && pool[a].url != NULL
+                && !strcmp(pool[a].url, ms[k].asset_url)) { sel = a; break; }
+        if (sel < 0)
+            for (int a = 0; a < pool_n; a++) {
+                // a twin's recorded URL or the recorded raw name of the
+                // same logical artifact both identify the entry
+                char b[512];
+                artifact_base_name(pool[a].name, b, sizeof b);
+                if (ms[k].asset != NULL && !strcmp(b, ms[k].asset)) {
+                    sel = a; break;
+                }
+            }
         if (sel < 0) sel = 0;
         bool newer;
         if (isself && rel.version != NULL && ms[k].version != NULL)
             // the registered file:// URL cannot judge freshness; the version can
             newer = strcmp(rel.version, ms[k].version) != 0;
         else
+            // identity is (artifact, version): a variant swap (raw URL vs
+            // twin URL) at the same version is not "outdated"
             newer = ms[k].asset_url == NULL
-                || strcmp(pool[sel].url, ms[k].asset_url) != 0;
+                || (strcmp(pool[sel].url, ms[k].asset_url) != 0
+                    && !(rel.version != NULL && ms[k].version != NULL
+                         && !strcmp(rel.version, ms[k].version)));
         if (newer && oc < mc && refv != NULL && cur != NULL
             && latest != NULL && asset != NULL) {
             refv[oc] = strdup(ref);

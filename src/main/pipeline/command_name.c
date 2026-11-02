@@ -64,7 +64,7 @@ static char *cn_from_asset_name(const char *fileName)
     char *dot = strrchr(stem, '.');
     if (dot != NULL && dot > stem) {
         const char *exts[] = {"appimage", "ape", "com", "exe", "msi", "dmg",
-            "bin", NULL};
+            "bin", "xz", "xdelta", NULL};
         for (int k = 0; exts[k] != NULL; k++)
             if (!strcasecmp(dot + 1, exts[k])) { *dot = '\0'; break; }
     }

@@ -1,0 +1,21 @@
+[
+    {
+        "id": 7,
+        "tag_name": "1.0.0",
+        "name": "v1.0.0",
+        "draft": false,
+        "prerelease": false,
+        "assets": [
+            {
+                "id": 17831,
+                "name": "tool-1.0.0-fat.ape",
+                "browser_download_url": "https://127.0.0.1:18081/assets/tool-1.0.0-fat.ape"
+            },
+            {
+                "id": 17832,
+                "name": "tool-1.0.0-x86_64.ape",
+                "browser_download_url": "https://127.0.0.1:18081/assets/tool-1.0.0-x86_64.ape"
+            }
+        ]
+    }
+]

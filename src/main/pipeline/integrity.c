@@ -26,7 +26,7 @@ int phase_checksum(pipe_ctx *pc)
     pc->vr.status = V_MISSING;
     int cand[64];
     int cn = 0;
-    size_t al = strlen(pc->asset->name);
+    size_t al = strlen(pc->base);
     static const char *xext[] = {".sha256", ".sha256sum", ".sha256.txt",
         ".digest", NULL};
     static const char *agg[] = {"sha256sums", "sha256sums.txt",
@@ -36,7 +36,7 @@ int phase_checksum(pipe_ctx *pc)
         for (int e = 0; xext[e] != NULL; e++) {
             size_t xl = strlen(xext[e]);
             if (strlen(pc->rel.assets[k].name) == al + xl
-                && !strncasecmp(pc->rel.assets[k].name, pc->asset->name, al)
+                && !strncasecmp(pc->rel.assets[k].name, pc->base, al)
                 && !strcasecmp(pc->rel.assets[k].name + al, xext[e])) {
                 cand[cn++] = k;
                 break;
@@ -87,7 +87,7 @@ int phase_checksum(pipe_ctx *pc)
         if (content == NULL) continue;
         bool has = false, amb = false;
         char *sha = NULL;
-        checksum_lookup(content, pc->asset->name, &has, &amb, &sha);
+        checksum_lookup(content, pc->base, &has, &amb, &sha);
         free(content);
         if (!has) { free(sha); continue; }
         saw_entries = true;
@@ -127,7 +127,7 @@ int phase_verify(pipe_ctx *pc)
     if (pc->vr.status == V_MISMATCH) {
         pc->detail = path_fmt(
             "Checksum mismatch for %s: expected %s, got %s."
-            " Refusing to install.", pc->asset->name, pc->vr.expected,
+            " Refusing to install.", pc->base, pc->vr.expected,
             pc->vr.actual);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "mismatch");
         oplog_append(pc->st, pc->op, pc->ref, "-",
@@ -137,7 +137,7 @@ int phase_verify(pipe_ctx *pc)
         pc->failed = true;
     } else if (!allowed) {
         pc->detail = path_fmt("%s%s. Refusing to install (strict mode).",
-            base, pc->asset->name);
+            base, pc->base);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "refused");
         oplog_append(pc->st, pc->op, pc->ref, "-",
             pc->detail != NULL ? pc->detail : "refused");
@@ -146,7 +146,7 @@ int phase_verify(pipe_ctx *pc)
         pc->failed = true;
     } else if (pc->vr.status != V_VERIFIED) {
         pc->detail = path_fmt("%s%s. Continuing without verification.",
-            base, pc->asset->name);
+            base, pc->base);
         ui_msg(stderr, UI_WARN, "%s", pc->detail != NULL ? pc->detail : "unverified");
         free(pc->detail);
         pc->detail = NULL;
@@ -160,14 +160,14 @@ int phase_verify(pipe_ctx *pc)
     bool required = pc->o->require_signature || pc->st->require_signature;
     pc->sres_used = true;
     int sigk = -1;
-    size_t alen = strlen(pc->asset->name);
+    size_t alen = strlen(pc->base);
     for (int k = 0; k < pc->rel.n && sigk < 0; k++) {
         static const char *sx[] = { ".sig", ".asc", NULL };
         size_t nl = strlen(pc->rel.assets[k].name);
         for (int e = 0; sx[e] != NULL; e++) {
             size_t xl = strlen(sx[e]);
             if (nl == alen + xl
-                && !strncasecmp(pc->rel.assets[k].name, pc->asset->name, alen)
+                && !strncasecmp(pc->rel.assets[k].name, pc->base, alen)
                 && !strcasecmp(pc->rel.assets[k].name + alen, sx[e])) {
                 sigk = k;
                 break;
@@ -176,7 +176,7 @@ int phase_verify(pipe_ctx *pc)
     }
     if (sigk < 0) {
         pc->sres.status = S_MISSING;
-        pc->sres.asset_name = strdup(pc->asset->name);
+        pc->sres.asset_name = strdup(pc->base);
     } else {
         char *stmp = NULL;
         char smsg[700] = "";
@@ -184,7 +184,7 @@ int phase_verify(pipe_ctx *pc)
                 pc->rel.assets[sigk].name, pc->timeout_ms, NULL, NULL, NULL,
                 &stmp, smsg, sizeof(smsg))) {
             pc->sres.status = S_ERROR;
-            pc->sres.asset_name = strdup(pc->asset->name);
+            pc->sres.asset_name = strdup(pc->base);
             pc->sres.detail = path_fmt("signature download failed: %s",
                 smsg);
         } else {
@@ -198,11 +198,11 @@ int phase_verify(pipe_ctx *pc)
             if (stat(stmp, &ssb) == 0 && (unsigned long)ssb.st_size
                     > (unsigned long)sig_max) {
                 pc->sres.status = S_ERROR;
-                pc->sres.asset_name = strdup(pc->asset->name);
+                pc->sres.asset_name = strdup(pc->base);
                 pc->sres.detail = strdup(
                     "signature file exceeds the size cap");
             } else {
-                sig_run_gpg(stmp, pc->tmp, pc->asset->name, &pc->sres);
+                sig_run_gpg(stmp, pc->tmp, pc->base, &pc->sres);
             }
             remove(stmp);
             free(stmp);
@@ -299,7 +299,7 @@ int phase_verify(pipe_ctx *pc)
     // magic beats any compat claim: the file is then a native APE
     if (has_ape_magic(pc->tmp)) { pc->kind = K_APE; pc->compat_run = false; }
     else if (pc->kind == K_APE) {
-        pc->detail = path_fmt("Asset is not an APE: %s", pc->asset->name);
+        pc->detail = path_fmt("Asset is not an APE: %s", pc->base);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "not ape");
         oplog_append(pc->st, pc->op, pc->ref, "-",
             pc->detail != NULL ? pc->detail : "not ape");

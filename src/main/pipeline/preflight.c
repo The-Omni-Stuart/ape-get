@@ -17,6 +17,109 @@
 #include <string.h>
 #include <strings.h>
 
+// true when pool entry `entry` is the .xz twin of the plain name `plain`
+static bool is_xz_twin(const char *entry, const char *plain)
+{
+    size_t el = strlen(entry), pl = strlen(plain);
+    return el > 3 && pl + 3 == el
+        && !strncasecmp(entry, plain, pl)
+        && !strcasecmp(entry + pl, ".xz");
+}
+
+// group key: decoded base, artifact extension cut, one variant tag cut
+static void group_key(const char *name, char *out, size_t cap)
+{
+    char b[512];
+    if (artifact_base_name(name, b, sizeof b) == 0) { out[0] = '\0'; return; }
+    static const char *arts[] = {".appimage", ".ape", ".exe", ".msi",
+        ".dmg", ".com", ".bin", NULL};
+    for (int k = 0; arts[k] != NULL; k++) {
+        size_t al = strlen(arts[k]);
+        if (strlen(b) > al && !strcasecmp(b + strlen(b) - al, arts[k])) {
+            b[strlen(b) - al] = '\0';
+            break;
+        }
+    }
+    arch_strip_variant(b);
+    snprintf(out, cap, "%s", b);
+}
+
+// collapse transport twins (keep the .xz) and, per group, prefer a single
+// current-arch line over universal entries. Two spellings of the current
+// arch (x86_64 and x86-64...) stay ambiguous on purpose: the picker shows
+// the user both names rather than letting upload order decide.
+static int pool_group(prov_asset *pool, int n)
+{
+    if (n < 2) return n;
+    char *keys = calloc((size_t)n, 512), *lines = calloc((size_t)n, 512);
+    bool *drop = calloc((size_t)n, sizeof *drop);
+    if (keys == NULL || lines == NULL || drop == NULL) {
+        free(keys); free(lines); free(drop);
+        return n;
+    }
+    for (int i = 0; i < n; i++) {
+        group_key(pool[i].name, keys + (size_t)i * 512, 512);
+        const char *ln = pool[i].name;
+        size_t l = strlen(ln);
+        if (l > 3 && !strcasecmp(ln + l - 3, ".xz"))
+            snprintf(lines + (size_t)i * 512, 512, "%.*s",
+                (int)(l - 3), ln);
+        else
+            snprintf(lines + (size_t)i * 512, 512, "%s", ln);
+    }
+    for (int i = 0; i < n; i++) {
+        if (drop[i]) continue;
+        for (int j = i + 1; j < n; j++) {
+            if (drop[j]) continue;
+            if (strcmp(keys + (size_t)i * 512, keys + (size_t)j * 512) != 0
+                || strcmp(lines + (size_t)i * 512, lines + (size_t)j * 512) != 0)
+                continue;
+            bool j_xz = is_xz_twin(pool[j].name, lines + (size_t)j * 512);
+            bool i_xz = is_xz_twin(pool[i].name, lines + (size_t)i * 512);
+            if (j_xz && !i_xz) drop[i] = true;   // twin wins over raw
+            else drop[j] = true;                 // duplicates: keep the first
+            if (drop[i]) break;
+        }
+    }
+    // arch preference per spec §5.4: non-current tags drop first; a sole
+    // current-arch spelling then beats every other line in the group; two
+    // spellings of it stay ambiguous and fall to the picker with the
+    // non-current lines already gone
+    for (int i = 0; i < n; i++) {
+        if (drop[i]) continue;
+        int a = arch_line_of(pool[i].name);
+        if (a != 0 && a != 1 && a != arch_line_current()) drop[i] = true;
+    }
+    for (int i = 0; i < n && !drop[i]; i++) {
+        if (drop[i] || arch_line_of(pool[i].name) != arch_line_current())
+            continue;
+        const char *mykey = keys + (size_t)i * 512;
+        const char *myline = lines + (size_t)i * 512;
+        bool ambiguous = false;
+        for (int j2 = 0; j2 < n && !ambiguous; j2++)
+            if (!drop[j2] && j2 != i
+                && strcmp(keys + (size_t)j2 * 512, mykey) == 0
+                && arch_line_of(pool[j2].name) == arch_line_current()
+                && strcmp(lines + (size_t)j2 * 512, myline) != 0)
+                ambiguous = true;
+        // ambiguous: keep both spellings, but lines that are neither
+        // spelling (untagged, fat) still go; sole spelling: it wins all
+        for (int j2 = 0; j2 < n; j2++) {
+            if (drop[j2] || strcmp(keys + (size_t)j2 * 512, mykey)) continue;
+            bool cur = arch_line_of(pool[j2].name) == arch_line_current();
+            bool mine = !strcmp(lines + (size_t)j2 * 512, myline);
+            if (cur && (mine || ambiguous)) continue;
+            drop[j2] = true;
+        }
+        if (!ambiguous) break;   // sole spelling handled the whole group
+    }
+    int out = 0;
+    for (int i = 0; i < n; i++)
+        if (!drop[i]) pool[out++] = pool[i];
+    free(keys); free(lines); free(drop);
+    return out == 0 ? n : out;
+}
+
 int phase_preflight(pipe_ctx *pc)
 {
     pc->pn = providers_load(pc->st, &pc->plist);
@@ -89,29 +192,34 @@ int phase_preflight(pipe_ctx *pc)
         && strspn(pc->o->asset, "0123456789") != strlen(pc->o->asset);
     pc->pool = calloc((size_t)(pc->rel.n > 0 ? pc->rel.n : 1), sizeof(*pc->pool));
     int pool_n = 0;
+    bool grouped = false;   // a collapsed pool owes the user one "Selected" line
     if (pc->pool != NULL) {
         bool pe_pool = compat_on
             && (compat_state || req_kind == K_PORTABLE_EXE);
         for (int k = 0; k < pc->rel.n; k++) {
+            char b[512];
+            artifact_base_name(pc->rel.assets[k].name, b, sizeof b);
             if (pe_pool) {
-                if (ci_endswith(pc->rel.assets[k].name, ".exe"))
+                if (ci_endswith(b, ".exe"))
                     pc->pool[pool_n++] = pc->rel.assets[k];
                 continue;
             }
             if (asset_named) { pc->pool[pool_n++] = pc->rel.assets[k]; continue; }
-            if (ci_endswith(pc->rel.assets[k].name, ".appimage")
-                || ci_endswith(pc->rel.assets[k].name, ".ape")
-                || ci_endswith(pc->rel.assets[k].name, ".com"))
+            if (ci_endswith(b, ".appimage")
+                || ci_endswith(b, ".ape")
+                || ci_endswith(b, ".com"))
                 pc->pool[pool_n++] = pc->rel.assets[k];
         }
-        pool_n = arch_prefer(pc->pool, pool_n);
         // a Windows PE asset is a fallback, never a competitor: only an
         // empty native pool for an auto-select lets it in
         if (pool_n == 0 && compat_on && req_kind < 0 && !asset_named
             && !pc->updating) {
-            for (int k = 0; k < pc->rel.n; k++)
-                if (ci_endswith(pc->rel.assets[k].name, ".exe"))
+            for (int k = 0; k < pc->rel.n; k++) {
+                char b[512];
+                artifact_base_name(pc->rel.assets[k].name, b, sizeof b);
+                if (ci_endswith(b, ".exe"))
                     pc->pool[pool_n++] = pc->rel.assets[k];
+            }
             pool_n = arch_prefer(pc->pool, pool_n);
         }
         if (req_kind >= 0) {
@@ -122,6 +230,11 @@ int phase_preflight(pipe_ctx *pc)
                     pc->pool[f++] = pc->pool[k];
             pool_n = f;
         }
+        if (!asset_named && !pe_pool) {
+            int g = pool_group(pc->pool, pool_n);
+            grouped = g != pool_n;
+            pool_n = g;   // any collapse owes the user one "Selected" line
+        }
     }
     if (pc->pool == NULL || pool_n == 0) {
         ui_msg(stderr, UI_ERROR,
@@ -131,6 +244,7 @@ int phase_preflight(pipe_ctx *pc)
 
     int sel = -1;
     int picked = 0; // an interactive pick equals --asset <index>
+
     if (!blank(pc->o->asset)) {
         char *v = (char *)pc->o->asset;
         if (strspn(v, "0123456789") == strlen(v)) {
@@ -138,8 +252,16 @@ int phase_preflight(pipe_ctx *pc)
             if (idx >= 1 && idx <= pool_n) sel = (int)idx - 1;
         }
         if (sel < 0)
-            for (int k = 0; k < pool_n; k++)
-                if (!strcasecmp(pc->pool[k].name, v)) { sel = k; break; }
+            for (int k = 0; k < pool_n; k++) {
+                char plain[512];
+                size_t nl = strlen(pc->pool[k].name);
+                bool twin = nl > 3
+                    && !strcasecmp(pc->pool[k].name + nl - 3, ".xz");
+                snprintf(plain, sizeof plain, "%s", pc->pool[k].name);
+                if (twin) plain[nl - 3] = '\0';
+                if (!strcasecmp(pc->pool[k].name, v)
+                    || (twin && !strcasecmp(plain, v))) { sel = k; break; }
+            }
         if (sel < 0) {
             pc->detail = path_fmt("No installable asset named '%s'. "
                 "Available assets:", v);
@@ -154,9 +276,17 @@ int phase_preflight(pipe_ctx *pc)
         return PIPE_DONE;
         }
     } else if (pc->updating) {
-        for (int k = 0; k < pool_n; k++)
+        for (int k = 0; k < pool_n; k++) {
+            char plain[512];
+            size_t nl = strlen(pc->pool[k].name);
+            bool twin = nl > 3
+                && !strcasecmp(pc->pool[k].name + nl - 3, ".xz");
+            snprintf(plain, sizeof plain, "%s", pc->pool[k].name);
+            if (twin) plain[nl - 3] = '\0';
             if (pc->prev->asset != NULL
-                && !strcmp(pc->pool[k].name, pc->prev->asset)) { sel = k; break; }
+                && (!strcmp(pc->pool[k].name, pc->prev->asset)
+                    || !strcmp(plain, pc->prev->asset))) { sel = k; break; }
+        }
         if (sel < 0 && pool_n == 1) sel = 0;
         if (sel < 0) {
             ui_msg(stderr, UI_BOLD,
@@ -185,6 +315,10 @@ int phase_preflight(pipe_ctx *pc)
         picked = 1;
     }
     pc->asset = &pc->pool[sel];
+    const char *leaf = strrchr(pc->asset->name, '/') != NULL
+        ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name;
+    if (artifact_base_name(leaf, pc->base, sizeof pc->base) == 0)
+        snprintf(pc->base, sizeof pc->base, "%s", leaf);
 
     if (req_kind >= 0) pc->kind = req_kind;
     else {
@@ -228,7 +362,7 @@ int phase_preflight(pipe_ctx *pc)
                 pc->command = strdup(pc->o->name);
             }
         } else {
-            pc->command = cn_from_asset(pc->path, pc->asset->name);
+            pc->command = cn_from_asset(pc->path, pc->base);
             if (pc->command == NULL || !cn_valid(pc->command)) {
                 pc->detail = path_fmt("Invalid command name: %s",
                     pc->command != NULL ? pc->command : "");
@@ -289,10 +423,18 @@ int phase_preflight(pipe_ctx *pc)
     pc->launcher = pc->command != NULL
         ? path_fmt("%s/%s", pc->st->install_root, pc->command) : NULL;
 
-    // up-to-date means an identical asset URL; --reinstall re-runs even
-    // an identical asset
-    if (pc->updating && !pc->o->reinstall && pc->prev->asset_url != NULL
-        && pc->asset->url != NULL && !strcmp(pc->prev->asset_url, pc->asset->url)) {
+    // up-to-date means an identical asset URL, or the same logical
+    // artifact at the same version (twins and deltas change the URL,
+    // never the identity); --reinstall re-runs even an identical asset
+    bool same_version = pc->updating && pc->prev->asset != NULL
+        && pc->prev->version != NULL
+        && pc->rel.version != NULL && pc->prev->version != NULL
+        && !strcmp(pc->prev->version, pc->rel.version)
+        && !strcmp(pc->prev->asset, pc->base);
+    if (pc->updating && !pc->o->reinstall
+        && ((pc->prev->asset_url != NULL && pc->asset->url != NULL
+             && !strcmp(pc->prev->asset_url, pc->asset->url))
+            || same_version)) {
         if (pc->report) {
             if (pc->o->json) {
                 jbuf b = {0};
@@ -314,6 +456,10 @@ int phase_preflight(pipe_ctx *pc)
         pc->rv = RES_UP_TO_DATE;
         return PIPE_DONE;
     }
+
+    // what the collapsed pool settled on, said once and after the
+    // up-to-date gate so a no-op update stays a one-line answer
+    if (grouped) ui_msg(stderr, UI_DIM, "Selected asset: %s", pc->asset->name);
 
     if (pc->o->dry_run) {
       if (pc->report) {

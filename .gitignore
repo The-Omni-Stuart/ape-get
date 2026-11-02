@@ -12,3 +12,4 @@ src/test/fuzz/build/
 *.kate-swp
 *~
 demo/
+build-*/

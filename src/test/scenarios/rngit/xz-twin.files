@@ -1,0 +1,3 @@
+--- rngit-calls.log (0644) ---
+release rns://some.dest/group/repo view latest
+release rns://some.dest/group/repo fetch v1.0.0:app-1.0.0.ape.xz

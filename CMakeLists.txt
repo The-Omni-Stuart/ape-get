@@ -35,6 +35,16 @@ target_include_directories(mbedall PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mbedtls/li
 target_compile_definitions(mbedall PUBLIC
   MBEDTLS_CONFIG_FILE="${CMAKE_SOURCE_DIR}/toolchain/mbedtls_apeget.h")
 target_compile_options(mbedall PRIVATE -w)
+
+# Vendored liblzma 5.8.4 decoder subset (PIN file): .xz container,
+# LZMA1+LZMA2, small CRC32/CRC64/SHA-256 checks. No encoders at all.
+file(GLOB LZMA_SRCS ${CMAKE_SOURCE_DIR}/vendor/liblzma/lib/*.c)
+add_library(lzmadec STATIC ${LZMA_SRCS})
+target_include_directories(lzmadec PUBLIC ${CMAKE_SOURCE_DIR}/vendor/liblzma/include)
+target_include_directories(lzmadec PRIVATE ${CMAKE_SOURCE_DIR}/vendor/liblzma/lib
+  ${CMAKE_SOURCE_DIR}/vendor/liblzma/tuklib)
+target_compile_options(lzmadec PRIVATE -w
+  -include ${CMAKE_SOURCE_DIR}/toolchain/lzma_apeget.h)
 string(REGEX REPLACE "\n" ";" DEPS_LINES "${DEPS_MK}")
 set(APESRC_MODULES "")
 foreach(line ${DEPS_LINES})
@@ -72,6 +82,9 @@ add_executable(ape-get ${CMAKE_SOURCE_DIR}/src/main/main.c ${MAIN_PARTS})
 
 # the one module allowed to consume mbed TLS (crypto row)
 target_link_libraries(m_crypto PUBLIC mbedall)
+
+# the one module allowed to consume liblzma (the .xz decode stage)
+target_link_libraries(m_pipeline PUBLIC lzmadec)
 
 # Embedded trust store: the CA bundle compiles into http;
 # $APEGET_CA_BUNDLE overrides it at runtime.

@@ -63,6 +63,7 @@ typedef struct {
     // journal state (staged file: <target>.tmp-<id>)
     char j_id[17], j_created[40];
     char *j_staged, *j_vdir, *j_mfile;
+    char base[512];   // decoded asset base name (transport envelope stripped)
     bool j_on, j_committed;
     char *detail;
     char *backups;
@@ -80,6 +81,9 @@ long choose_index(const cmd_opts *o, const char *what, const char *none,
 
 // pipeline/arch.c: asset architecture preference
 int arch_prefer(prov_asset *assets, int n);
+int arch_line_of(const char *name);
+int arch_line_current(void);
+bool arch_strip_variant(char *name);
 
 // pipeline/assimilate.c: cosmocc assimilate on a staged APE; returns a
 // malloc'd <file>.native path, NULL with *err set on failure
@@ -123,6 +127,7 @@ enum kind {
 
 const char *kind_manifest_name(int k);
 int kind_from_asset_name(const char *name);
+size_t artifact_base_name(const char *name, char *out, size_t cap);
 bool kind_is_portable(int k);
 bool kind_supported_on_linux(int k);
 int kind_from_option(const char *v);
@@ -191,5 +196,9 @@ static inline int ci_endswith(const char *name, const char *suffix)
     size_t l = strlen(name), sl = strlen(suffix);
     return l >= sl && !strncasecmp(name + l - sl, suffix, sl);
 }
+
+// decode.c: streaming .xz envelope decode with hostile-input caps
+// (spec §4/I2/I5/I6). 0 = out_path holds the bytes; failure deletes it.
+int xz_decode_file(const char *in_path, const char *out_path);
 
 #endif

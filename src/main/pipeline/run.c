@@ -40,6 +40,27 @@ static int phase_download(pipe_ctx *pc)
     return PIPE_GO;
 }
 
+// transport envelope: decode .xz to a scratch sharing the journal
+// .tmp-<id> suffix (crash-sweepable), then rename onto the staged path
+// so every later phase sees pc->tmp holding the final artifact bytes
+static int phase_decode(pipe_ctx *pc)
+{
+    if (!ci_endswith(pc->asset->name, ".xz")) return PIPE_GO;
+    char *sc = path_fmt("%s.xdec.tmp-%s", pc->tmp, pc->j_id);
+    if (sc == NULL) return PIPE_DONE;
+    if (xz_decode_file(pc->tmp, sc) != 0 || rename(sc, pc->tmp) != 0) {
+        remove(sc);
+        free(sc);
+        ui_msg(stderr, UI_ERROR, "Asset %s failed to decode; refusing to install.",
+            pc->asset->name);
+        oplog_append(pc->st, pc->op, pc->ref, "-",
+            "transport decode failed");
+        return PIPE_DONE;
+    }
+    free(sc);
+    return PIPE_GO;
+}
+
 static void pipe_ctx_free(pipe_ctx *pc)
 {
     free(pc->detail);
@@ -111,6 +132,7 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
     int rc = phase_preflight(&c);
     if (rc == PIPE_GO) rc = phase_prepare(&c);
     if (rc == PIPE_GO) rc = phase_download(&c);
+    if (rc == PIPE_GO) rc = phase_decode(&c);
     if (rc == PIPE_GO) rc = phase_checksum(&c);
     if (rc == PIPE_GO) rc = phase_verify(&c);
     if (rc == PIPE_GO) rc = phase_install(&c);

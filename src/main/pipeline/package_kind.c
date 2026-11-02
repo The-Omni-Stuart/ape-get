@@ -20,9 +20,33 @@ const char *kind_manifest_name(int k)
     }
 }
 
+// Strip transport envelopes from an asset name: ".xz", then (deltas,
+// phase 2) ".xdelta" plus its trailing "-from-<version>" segment. Returns
+// the length written, 0 when nothing installable remains.
+size_t artifact_base_name(const char *name, char *out, size_t cap)
+{
+    if (name == NULL) { if (cap > 0) out[0] = '\0'; return 0; }
+    snprintf(out, cap, "%s", name);
+    size_t l = strlen(out);
+    if (l > 3 && !strcasecmp(out + l - 3, ".xz")) out[l -= 3] = '\0';
+    if (l >= 7 && !strcasecmp(out + l - 7, ".xdelta")) {
+        out[l = l - 7] = '\0';
+        char *from = NULL;
+        for (char *p = out; (p = strstr(p, "-from-")) != NULL; p++)
+            from = p;   // last occurrence wins
+        if (from != NULL && from != out)
+            *from = '\0';
+        else
+            out[0] = '\0';
+    }
+    return strlen(out);
+}
+
 int kind_from_asset_name(const char *name)
 {
-    if (name == NULL) return K_UNKNOWN;
+    char b[512];
+    if (artifact_base_name(name, b, sizeof b) == 0) return K_UNKNOWN;
+    name = b;
     if (ci_endswith(name, ".appimage")) return K_APPIMAGE;
     if (ci_endswith(name, ".msi")) return K_MSI;
     if (ci_endswith(name, ".dmg")) return K_DMG;

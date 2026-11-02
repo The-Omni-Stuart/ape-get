@@ -1,0 +1,9 @@
+url: https://github.com/tukaani-project/xz/releases/download/v5.8.4/xz-5.8.4.tar.gz
+sha256: 0014c7886930454fe8bd4228665b51af55eeae560ea135c9c4cd33f55b2591d9
+size: 2799797
+version: 5.8.4
+license: 0BSD (COPYING.0BSD, kept as LICENSE/)
+extracted: src/liblzma/api -> include/, 23 decoder .c + private .h -> lib/,
+  src/common/{sysdefs,tuklib_integer,tuklib_common}.h -> tuklib/, LICENSE
+  (decoder subset; encoders, MT, BCJ/simple and delta filters,
+  alone/lzip/auto formats and string helpers are not vendored)
