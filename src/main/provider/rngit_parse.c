@@ -143,7 +143,9 @@ bool opaque_decode(const char *url, char **path, char **tag,
     return true;
 }
 
-// Strip ANSI CSI/escape sequences before parsing view output.
+// Strip ANSI CSI/escape sequences, then terminal progress overwrites:
+// rngit prints "Requesting path...\rRelease : 1.0.0" when stdout is no
+// tty, so on each line only the text after the last \r was on screen.
 char *strip_ansi(const char *s)
 {
     char *o = malloc(strlen(s) + 1);
@@ -161,6 +163,21 @@ char *strip_ansi(const char *s)
         }
     }
     *w = '\0';
+
+    char *r = o, *keep = o;
+    for (const char *p = o; ; p++) {
+        if (*p == '\r') {
+            keep = (char *)(p + 1);
+        } else if (*p == '\n' || *p == '\0') {
+            size_t len = (size_t)(p - keep);
+            memmove(r, keep, len);
+            r += len;
+            if (*p == '\n') *r++ = '\n';
+            keep = (char *)(p + 1);
+        }
+        if (*p == '\0') break;
+    }
+    *r = '\0';
     return o;
 }
 

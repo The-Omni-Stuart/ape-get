@@ -1,0 +1,5 @@
+Dry run: would install rn:group/repo 1.0.0.
+  Asset:  tool-1.0.0.ape.xz
+  Source: rngit://Z3JvdXAvcmVwbwAxLjAuMAB0b29sLTEuMC4wLmFwZS54egA
+  Launcher: <INSTALL_ROOT>/tool
+No changes were made.
