@@ -45,6 +45,19 @@ target_include_directories(lzmadec PRIVATE ${CMAKE_SOURCE_DIR}/vendor/liblzma/li
   ${CMAKE_SOURCE_DIR}/vendor/liblzma/tuklib)
 target_compile_options(lzmadec PRIVATE -w
   -include ${CMAKE_SOURCE_DIR}/toolchain/lzma_apeget.h)
+
+# Vendored xdelta3 3.2.2 decoder subset (PIN file): VCDIFF decode only;
+# the encoder, secondary compressors, CLI and tests compile out or are
+# not vendored (toolchain/xdelta3_apeget.h).
+add_library(xdelta3dec STATIC ${CMAKE_SOURCE_DIR}/vendor/xdelta3/xdelta3.c)
+target_include_directories(xdelta3dec PUBLIC ${CMAKE_SOURCE_DIR}/vendor/xdelta3)
+# the -include is INTERFACE so consumers that include xdelta3.h get the
+# same config macros the header probes (liblzma needs no such thing;
+# xdelta3.h checks SIZEOF_* at include time)
+target_compile_options(xdelta3dec PRIVATE -w
+  -include ${CMAKE_SOURCE_DIR}/toolchain/xdelta3_apeget.h)
+target_compile_options(xdelta3dec INTERFACE
+  -include ${CMAKE_SOURCE_DIR}/toolchain/xdelta3_apeget.h)
 string(REGEX REPLACE "\n" ";" DEPS_LINES "${DEPS_MK}")
 set(APESRC_MODULES "")
 foreach(line ${DEPS_LINES})
@@ -83,8 +96,8 @@ add_executable(ape-get ${CMAKE_SOURCE_DIR}/src/main/main.c ${MAIN_PARTS})
 # the one module allowed to consume mbed TLS (crypto row)
 target_link_libraries(m_crypto PUBLIC mbedall)
 
-# the one module allowed to consume liblzma (the .xz decode stage)
-target_link_libraries(m_pipeline PUBLIC lzmadec)
+# the one module allowed to consume liblzma and xdelta3 (the decode stage)
+target_link_libraries(m_pipeline PUBLIC lzmadec xdelta3dec)
 
 # Embedded trust store: the CA bundle compiles into http;
 # $APEGET_CA_BUNDLE overrides it at runtime.
@@ -127,3 +140,21 @@ add_test(NAME completions_check
 add_test(NAME completions_pty_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions_pty.py
                  $<TARGET_FILE:ape-get>)
+
+# delta round-trip: vendored xdelta3 encoder (test-only build; never
+# linked into the product) -> product decode path (xdelta_apply_fd).
+add_library(xdelta3enc STATIC ${CMAKE_SOURCE_DIR}/vendor/xdelta3/xdelta3.c)
+target_include_directories(xdelta3enc PUBLIC ${CMAKE_SOURCE_DIR}/vendor/xdelta3)
+target_compile_options(xdelta3enc PRIVATE -w
+  -include ${CMAKE_SOURCE_DIR}/toolchain/xdelta3_enctest.h)
+add_executable(rt_xdelta_enc ${CMAKE_SOURCE_DIR}/src/test/ci/test_delta_rt_enc.c)
+target_link_libraries(rt_xdelta_enc PRIVATE xdelta3enc)
+target_compile_options(rt_xdelta_enc PRIVATE -w
+  -include ${CMAKE_SOURCE_DIR}/toolchain/xdelta3_enctest.h)
+add_executable(rt_xdelta_dec ${CMAKE_SOURCE_DIR}/src/test/ci/test_delta_rt_dec.c)
+target_link_libraries(rt_xdelta_dec PRIVATE m_pipeline)
+add_test(NAME delta_roundtrip
+         COMMAND ${CMAKE_COMMAND}
+           -DENC=$<TARGET_FILE:rt_xdelta_enc>
+           -DDEC=$<TARGET_FILE:rt_xdelta_dec>
+           -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_delta_roundtrip.cmake)

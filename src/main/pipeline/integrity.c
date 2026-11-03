@@ -60,7 +60,7 @@ int phase_checksum(pipe_ctx *pc)
         char *ctmp = NULL;
         char cmsg[700] = "";
         if (!provider_download(pc->pe, pc->rel.assets[k].url,
-                pc->rel.assets[k].name, pc->timeout_ms, NULL, NULL, NULL,
+                pc->rel.assets[k].name, pc->timeout_ms, 0, NULL, NULL, NULL,
                 &ctmp, cmsg, sizeof(cmsg))) {
             pc->detail = path_fmt("Checksum verification failed: %s", cmsg);
             ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "checksum failed");
@@ -181,7 +181,7 @@ int phase_verify(pipe_ctx *pc)
         char *stmp = NULL;
         char smsg[700] = "";
         if (!provider_download(pc->pe, pc->rel.assets[sigk].url,
-                pc->rel.assets[sigk].name, pc->timeout_ms, NULL, NULL, NULL,
+                pc->rel.assets[sigk].name, pc->timeout_ms, 0, NULL, NULL, NULL,
                 &stmp, smsg, sizeof(smsg))) {
             pc->sres.status = S_ERROR;
             pc->sres.asset_name = strdup(pc->base);

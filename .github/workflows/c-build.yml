@@ -28,6 +28,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Vendor provenance pins
+        run: bash bin/vendor-pin-check.sh
+
       - name: Resolve cosmocc cache dir
         run: echo "COSMO_DIR=$HOME/.cosmocc" >> "$GITHUB_ENV"
 
@@ -61,7 +64,10 @@ jobs:
         run: cmake --build build -j"$(nproc)"
 
       - name: Static checks + help smoke (ctest)
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xdelta3   # delta round-trip helper
+          ctest --test-dir build --output-on-failure
 
       # probe-skip fans out to the live built-ins; the runner has egress,
       # and the rate-limited 403 shape is pinned by a .flaky golden.
@@ -106,8 +112,9 @@ jobs:
           unzip -q /tmp/cosmocc.zip -d "$COSMO_DIR"
 
       # fat APE = apelink of the two per-arch ELFs; both cross-compiled
-      # from linux by the bundled drivers. package.sh re-checks magic and
-      # the 1.5 MB fat / 1 MB single size gates, failing the job on drift.
+      # from linux by the bundled drivers. package.sh re-checks magic, the
+      # 1.6 MB fat / 1 MB single size gates and the transport twins
+      # (publish only < 95%), failing the job on drift.
       - name: Build per-arch ELFs
         run: |
           for a in x86_64 aarch64; do
@@ -124,7 +131,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ape-get-ape
-          path: dist/ape-get*.com
+          path: |
+            dist/ape-get*.com
+            dist/ape-get*.com.xz
           if-no-files-found: error
           compression-level: 0
 
@@ -143,15 +152,74 @@ jobs:
           name: ape-get-ape
           path: dist
 
-      - name: Name and checksum
+      - name: Name artefacts
         run: |
           set -euo pipefail
           ver=${GITHUB_REF_NAME#v}
           cd dist
-          mv ape-get.com      "ape-get-${ver}-fat.com"
-          mv ape-get-x86_64.com   "ape-get-${ver}-x86_64.com"
-          mv ape-get-aarch64.com  "ape-get-${ver}-aarch64.com"
-          sha256sum ape-get-*.com > SHA256SUMS.txt
+          for f in ape-get.com ape-get-x86_64.com ape-get-aarch64.com \
+                   ape-get.com.xz ape-get-x86_64.com.xz ape-get-aarch64.com.xz; do
+            [ -f "$f" ] || continue          # twins exist only when they win
+            case $f in
+              ape-get.com*)  mv "$f" "ape-get-${ver}-fat${f#ape-get}" ;;
+              *)             mv "$f" "ape-get-${ver}-${f#ape-get-}" ;;
+            esac
+          done
+          ls -l
+
+      # Deltas against the last K=3 stable releases (fewest bytes always:
+      # a delta ships only when it is < 95% of the twin it replaces).
+      # -S none: the shipped decoder carries no secondary compressors,
+      # and the encoder never reaches an artefact.
+      - name: Deltas against recent stables
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver=${GITHUB_REF_NAME#v}
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xdelta3
+          api=https://api.github.com/repos/${{ github.repository }}
+          curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+               "$api/releases?per_page=30" > releases.json
+          mapfile -t olds < <(jq -r --arg v "$ver" \
+            '[.[] | select((.prerelease | not) and (.draft | not))
+                  | .tag_name | sub("^v"; "") | select(. != $v)]
+             | .[0:3][]' releases.json)
+          echo "deltas against: ${olds[*]:-none}"
+          for kind in fat x86_64 aarch64; do
+            new="dist/ape-get-${ver}-${kind}.com"
+            [ -f "$new" ] || continue
+            cmp="$new"
+            if [ -f "$new.xz" ]; then cmp="$new.xz"; fi
+            gate=$(( $(stat -c %s "$cmp") * 95 / 100 ))
+            for ov in "${olds[@]}"; do
+              url=$(jq -r --arg n "ape-get-${ov}-${kind}.com" \
+                '[.[] | .assets[]? | select(.name == $n)
+                       | .browser_download_url][0] // empty' releases.json)
+              [ -n "$url" ] || continue
+              curl -fsSL -o old.com "$url" || continue
+              out="dist/ape-get-${ver}-${kind}.com-from-${ov}.xdelta.xz"
+              xdelta3 -f -e -S none -s old.com "$new" patch.xd
+              xz --lzma2=preset=9e,dict=8MiB --check=sha256 -c patch.xd > "$out"
+              rm -f patch.xd
+              enc=$(stat -c %s "$out")
+              if [ "$enc" -lt "$gate" ]; then
+                echo "\`$(basename "$out")\`: $enc bytes (vs $cmp $(stat -c %s "$cmp"))" \
+                  >> "$GITHUB_STEP_SUMMARY"
+              else
+                rm -f "$out"
+                echo "delta skipped (no win): $(basename "$out") $enc/$gate"
+              fi
+            done
+          done
+          ls -l dist
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ape-get-* > SHA256SUMS.txt
           ls -l
 
       - name: Publish
@@ -159,6 +227,8 @@ jobs:
         with:
           files: |
             dist/ape-get-*.com
+            dist/ape-get-*.com.xz
+            dist/ape-get-*.xdelta.xz
             dist/SHA256SUMS.txt
           # tags with a suffix (2.0.0-rc) publish as prereleases, so
           # /releases/latest keeps pointing at stable

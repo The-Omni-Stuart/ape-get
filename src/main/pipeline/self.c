@@ -10,6 +10,7 @@
 
 #ifdef APEGET_SELF
 
+#include "crypto.h"
 #include "fs.h"
 #include "json.h"
 #include "manifest.h"
@@ -254,7 +255,12 @@ static char *self_manifest_json(const char *target, const char *app_dir,
     char *furl = path_fmt("file://%s", target);
     jb_json_string(&b, furl != NULL ? furl : target);
     free(furl);
-    jb_lit(&b, ",\"sha256\":null},\"install\":{\"kind\":\"ape\",\"path\":");
+    char sha[65] = "";
+    crypto_sha256_file(target, sha);
+    jb_lit(&b, ",\"sha256\":");
+    if (sha[0] != '\0') jb_json_string(&b, sha);
+    else jb_lit(&b, "null");
+    jb_lit(&b, "},\"install\":{\"kind\":\"ape\",\"path\":");
     jb_json_string(&b, target);
     jb_lit(&b, ",\"root\":");
     jb_json_string(&b, app_dir);

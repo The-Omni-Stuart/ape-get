@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int phase_download(pipe_ctx *pc)
 {
@@ -23,7 +24,11 @@ static int phase_download(pipe_ctx *pc)
     dl_ctx dl = { pc->asset->name, -1, 0, 0, 0, 0.0, NULL };
     (void)dl.seen;
     dl.line = dl_line_buf;
-    if (!provider_download(pc->pe, pc->asset->url, pc->asset->name, pc->timeout_ms,
+    // I2: an .xz envelope that outgrows the 16 MiB wire cap is refused
+    // mid-stream, before airtime and disk are spent on padding
+    long long cap = ci_endswith(pc->asset->name, ".xz")
+        ? XFER_ENVELOPE_MAX : 0;
+    if (!provider_download(pc->pe, pc->asset->url, pc->asset->name, pc->timeout_ms, cap,
                            pc->j_on ? pc->j_staged : NULL, dl_progress, &dl, &pc->tmp,
                            msg, sizeof(msg))) {
         ui_progress_done();
@@ -40,24 +45,47 @@ static int phase_download(pipe_ctx *pc)
     return PIPE_GO;
 }
 
+// failure inside a delta pass is the normal path taken differently (I3):
+// ask run.c for the single re-selection, silently. Without a pending
+// delta it is the plain hard refusal.
+static int decode_failed(pipe_ctx *pc)
+{
+    if (pc->delta_pass && pc->fb_ok && !pc->delta_fell_back) {
+        pc->delta_retry = true;
+        return PIPE_DONE;
+    }
+    ui_msg(stderr, UI_ERROR, "Asset %s failed to decode; refusing to install.",
+        pc->asset->name);
+    oplog_append(pc->st, pc->op, pc->ref, "-", "transport decode failed");
+    return PIPE_DONE;
+}
+
 // transport envelope: decode .xz to a scratch sharing the journal
 // .tmp-<id> suffix (crash-sweepable), then rename onto the staged path
 // so every later phase sees pc->tmp holding the final artifact bytes
 static int phase_decode(pipe_ctx *pc)
 {
-    if (!ci_endswith(pc->asset->name, ".xz")) return PIPE_GO;
-    char *sc = path_fmt("%s.xdec.tmp-%s", pc->tmp, pc->j_id);
-    if (sc == NULL) return PIPE_DONE;
-    if (xz_decode_file(pc->tmp, sc) != 0 || rename(sc, pc->tmp) != 0) {
-        remove(sc);
+    if (ci_endswith(pc->asset->name, ".xz")) {
+        char *sc = path_fmt("%s.xdec.tmp-%s", pc->tmp, pc->j_id);
+        if (sc == NULL) return PIPE_DONE;
+        if (xz_decode_file(pc->tmp, sc) != 0 || rename(sc, pc->tmp) != 0) {
+            remove(sc);
+            free(sc);
+            return decode_failed(pc);
+        }
         free(sc);
-        ui_msg(stderr, UI_ERROR, "Asset %s failed to decode; refusing to install.",
-            pc->asset->name);
-        oplog_append(pc->st, pc->op, pc->ref, "-",
-            "transport decode failed");
-        return PIPE_DONE;
     }
-    free(sc);
+    if (pc->delta_pass) {
+        char *sc = path_fmt("%s.xdel.tmp-%s", pc->tmp, pc->j_id);
+        if (sc == NULL) return PIPE_DONE;
+        if (xdelta_apply_fd(pc->delta_fd, pc->tmp, sc) != 0
+            || rename(sc, pc->tmp) != 0) {
+            remove(sc);
+            free(sc);
+            return decode_failed(pc);
+        }
+        free(sc);
+    }
     return PIPE_GO;
 }
 
@@ -65,6 +93,7 @@ static void pipe_ctx_free(pipe_ctx *pc)
 {
     free(pc->detail);
     free(pc->backups);
+    if (pc->delta_fd >= 0) close(pc->delta_fd);
     if (pc->j_on && !pc->j_committed) {
         // crash-window equivalent: undo the transaction, removing the
         // journal a committed finish would have deleted
@@ -111,6 +140,7 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
 {
     pipe_ctx c;
     memset(&c, 0, sizeof(c));
+    c.delta_fd = -1;
     c.o = o;
     c.st = st;
     c.ref = ref;
@@ -131,8 +161,26 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
 
     int rc = phase_preflight(&c);
     if (rc == PIPE_GO) rc = phase_prepare(&c);
-    if (rc == PIPE_GO) rc = phase_download(&c);
-    if (rc == PIPE_GO) rc = phase_decode(&c);
+    while (rc == PIPE_GO) {
+        rc = phase_download(&c);
+        if (rc == PIPE_GO) rc = phase_decode(&c);
+        if (rc != PIPE_GO && c.delta_retry) {
+            // I3: exactly one re-selection of the smallest full variant,
+            // fresh files and no state carried beyond the journal
+            c.delta_retry = false;
+            c.delta_fell_back = true;
+            c.delta_pass = false;
+            if (c.delta_fd >= 0) { close(c.delta_fd); c.delta_fd = -1; }
+            if (c.tmp != NULL) { remove(c.tmp); free(c.tmp); c.tmp = NULL; }
+            c.asset = &c.fb_asset;
+            ui_msg(stderr, UI_DIM, "Selected asset: %s", c.asset->name);
+            oplog_append(c.st, c.op, c.ref, "-",
+                "delta decode failed; re-selected the full variant");
+            rc = PIPE_GO;
+            continue;
+        }
+        break;
+    }
     if (rc == PIPE_GO) rc = phase_checksum(&c);
     if (rc == PIPE_GO) rc = phase_verify(&c);
     if (rc == PIPE_GO) rc = phase_install(&c);

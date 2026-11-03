@@ -18,7 +18,8 @@
 // One streaming attempt on one URL. true = response fully handled (200:
 // whole body written); *status is the final HTTP status, 0 for failure.
 static bool http_download_once(const char *url, const char *hdr_line,
-                               int timeout_ms, http_prog cb, void *ud,
+                               int timeout_ms, long long max_bytes,
+                               http_prog cb, void *ud,
                                const char *dest_path, int *status,
                                int *errkind, char *location, size_t loccap,
                                char *errbuf, size_t errcap)
@@ -160,10 +161,19 @@ static bool http_download_once(const char *url, const char *hdr_line,
         goto fail_conn;
     }
     long long total = chunked ? -1 : clen;
+    // a lying-enormous declared length refuses before the first byte
+    // is written, let alone read
+    if (max_bytes > 0 && clen > max_bytes) {
+        snprintf(errbuf, errcap, "declared body of %lld bytes exceeds the "
+            "%lld MiB cap", clen, max_bytes >> 20);
+        tls_close(c);
+        free(buf);
+        return false;
+    }
     long long written = 0;
     if (cb != NULL) cb(0, total, ud);
 
-    bool done = false, werr = false, terr = false;
+    bool done = false, werr = false, terr = false, toobig = false;
     int ferr = 0;                       // errno of a write failure
     size_t have = rn - hoff;            // unconsumed body bytes
     if (have > 0) memmove(buf, buf + hoff, have);
@@ -178,6 +188,10 @@ static bool http_download_once(const char *url, const char *hdr_line,
             size_t take = have;
             if (clen >= 0 && (long long)take > clen - written)
                 take = (size_t)(clen - written);
+            if (max_bytes > 0 && written + (long long)take > max_bytes) {
+                toobig = true;          // undeclared padding: stop reading
+                break;
+            }
             if (take > 0) {
                 if (fwrite(buf, 1, take, f) != take) {
                     werr = true;
@@ -224,6 +238,10 @@ static bool http_download_once(const char *url, const char *hdr_line,
                 } else if (have == DL_BUF) { terr = true; break; }
             } else if (st == 1) {
                 size_t take = (long long)have < want ? have : (size_t)want;
+                if (max_bytes > 0 && written + (long long)take > max_bytes) {
+                    toobig = true;
+                    break;
+                }
                 if (take > 0) {
                     if (fwrite(buf, 1, take, f) != take) {
                         werr = true;
@@ -262,13 +280,16 @@ static bool http_download_once(const char *url, const char *hdr_line,
     }
     tls_close(c);
     free(buf);
-    if (done && !werr && !terr) {
+    if (done && !werr && !terr && !toobig) {
         *status = status_;
         return true;
     }
     if (werr) {
         snprintf(errbuf, errcap, "failed writing %s: %s", dest_path,
                  strerror(ferr));
+    } else if (toobig) {
+        snprintf(errbuf, errcap, "body exceeds the %lld MiB download cap "
+            "(read %lld of it)", max_bytes >> 20, written);
     } else {
         char tot[32];
         if (total > 0) snprintf(tot, sizeof tot, "%lld", total);
@@ -287,7 +308,8 @@ fail_conn:
 }
 
 bool http_download(const char *url, const char *name, const char *value,
-                   int timeout_ms, http_prog cb, void *ud,
+                   int timeout_ms, long long max_bytes,
+                   http_prog cb, void *ud,
                    const char *dest_path, int *status, int *errkind,
                    char *errbuf, size_t errcap)
 {
@@ -301,8 +323,8 @@ bool http_download(const char *url, const char *name, const char *value,
         int st = 0, kind = HTTP_ERR_OTHER;
         char loc[4096] = "";
         if (!http_download_once(cur, value != NULL ? hdr : NULL, timeout_ms,
-                                cb, ud, dest_path, &st, &kind, loc,
-                                sizeof(loc), errbuf, errcap)) {
+                                max_bytes, cb, ud, dest_path, &st, &kind,
+                                loc, sizeof(loc), errbuf, errcap)) {
             if (errkind != NULL) *errkind = kind;
             return false;
         }

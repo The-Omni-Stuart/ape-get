@@ -115,13 +115,13 @@ static void dl_status_msg(const char *label, int status, const char *name,
 }
 
 bool provider_download(const provider_entry *e, const char *url,
-                       const char *name, int timeout_ms,
+                       const char *name, int timeout_ms, long long max_bytes,
                        const char *dest, http_prog cb, void *ud,
                        char **tmp_path, char *msg, size_t cap)
 {
     if (!strcasecmp(e->type, "rngit"))
-        return provider_rngit_download(e, url, name, timeout_ms, dest,
-                                       tmp_path, msg, cap);
+        return provider_rngit_download(e, url, name, timeout_ms, max_bytes,
+                                       dest, tmp_path, msg, cap);
     const char *label = provider_label(e);
     const char *hdr = "Authorization";
     char authv[1152] = "";
@@ -150,8 +150,8 @@ bool provider_download(const provider_entry *e, const char *url,
         // the 32 MB buffer limit the JSON path keeps
         int status = 0, kind = HTTP_ERR_OTHER;
         if (!http_download(url, hdr, have_auth ? authv : NULL,
-                           timeout_ms, cb, ud, tmp, &status, &kind,
-                           errbuf, sizeof(errbuf))) {
+                           timeout_ms, max_bytes, cb, ud, tmp, &status,
+                           &kind, errbuf, sizeof(errbuf))) {
             if (status != 0)
                 dl_status_msg(label, status, name, msg, cap);
             else

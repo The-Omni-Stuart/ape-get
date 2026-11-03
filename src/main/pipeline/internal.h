@@ -64,6 +64,13 @@ typedef struct {
     char j_id[17], j_created[40];
     char *j_staged, *j_vdir, *j_mfile;
     char base[512];   // decoded asset base name (transport envelope stripped)
+    char sha_final[65];   // hash of the bytes being installed (manifest, journal)
+    int delta_fd;     // delta source: installed file opened once, hashed (I4)
+    bool delta_pass;  // selected asset is an eligible delta; its decode may re-select once
+    bool delta_retry; // phase_decode asks for the single re-selection (I3)
+    bool delta_fell_back;
+    prov_asset fb_asset;  // smallest full variant of the delta's group (fallback)
+    bool fb_ok;
     bool j_on, j_committed;
     char *detail;
     char *backups;
@@ -128,6 +135,7 @@ enum kind {
 const char *kind_manifest_name(int k);
 int kind_from_asset_name(const char *name);
 size_t artifact_base_name(const char *name, char *out, size_t cap);
+bool artifact_delta_from(const char *name, char *from, size_t cap);
 bool kind_is_portable(int k);
 bool kind_supported_on_linux(int k);
 int kind_from_option(const char *v);
@@ -191,6 +199,18 @@ bool resolve_source_ref(const cmd_opts *o, state_ctx *st,
 
 static inline bool blank(const char *s) { return s == NULL || *s == '\0'; }
 
+// The one version comparison: strip exactly one leading v/V, then exact
+// byte equality. 2.0.0-rc1 != 2.0.0 (rc installs stay on full assets);
+// V2.0.0 == 2.0.0. Mandatory because manifests record tag_name (v2.0.0)
+// while asset names carry the v-stripped version.
+static inline bool ver_eq(const char *a, const char *b)
+{
+    if (a == NULL || b == NULL) return false;
+    if (*a == 'v' || *a == 'V') a++;
+    if (*b == 'v' || *b == 'V') b++;
+    return !strcmp(a, b);
+}
+
 static inline int ci_endswith(const char *name, const char *suffix)
 {
     size_t l = strlen(name), sl = strlen(suffix);
@@ -200,5 +220,12 @@ static inline int ci_endswith(const char *name, const char *suffix)
 // decode.c: streaming .xz envelope decode with hostile-input caps
 // (spec §4/I2/I5/I6). 0 = out_path holds the bytes; failure deletes it.
 int xz_decode_file(const char *in_path, const char *out_path);
+
+// wire cap for .xz envelope downloads (I2); must stay >= XZ_IN_CAP in
+// decode.c so honest envelopes never trip the transfer gate first
+#define XFER_ENVELOPE_MAX (16ll << 20)
+// decode.c: apply a .xdelta patch to the bytes behind src_fd (hashed
+// once by the caller, I4). 0 = out_path holds the target; failure deletes it.
+int xdelta_apply_fd(int src_fd, const char *patch_path, const char *out_path);
 
 #endif

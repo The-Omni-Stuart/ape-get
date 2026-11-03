@@ -4,6 +4,7 @@
 #include "pipeline/internal.h"
 
 #include "compat.h"
+#include "crypto.h"
 #include "json.h"
 #include "manifest.h"
 #include "path.h"
@@ -12,10 +13,12 @@
 #include "state.h"
 #include "ui.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 // true when pool entry `entry` is the .xz twin of the plain name `plain`
 static bool is_xz_twin(const char *entry, const char *plain)
@@ -24,6 +27,44 @@ static bool is_xz_twin(const char *entry, const char *plain)
     return el > 3 && pl + 3 == el
         && !strncasecmp(entry, plain, pl)
         && !strcasecmp(entry + pl, ".xz");
+}
+
+// I3/I4: a delta is eligible only when updating, its source version is
+// the installed version, and that file's hash still matches the manifest
+// record. The check opens the installed file once and hashes through
+// that fd; the fd itself is returned so a selected delta keeps using
+// exactly these bytes at apply time (no reopen, no swap race).
+static int delta_gate(const pipe_ctx *pc, const char *from)
+{
+    if (!pc->updating || pc->prev == NULL || pc->prev->version == NULL
+        || blank(pc->prev->path) || pc->prev->sha256 == NULL)
+        return -1;
+    if (!ver_eq(from, pc->prev->version)) return -1;
+    int fd = open(pc->prev->path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    char sha[65] = "";
+    if (!crypto_sha256_fd(fd, sha) || strcmp(sha, pc->prev->sha256) != 0) {
+        close(fd);
+        return -1;
+    }
+    if (lseek(fd, 0, SEEK_SET) != 0) { close(fd); return -1; }
+    return fd;
+}
+
+// Variant rank for grouping (spec §5.3): eligible delta > twin > raw.
+// Ineligible deltas return -1: they leave the pool at selection time and
+// never spend radio (I3).
+static int variant_rank(const pipe_ctx *pc, const char *name,
+                        const char *base)
+{
+    char from[128];
+    if (artifact_delta_from(name, from, sizeof from)) {
+        int fd = delta_gate(pc, from);
+        if (fd < 0) return -1;
+        close(fd);
+        return 2;
+    }
+    return is_xz_twin(name, base) ? 1 : 0;
 }
 
 // group key: decoded base, artifact extension cut, one variant tag cut
@@ -44,28 +85,28 @@ static void group_key(const char *name, char *out, size_t cap)
     snprintf(out, cap, "%s", b);
 }
 
-// collapse transport twins (keep the .xz) and, per group, prefer a single
-// current-arch line over universal entries. Two spellings of the current
-// arch (x86_64 and x86-64...) stay ambiguous on purpose: the picker shows
-// the user both names rather than letting upload order decide.
-static int pool_group(prov_asset *pool, int n)
+// collapse transport twins and deltas (delta > .xz > raw) and, per group,
+// prefer a single current-arch line over universal entries. Two spellings
+// of the current arch (x86_64 and x86-64...) stay ambiguous on purpose:
+// the picker shows the user both names rather than letting upload order
+// decide.
+static int pool_group(pipe_ctx *pc, prov_asset *pool, int n)
 {
     if (n < 2) return n;
     char *keys = calloc((size_t)n, 512), *lines = calloc((size_t)n, 512);
+    int *rank = calloc((size_t)n, sizeof *rank);
     bool *drop = calloc((size_t)n, sizeof *drop);
-    if (keys == NULL || lines == NULL || drop == NULL) {
-        free(keys); free(lines); free(drop);
+    if (keys == NULL || lines == NULL || rank == NULL || drop == NULL) {
+        free(keys); free(lines); free(rank); free(drop);
         return n;
     }
     for (int i = 0; i < n; i++) {
         group_key(pool[i].name, keys + (size_t)i * 512, 512);
-        const char *ln = pool[i].name;
-        size_t l = strlen(ln);
-        if (l > 3 && !strcasecmp(ln + l - 3, ".xz"))
-            snprintf(lines + (size_t)i * 512, 512, "%.*s",
-                (int)(l - 3), ln);
-        else
-            snprintf(lines + (size_t)i * 512, 512, "%s", ln);
+        size_t ll = artifact_base_name(pool[i].name,
+            lines + (size_t)i * 512, 512);
+        rank[i] = ll == 0 ? -1
+            : variant_rank(pc, pool[i].name, lines + (size_t)i * 512);
+        if (rank[i] < 0) drop[i] = true;   // ineligible delta
     }
     for (int i = 0; i < n; i++) {
         if (drop[i]) continue;
@@ -74,10 +115,8 @@ static int pool_group(prov_asset *pool, int n)
             if (strcmp(keys + (size_t)i * 512, keys + (size_t)j * 512) != 0
                 || strcmp(lines + (size_t)i * 512, lines + (size_t)j * 512) != 0)
                 continue;
-            bool j_xz = is_xz_twin(pool[j].name, lines + (size_t)j * 512);
-            bool i_xz = is_xz_twin(pool[i].name, lines + (size_t)i * 512);
-            if (j_xz && !i_xz) drop[i] = true;   // twin wins over raw
-            else drop[j] = true;                 // duplicates: keep the first
+            if (rank[j] > rank[i]) drop[i] = true; // higher variant wins
+            else drop[j] = true;                  // equal ranks: keep the first
             if (drop[i]) break;
         }
     }
@@ -90,7 +129,7 @@ static int pool_group(prov_asset *pool, int n)
         int a = arch_line_of(pool[i].name);
         if (a != 0 && a != 1 && a != arch_line_current()) drop[i] = true;
     }
-    for (int i = 0; i < n && !drop[i]; i++) {
+    for (int i = 0; i < n; i++) {
         if (drop[i] || arch_line_of(pool[i].name) != arch_line_current())
             continue;
         const char *mykey = keys + (size_t)i * 512;
@@ -111,7 +150,6 @@ static int pool_group(prov_asset *pool, int n)
             if (cur && (mine || ambiguous)) continue;
             drop[j2] = true;
         }
-        if (!ambiguous) break;   // sole spelling handled the whole group
     }
     int out = 0;
     for (int i = 0; i < n; i++)
@@ -230,8 +268,8 @@ int phase_preflight(pipe_ctx *pc)
                     pc->pool[f++] = pc->pool[k];
             pool_n = f;
         }
-        if (!asset_named && !pe_pool) {
-            int g = pool_group(pc->pool, pool_n);
+        if (!pe_pool) {
+            int g = pool_group(pc, pc->pool, pool_n);
             grouped = g != pool_n;
             pool_n = g;   // any collapse owes the user one "Selected" line
         }
@@ -262,6 +300,19 @@ int phase_preflight(pipe_ctx *pc)
                 if (!strcasecmp(pc->pool[k].name, v)
                     || (twin && !strcasecmp(plain, v))) { sel = k; break; }
             }
+        // --asset selects the logical artifact: a name may also hit the
+        // group through its decoded base (delta or twin survivor lines)
+        if (sel < 0) {
+            char arg[512];
+            snprintf(arg, sizeof arg, "%s", v);
+            size_t al = strlen(arg);
+            if (al > 3 && !strcasecmp(arg + al - 3, ".xz")) arg[al - 3] = '\0';
+            for (int k = 0; k < pool_n; k++) {
+                char b[512];
+                if (artifact_base_name(pc->pool[k].name, b, sizeof b) != 0
+                    && !strcasecmp(b, arg)) { sel = k; break; }
+            }
+        }
         if (sel < 0) {
             pc->detail = path_fmt("No installable asset named '%s'. "
                 "Available assets:", v);
@@ -319,6 +370,50 @@ int phase_preflight(pipe_ctx *pc)
         ? strrchr(pc->asset->name, '/') + 1 : pc->asset->name;
     if (artifact_base_name(leaf, pc->base, sizeof pc->base) == 0)
         snprintf(pc->base, sizeof pc->base, "%s", leaf);
+
+    // delta eligibility finalises before any fetch (I3/I4): the hashed
+    // fd stays open so the apply stage consumes exactly these bytes;
+    // the group's smallest full variant is remembered for the single
+    // re-selection an in-flight patch failure earns (I3)
+    pc->delta_pass = false;
+    {
+        char from[128];
+        if (artifact_delta_from(pc->asset->name, from, sizeof from)) {
+            pc->delta_fd = delta_gate(pc, from);
+            if (pc->delta_fd >= 0) {
+                pc->delta_pass = true;
+                char gkey[512];
+                group_key(pc->asset->name, gkey, sizeof gkey);
+                int fbk = -1;
+                for (int k = 0; k < pc->rel.n; k++) {
+                    const char *nm = pc->rel.assets[k].name;
+                    char b[512], k2[512];
+                    if (artifact_base_name(nm, b, sizeof b) == 0) continue;
+                    if (artifact_delta_from(nm, from, sizeof from)) continue;
+                    group_key(nm, k2, sizeof k2);
+                    if (strcmp(k2, gkey) != 0 || strcasecmp(b, pc->base) != 0)
+                        continue;
+                    if (fbk < 0 || is_xz_twin(nm, b)) {
+                        fbk = k;
+                        if (is_xz_twin(nm, b)) break;
+                    }
+                }
+                if (fbk >= 0) {
+                    pc->fb_asset = pc->rel.assets[fbk];
+                    pc->fb_ok = true;
+                }
+            } else {
+                pc->detail = path_fmt("Delta %s does not match the installed "
+                    "version or its recorded hash; install the full package.",
+                    pc->asset->name);
+                ui_msg(stderr, UI_ERROR, "%s",
+                    pc->detail != NULL ? pc->detail : "delta not applicable");
+                free(pc->detail);
+                pc->detail = NULL;
+                return PIPE_DONE;
+            }
+        }
+    }
 
     if (req_kind >= 0) pc->kind = req_kind;
     else {
@@ -429,7 +524,7 @@ int phase_preflight(pipe_ctx *pc)
     bool same_version = pc->updating && pc->prev->asset != NULL
         && pc->prev->version != NULL
         && pc->rel.version != NULL && pc->prev->version != NULL
-        && !strcmp(pc->prev->version, pc->rel.version)
+        && ver_eq(pc->prev->version, pc->rel.version)
         && !strcmp(pc->prev->asset, pc->base);
     if (pc->updating && !pc->o->reinstall
         && ((pc->prev->asset_url != NULL && pc->asset->url != NULL

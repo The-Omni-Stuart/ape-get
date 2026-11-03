@@ -120,7 +120,7 @@ static void read_manifest(const char *file, mlist *l)
     char *installed = NULL, *updated = NULL;
     str_member(&root, "installed_at", &installed, &b);
     str_member(&root, "updated_at", &updated, &b);
-    char *asset = NULL, *asset_url = NULL;
+    char *asset = NULL, *asset_url = NULL, *asset_sha = NULL;
     int ai = jobject_find(&root, "asset");
     if (ai >= 0) {
         char *at = dup_span(root.vals[ai], root.vends[ai]);
@@ -128,6 +128,7 @@ static void read_manifest(const char *file, mlist *l)
         if (at != NULL && jobject_parse(at, &ao)) {
             str_member(&ao, "name", &asset, &b);
             str_member(&ao, "url", &asset_url, &b);
+            str_member(&ao, "sha256", &asset_sha, &b);
         }
         jobject_free(&ao);
         free(at);
@@ -141,7 +142,7 @@ static void read_manifest(const char *file, mlist *l)
     manifest_entry e = {
         .file = strdup(file), .provider = provider, .repo = repo,
         .version = version, .path = path, .command = NULL, .asset = asset,
-        .asset_url = asset_url,
+        .asset_url = asset_url, .sha256 = asset_sha,
         .installed = installed, .updated = updated, .locked = locked,
         .compat = compat,
     };
@@ -258,6 +259,7 @@ void manifest_entry_free(manifest_entry *e)
     free(e->command);
     free(e->asset);
     free(e->asset_url);
+    free(e->sha256);
     free(e->installed);
     free(e->updated);
     free(e->sig_status);

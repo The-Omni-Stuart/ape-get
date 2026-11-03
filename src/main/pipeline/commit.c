@@ -45,7 +45,11 @@ static void test_crash_point(const char *which)
 
 // Field order is the frozen record; its bytes must re-scan as valid. The
 // caller resolves `entry` first so the record can stage ahead of renames.
-static char *manifest_text(const pipe_ctx *pc, const char *now)
+// `sha` is the hash of the bytes being installed (the delta source for
+// the next update, I4); `sha256` records it even when no provider
+// checksum existed to verify against.
+static char *manifest_text(const pipe_ctx *pc, const char *now,
+    const char *sha)
 {
     const prov_release rel = pc->rel;
     const vresult vr = pc->vr;
@@ -77,7 +81,8 @@ static char *manifest_text(const pipe_ctx *pc, const char *now)
     jb_lit(&b, ",\"url\":");
     jb_json_string(&b, asset->url);
     jb_lit(&b, ",\"sha256\":");
-    if (vr.status == V_VERIFIED && vr.expected != NULL)
+    if (sha != NULL && sha[0] != '\0') jb_json_string(&b, sha);
+    else if (vr.status == V_VERIFIED && vr.expected != NULL)
         jb_json_string(&b, vr.expected);
     else jb_lit(&b, "null");
     jb_lit(&b, "},\"install\":{\"kind\":");
@@ -312,7 +317,8 @@ int phase_install(pipe_ctx *pc)
         pc->entry = desktop_entry_path(pc->st, pc->command);
         char now[40];
         now_instant(now, sizeof(now));
-        char *text = manifest_text(pc, now);
+        crypto_sha256_file(pc->tmp, pc->sha_final);
+        char *text = manifest_text(pc, now, pc->sha_final);
         pc->mtmp = path_fmt("%s.tmp-%s", pc->j_mfile, pc->j_id);
         if (pc->mtmp == NULL || text == NULL || !fs_write_file(pc->mtmp, text)) {
             free(text);
@@ -323,8 +329,7 @@ int phase_install(pipe_ctx *pc)
         free(text);
     }
     if (!inst_failed && pc->j_on) {
-        char sha[65] = "";
-        crypto_sha256_file(pc->tmp, sha);
+        const char *sha = pc->sha_final;
         char *bk = NULL;
         if (pc->backups != NULL) {
             jspan *sp = NULL;

@@ -179,6 +179,14 @@ bool txn_recover_startup(const char *root, const char *install_root,
             char *d = path_fmt("%s.tmp-%s", t.new_manifest, t.id);
             if (d != NULL) { remove(d); free(d); }
         }
+        // decode scratch (xz envelope, delta apply) lives only inside the
+        // prepared window and is named from the staged path; derive both
+        if (t.new_binary_tmp != NULL && t.id != NULL) {
+            char *s = path_fmt("%s.xdec.tmp-%s", t.new_binary_tmp, t.id);
+            if (s != NULL) { remove(s); free(s); }
+            s = path_fmt("%s.xdel.tmp-%s", t.new_binary_tmp, t.id);
+            if (s != NULL) { remove(s); free(s); }
+        }
         char *p = path_join(root, TXN_FILE);
         if (p != NULL) { remove(p); free(p); }
         info_line(quiet, json, "Rolled back interrupted %s for %s.",

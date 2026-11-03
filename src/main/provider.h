@@ -123,13 +123,17 @@ bool provider_rngit_release(const provider_entry *e, const char *path,
                             prov_release *out);
 bool provider_rngit_download(const provider_entry *e, const char *url,
                              const char *name, int timeout_ms,
+                             long long max_bytes,
                              const char *dest, char **tmp_path,
                              char *msg, size_t cap);
 
 // Download one asset URL to a staged temp file; *msg carries the failure text.
 // dest (exact path) streams, never buffering; NULL buffers into a temp file.
+// max_bytes > 0 caps the streamed body (hostile-padding cap, spec I2):
+// the HTTP route aborts mid-stream; the rngit route can only gate after
+// its fetch subprocess (radio already spent) but never copies the excess.
 bool provider_download(const provider_entry *e, const char *url,
-                       const char *name, int timeout_ms,
+                       const char *name, int timeout_ms, long long max_bytes,
                        const char *dest,
                        http_prog cb, void *ud,
                        char **tmp_path, char *msg, size_t cap);

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 
 OUT=src/test/fuzz/build
-TARGETS="json checksums sigstatus rngit repo http txn shellquote"
+TARGETS="json checksums sigstatus rngit repo http txn shellquote xz xdelta"
 SECONDS_PER_TARGET="${APEGET_FUZZ_SECONDS:-8}"
 WORK="${TMPDIR:-/tmp}/ape-get-fuzz-$$"
 

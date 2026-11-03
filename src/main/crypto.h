@@ -40,5 +40,8 @@ void tls_close(tls_conn *c);
 // SHA-256 of a whole file, lowercase hex into out[65] (asset
 // verification). False when the file cannot be read.
 bool crypto_sha256_file(const char *path, char out[65]);
+// hash an already-open fd from its current offset to EOF; used as the
+// single-read gate for delta sources (open-once, no reopen race)
+bool crypto_sha256_fd(int fd, char out[65]);
 
 #endif

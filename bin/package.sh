@@ -28,12 +28,26 @@ for f in "$OUT"/ape-get*.com; do
     exit 1; }
 done
 
-# Size gates: 1.5 MB fat / 1 MB per single-arch.
+# Size gates: 1.6 MB fat / 1 MB per single-arch.
 fat=$(stat -c %s "$OUT/ape-get.com")
-[ "$fat" -le 1572864 ] || { echo "FATAL: fat APE $fat > 1.5 MB gate" >&2; exit 1; }
+[ "$fat" -le 1638400 ] || { echo "FATAL: fat APE $fat > 1.6 MB gate" >&2; exit 1; }
 for a in x86_64 aarch64; do
   s=$(stat -c %s "$OUT/ape-get-$a.com")
   [ "$s" -le 1048576 ] || { echo "FATAL: $a APE $s > 1 MB gate" >&2; exit 1; }
   echo "ape-get-$a.com: $s"
 done
 echo "ape-get.com: $fat"
+
+# Transport twins: the exact xz shape the client accepts (dict 8 MiB is
+# its cap). Published only when meaningfully smaller (< 95% of raw) —
+# the manifest, not the client, decides what ships.
+for f in "$OUT"/ape-get*.com; do
+  xz --lzma2=preset=9e,dict=8MiB --check=sha256 -c "$f" > "$f.xz"
+  raw=$(stat -c %s "$f"); enc=$(stat -c %s "$f.xz")
+  if [ $((enc * 100)) -ge $((raw * 95)) ]; then
+    rm -f "$f.xz"
+    echo "twin skipped (no win): $f.xz $enc/$raw"
+  else
+    echo "twin: $f.xz $enc ($((enc * 100 / raw))% of raw)"
+  fi
+done

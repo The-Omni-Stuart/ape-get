@@ -1,0 +1,13 @@
+url: https://github.com/jmacd/xdelta/archive/refs/tags/v3.2.2.tar.gz
+sha256: 995319ccb7fe721a523fb3142376f5813093685b1cc302d07018ca97d2584af2
+size: 938299
+version: 3.2.2
+license: Apache-2.0 (xdelta3/LICENSE; every vendored file carries the
+  Apache-2.0 notice. The GPL-2.0 command-line main is never compiled:
+  XD3_MAIN, PYTHON_MODULE and SWIG_MODULE stay off and its header is not
+  vendored)
+extracted: xdelta3/{xdelta3.c,xdelta3.h,xdelta3-internal.h,xdelta3-list.h,
+  xdelta3-hash.h,xdelta3-cfgs.h,xdelta3-decode.h,LICENSE} -> ./ (decoder
+  subset; the encoder template passes compile out via XD3_ENCODER=0, and
+  the secondaries, CLI, tests, merge, blkcache and lzma-secundum headers
+  are not vendored at all)

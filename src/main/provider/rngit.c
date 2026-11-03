@@ -176,6 +176,7 @@ bool provider_rngit_release(const provider_entry *e, const char *path,
 
 bool provider_rngit_download(const provider_entry *e, const char *url,
                              const char *name, int timeout_ms,
+                             long long max_bytes,
                              const char *dest, char **tmp_path,
                              char *msg, size_t cap)
 {
@@ -212,6 +213,11 @@ bool provider_rngit_download(const provider_entry *e, const char *url,
                 "rngit could not fetch %s: fetched file is missing", spec);
         else if (sb.st_size == 0)
             snprintf(msg, cap, "Downloaded file is empty: %s", aname);
+        else if (max_bytes > 0 && sb.st_size > max_bytes)
+            // the fetch already spent radio; what we still protect is the
+            // staged path and the decode caps: refuse before copying
+            snprintf(msg, cap, "fetched file of %lld bytes exceeds the "
+                "%lld MiB cap", (long long) sb.st_size, max_bytes >> 20);
         else {
             char tmp[600];
             if (dest != NULL) {

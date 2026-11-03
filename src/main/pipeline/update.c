@@ -290,7 +290,11 @@ int pipeline_outdated(const cmd_opts *o, state_ctx *st)
             sizeof(*pool));
         int pool_n = 0;
         for (int a = 0; pool != NULL && a < rel.n; a++) {
-            char b[512];
+            char b[512], from[128];
+            // patches never surface as list targets; the update
+            // pipeline reaches them through their group
+            if (artifact_delta_from(rel.assets[a].name, from, sizeof from))
+                continue;
             artifact_base_name(rel.assets[a].name, b, sizeof b);
             if (ci_endswith(b, ".appimage")
                 || ci_endswith(b, ".ape")
@@ -322,14 +326,13 @@ int pipeline_outdated(const cmd_opts *o, state_ctx *st)
         bool newer;
         if (isself && rel.version != NULL && ms[k].version != NULL)
             // the registered file:// URL cannot judge freshness; the version can
-            newer = strcmp(rel.version, ms[k].version) != 0;
+            newer = !ver_eq(rel.version, ms[k].version);
         else
             // identity is (artifact, version): a variant swap (raw URL vs
             // twin URL) at the same version is not "outdated"
             newer = ms[k].asset_url == NULL
                 || (strcmp(pool[sel].url, ms[k].asset_url) != 0
-                    && !(rel.version != NULL && ms[k].version != NULL
-                         && !strcmp(rel.version, ms[k].version)));
+                    && !ver_eq(rel.version, ms[k].version));
         if (newer && oc < mc && refv != NULL && cur != NULL
             && latest != NULL && asset != NULL) {
             refv[oc] = strdup(ref);

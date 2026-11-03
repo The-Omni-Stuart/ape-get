@@ -289,6 +289,31 @@ void tls_close(tls_conn *c)
     free(c);
 }
 
+bool crypto_sha256_fd(int fd, char out[65])
+{
+    unsigned char md[32];
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    if (mbedtls_sha256_starts(&ctx, 0) != 0) {
+        mbedtls_sha256_free(&ctx);
+        return false;
+    }
+    unsigned char buf[8192];
+    ssize_t n;
+    while ((n = read(fd, buf, sizeof buf)) > 0)
+        if (mbedtls_sha256_update(&ctx, buf, (size_t)n) != 0) {
+            mbedtls_sha256_free(&ctx);
+            return false;
+        }
+    bool bad = n < 0;
+    int rc = mbedtls_sha256_finish(&ctx, md);
+    mbedtls_sha256_free(&ctx);
+    if (bad || rc != 0) return false;
+    for (int i = 0; i < 32; i++)
+        sprintf(out + i * 2, "%02x", md[i]);
+    return true;
+}
+
 bool crypto_sha256_file(const char *path, char out[65])
 {
     unsigned char md[32];

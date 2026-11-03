@@ -1,0 +1,6 @@
+Selected asset: tool-2.0.0.ape.xz
+Warning: No checksum found for tool-2.0.0.ape. Continuing without verification.
+Warning: No signature found for tool-2.0.0.ape. Continuing without a verified signature.
+Installed to: <STATE_ROOT>/applications/mock/owner__tool/versions/2.0.0/tool-2.0.0.ape
+Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/tool directly.
+Successfully updated.

@@ -43,10 +43,14 @@ bool http_get_hdr_prog(const char *url, const char *name, const char *value,
                        int timeout_ms, http_prog cb, void *ud,
                        http_resp *out, char *errbuf, size_t errcap);
 
-// Streaming GET to dest_path (asset downloads): fixed buffer to disk, no
-// size cap. true = full 200 body; false leaves the file absent or untouched.
+// Streaming GET to dest_path (asset downloads): fixed buffer to disk.
+// max_bytes > 0 aborts the stream the moment the body outgrows it (the
+// hostile-padding cap of spec I2: refused before airtime and disk are
+// spent); 0 = unlimited. true = full 200 body; false leaves the file
+// absent or untouched.
 bool http_download(const char *url, const char *name, const char *value,
-                   int timeout_ms, http_prog cb, void *ud,
+                   int timeout_ms, long long max_bytes,
+                   http_prog cb, void *ud,
                    const char *dest_path, int *status, int *errkind,
                    char *errbuf, size_t errcap);
 

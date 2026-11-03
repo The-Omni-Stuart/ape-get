@@ -24,7 +24,7 @@ CF=(-std=c17 -D_GNU_SOURCE -g -O1 -Wall -Wextra
     -fno-omit-frame-pointer -I src/main -I src/test/fuzz)
 
 mkdir -p "$OUT"
-c() { "$CC" "${CF[@]}" -c "$1" -o "$2"; }
+c() { f=$1; o=$2; shift 2; "$CC" "${CF[@]}" "$@" -c "$f" -o "$o"; }
 
 for m in json repo txn compat verify http provider/rngit path fs proc ui \
          pipeline/checksums; do
@@ -46,9 +46,20 @@ link() {
     fi
 }
 
-for t in json checksums sigstatus rngit repo http txn shellquote; do
-    c "src/test/fuzz/target_$t.c" "$OUT/target_$t.o"
+for t in json checksums sigstatus rngit repo http txn shellquote xz xdelta; do
+    c "src/test/fuzz/target_$t.c" "$OUT/target_$t.o" -I vendor/liblzma/include \
+      -I vendor/xdelta3 -include toolchain/xdelta3_apeget.h
 done
+
+# decode-stage targets: the vendored decoders compiled with the product's
+# own configuration (-include headers), host sanitised.
+for f in vendor/liblzma/lib/*.c; do
+    "$CC" "${CF[@]}" -w -I vendor/liblzma/include -I vendor/liblzma/lib \
+        -I vendor/liblzma/tuklib -include toolchain/lzma_apeget.h \
+        -c "$f" -o "$OUT/lz_$(basename "$f" .c).o"
+done
+"$CC" "${CF[@]}" -w -I vendor/xdelta3 -include toolchain/xdelta3_apeget.h \
+    -c vendor/xdelta3/xdelta3.c -o "$OUT/xdelta3.o"
 
 link json
 link checksums
@@ -58,5 +69,7 @@ link repo "$OUT/ui.o"
 link http
 link txn         "$OUT/json.o" "$OUT/path.o" "$OUT/fs.o"
 link shellquote  "$OUT/path.o" "$OUT/fs.o" "$OUT/proc.o"
+link xz          "$OUT"/lz_*.o "$OUT/xdelta3.o"
+link xdelta      "$OUT"/lz_*.o "$OUT/xdelta3.o"
 
 echo "built: $(find "$OUT" -maxdepth 1 -type f -executable | wc -l | tr -d ' ') targets -> $OUT/"
