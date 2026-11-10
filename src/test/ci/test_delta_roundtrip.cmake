@@ -39,22 +39,27 @@ if(EXISTS "${d}/bad-out.bin")
   message(FATAL_ERROR "failed apply left output behind")
 endif()
 
-# multi-window patch (small source windows via the CLI encoder): the
-# per-window cap check must not refuse an honest multi-window delta
+# multi-window patch (src2/dst2: 1 MiB forces two windows at the 512 KiB
+# size every xdelta3 CLI accepts; src.bin is smaller than that floor).
+# the per-window cap check must not refuse an honest multi-window delta
 find_program(XDELTA3_CLI xdelta3)
 if(XDELTA3_CLI)
-  execute_process(COMMAND ${XDELTA3_CLI} -f -e -S none -B 65536
-                  -s "${d}/src.bin" "${d}/dst.bin" "${d}/multi.patch"
+  execute_process(COMMAND ${XDELTA3_CLI} -f -e -S none -B 524288
+                  -s "${d}/src2.bin" "${d}/dst2.bin" "${d}/multi.patch"
                   RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "multi-window encode failed (${rc})")
   endif()
-  execute_process(COMMAND "${DEC}" "${d}/src.bin" "${d}/multi.patch"
+  execute_process(COMMAND "${DEC}" "${d}/src2.bin" "${d}/multi.patch"
                   "${d}/multi-out.bin" RESULT_VARIABLE rc)
   if(NOT rc EQUAL 0)
     message(FATAL_ERROR "multi-window decode failed (${rc})")
   endif()
-  file(SHA256 "${d}/dst.bin" want)
+  file(SIZE "${d}/multi.patch" mw_size)
+  if(NOT mw_size GREATER 0)
+    message(FATAL_ERROR "multi-window patch is empty")
+  endif()
+  file(SHA256 "${d}/dst2.bin" want)
   file(SHA256 "${d}/multi-out.bin" got)
   if(NOT want STREQUAL got)
     message(FATAL_ERROR "multi-window bytes differ: want ${want} got ${got}")

@@ -8,6 +8,10 @@
 #include <xdelta3.h>
 
 #define SRC_SIZE (256u * 1024u)
+/* multi-window pair: 1 MiB with edits either side of the 512 KiB
+   window the CLI encoder must use (Ubuntu's xdelta3 floor), so the
+   patch genuinely carries two windows */
+#define MW_SIZE (1024u * 1024u)
 
 static void fill(unsigned char *b, unsigned long long *state, size_t n)
 {
@@ -48,6 +52,17 @@ int main(int argc, char **argv)
     if (write_file(p, src, SRC_SIZE)) return 1;
     snprintf(p, sizeof p, "%s/dst.bin", argv[1]);
     if (write_file(p, dst, SRC_SIZE)) return 1;
+
+    unsigned char *src2 = malloc(MW_SIZE), *dst2 = malloc(MW_SIZE);
+    if (src2 == NULL || dst2 == NULL) return 1;
+    fill(src2, &st, MW_SIZE);
+    memcpy(dst2, src2, MW_SIZE);
+    memset(dst2 + 1000, 0x3b, 900);
+    memset(dst2 + 700 * 1024, 0x71, 4096);
+    snprintf(p, sizeof p, "%s/src2.bin", argv[1]);
+    if (write_file(p, src2, MW_SIZE)) return 1;
+    snprintf(p, sizeof p, "%s/dst2.bin", argv[1]);
+    if (write_file(p, dst2, MW_SIZE)) return 1;
 
     size_t cap = SRC_SIZE + (SRC_SIZE / 2) + 65536;
     unsigned char *patch = malloc(cap);
