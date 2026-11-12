@@ -1,0 +1,110 @@
+name: Windows development installer
+
+on:
+  push:
+    branches: [windows_development]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-dev-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build installer payload (x64, self-registration disabled)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set Cosmopolitan directory
+        run: echo "COSMO_DIR=$HOME/.cosmocc" >> "$GITHUB_ENV"
+      - name: Cache cosmocc
+        id: cosmocc
+        uses: actions/cache@v4
+        with:
+          path: ~/.cosmocc
+          key: cosmocc-${{ runner.os }}-${{ hashFiles('toolchain/PIN') }}
+      - name: Install pinned cosmocc
+        if: steps.cosmocc.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url=$(awk '/^url:/{print $2}' toolchain/PIN)
+          sha=$(awk '/^sha256:/{print $2}' toolchain/PIN)
+          curl -fL --retry 3 "$url" -o /tmp/cosmocc.zip
+          echo "$sha  /tmp/cosmocc.zip" | sha256sum -c -
+          mkdir -p "$COSMO_DIR"
+          unzip -q /tmp/cosmocc.zip -d "$COSMO_DIR"
+      - name: Build x64 binary
+        run: |
+          cmake -S . -B build/windows-dev \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/toolchain/cosmo.cmake" \
+            -DCOSMO_DIR="$COSMO_DIR" \
+            -DAPEGET_ARCH=x86_64 \
+            -DAPEGET_SELF=OFF
+          cmake --build build/windows-dev -j"$(nproc)"
+      - name: Create Windows APE payload
+        run: |
+          mkdir -p dist
+          "$COSMO_DIR/bin/apelink" -s -V -1 \
+            -l "$COSMO_DIR/bin/ape-x86_64.elf" \
+            -o dist/ape-get.com build/windows-dev/ape-get
+          test -s dist/ape-get.com
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-dev-payload
+          path: dist/ape-get.com
+          if-no-files-found: error
+          compression-level: 0
+
+  installer:
+    name: Build Inno Setup installer
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-dev-payload
+          path: installer/payload
+      - name: Ensure Inno Setup 6 is available
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw 'Inno Setup 6 compiler was not found' }
+          & $iscc 'installer\ape-get-dev.iss'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke-test install, command discovery, and uninstall
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path 'installer/output/ape-get-dev-setup.exe').Path
+          $proc = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Setup failed with code $($proc.ExitCode)" }
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs/ape-get-dev'
+          if (-not (Test-Path (Join-Path $installDir 'ape-get.com'))) { throw 'Executable was not installed' }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (($userPath -split ';') -notcontains $installDir) { throw 'Installer did not register user PATH' }
+          $env:Path = "$installDir;$env:Path"
+          & ape-get help
+          if ($LASTEXITCODE -ne 0) { throw 'ape-get help failed' }
+          $uninstall = Get-ChildItem -Path $installDir -Filter 'unins*.exe' | Select-Object -First 1
+          if (-not $uninstall) { throw 'No uninstaller found' }
+          $proc = Start-Process -FilePath $uninstall.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Uninstall failed with code $($proc.ExitCode)" }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (($userPath -split ';') -contains $installDir) { throw 'Uninstaller left the user PATH entry behind' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ape-get-dev-setup
+          path: installer/output/ape-get-dev-setup.exe
+          if-no-files-found: error
