@@ -7,8 +7,8 @@ name: C Build & Test
 
 on:
   push:
-    branches: [main, master, develop]
-    tags: ['v*']
+    branches: [main, master, develop, windows_development]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
