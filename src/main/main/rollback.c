@@ -1,4 +1,5 @@
 #include "cmd.h"
+#include "compat.h"
 #include "crypto.h"
 #include "doctor.h"
 #include "fs.h"
@@ -58,6 +59,29 @@ static bool rollback_journal_write(const state_ctx *st, const char *ref,
     free(j);
     txn_free(&t);
     return ok;
+}
+
+// the backup's install.uninstall.path: the launcher this generation was activated with
+static char *backup_launcher(const jobject *broot)
+{
+    int ii = jobject_find(broot, "install");
+    if (ii < 0) return NULL;
+    char *it = span_dup(broot->vals[ii], broot->vends[ii]);
+    jobject io = {0};
+    char *out = NULL;
+    if (it != NULL && jobject_parse(it, &io)) {
+        int ui = jobject_find(&io, "uninstall");
+        if (ui >= 0) {
+            char *ut = span_dup(io.vals[ui], io.vends[ui]);
+            jobject uo = {0};
+            if (ut != NULL && jobject_parse(ut, &uo)) out = jstr(&uo, "path");
+            jobject_free(&uo);
+            free(ut);
+        }
+    }
+    jobject_free(&io);
+    free(it);
+    return out;
 }
 
 // restore the latest backup over the live install, then re-save the
@@ -267,6 +291,9 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
     char *rman = NULL;   // restored-manifest text until it is staged
     char *mtmp = NULL;   // staged m->file, renamed after the journal
     bool keep_journal = false; // a failure recovery must finish
+    char *act_err = NULL; // activation failure wording that is no errno
+    char *blaunch = NULL; // launcher path of the restored generation
+    char *cwrap = NULL;   // staged compat wrapper, renamed after the journal
     if (!S_ISREG(sb.st_mode)) {
         put_fail("Rollback failed: only file backups are supported by "
             "this build.");
@@ -330,6 +357,25 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
             mtmp = path_fmt("%s.tmp-%s", m->file, jid);
             if (mtmp == NULL || !fs_write_file(mtmp, rman)) fail = true;
         }
+        if (!fail) blaunch = backup_launcher(&broot);
+        // like install, a compat wrapper is verified before any rename happens
+        if (!fail && blaunch != NULL && strcmp(blaunch, target) != 0
+            && jobject_find(&broot, "compat") >= 0) {
+            char *cerr = NULL;
+            char *wine = compat_detect_wine(st->wine_path, &cerr);
+            if (wine == NULL) {
+                act_err = cerr;
+                fail = true;
+            } else {
+                cwrap = compat_wrapper_stage(blaunch, jid, wine, target,
+                    &cerr);
+                free(wine);
+                if (cwrap == NULL) {
+                    act_err = cerr;
+                    fail = true;
+                }
+            }
+        }
         if (!fail)
             fail = !rollback_journal_write(st, ref, jid, jc, tmp,
                 mtmp, m->file);
@@ -347,10 +393,51 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
                 fail = true;
             }
         }
+        // mirror commit.c: current and the launcher follow the restored artifact
+        if (!fail) {
+            char *ad = manifest_app_dir(st->root, prov, path);
+            size_t adn = ad != NULL ? strlen(ad) : 0;
+            const char *last = strrchr(target, '/');
+            char *vrel = NULL;
+            char *cur = ad != NULL ? path_fmt("%s/current", ad) : NULL;
+            if (ad != NULL && cur != NULL && strlen(target) > adn + 9
+                && target[adn] == '/'
+                && !strncmp(target + adn + 1, "versions/", 9)
+                && last != NULL && last > target + adn + 10) {
+                vrel = strndup(target + adn + 1,
+                    (size_t)(last - target - adn - 1));
+                if (vrel != NULL) {
+                    unlink(cur);
+                    if (symlink(vrel, cur) != 0) fail = true;
+                } else fail = true;
+            }
+            if (!fail && blaunch != NULL && strcmp(blaunch, target) != 0) {
+                bool act = false;
+                if (cwrap != NULL) {
+                    unlink(blaunch);
+                    act = fs_rename(cwrap, blaunch);
+                } else {
+                    const char *fn = last != NULL ? last + 1 : target;
+                    char *via = vrel != NULL
+                        ? path_fmt("%s/current/%s", ad, fn)
+                        : strdup(target);
+                    if (via != NULL) {
+                        unlink(blaunch);
+                        act = symlink(via, blaunch) == 0;
+                        free(via);
+                    }
+                }
+                if (!act) fail = true;
+            }
+            free(vrel);
+            free(cur);
+            free(ad);
+        }
         if (fail) {
-            char *msg = path_fmt("Rollback failed: %s", strerror(errno));
+            char *msg = act_err != NULL ? act_err
+                : path_fmt("Rollback failed: %s", strerror(errno));
             put_fail(msg != NULL ? msg : "Rollback failed");
-            free(msg);
+            if (msg != act_err) free(msg);
             if (!keep_journal) {
                 char *jp = path_join(st->root, "grm_transaction.json");
                 if (jp != NULL) { remove(jp); free(jp); }
@@ -360,6 +447,10 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
         // staged binary must survive for recovery to finish
         if (!keep_journal && tmp != NULL) remove(tmp);
         if (mtmp != NULL) remove(mtmp);
+        if (cwrap != NULL) remove(cwrap);
+        free(act_err);
+        free(blaunch);
+        free(cwrap);
         free(rman);
         free(data);
         free(tmp);

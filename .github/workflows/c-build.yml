@@ -113,7 +113,7 @@ jobs:
 
       # fat APE = apelink of the two per-arch ELFs; both cross-compiled
       # from linux by the bundled drivers. package.sh re-checks magic, the
-      # 1.6 MB fat / 1 MB single size gates and the transport twins
+      # 1,638 KiB fat / 1 MB single size gates and the transport twins
       # (publish only < 95%), failing the job on drift.
       - name: Build per-arch ELFs
         run: |

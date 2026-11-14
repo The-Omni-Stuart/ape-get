@@ -210,6 +210,12 @@ apeget_test_entry(test_tcp_connect TCP_CONNECT_TEST_EXE)
 add_test(NAME tcp_connect_check COMMAND "${TCP_CONNECT_TEST_EXE}")
 set_tests_properties(tcp_connect_check PROPERTIES TIMEOUT 10)
 
+add_executable(test_proc_run ${CMAKE_SOURCE_DIR}/src/test/ci/test_proc_run.c)
+target_link_libraries(test_proc_run PRIVATE m_proc)
+apeget_test_entry(test_proc_run PROC_RUN_TEST_EXE)
+add_test(NAME proc_run_check COMMAND "${PROC_RUN_TEST_EXE}")
+set_tests_properties(proc_run_check PROPERTIES TIMEOUT 30)
+
 add_executable(test_source_lookup ${CMAKE_SOURCE_DIR}/src/test/ci/test_source_lookup.c)
 target_link_libraries(test_source_lookup PRIVATE m_pipeline m_ui m_path)
 apeget_test_entry(test_source_lookup SOURCE_LOOKUP_TEST_EXE)

@@ -116,6 +116,11 @@ def dump_files(home: str, rels, state: str, install: str) -> str:
                 body = normalize(p.read_text(errors="replace"),
                                  state, install, home)
                 out.append(f"--- {head} ({mode:04o}) ---\n{body}")
+            elif p.is_symlink():
+                # for links that don't resolve to a file, pin the target itself
+                import os as _os
+                tgt = normalize(_os.readlink(p), state, install, home)
+                out.append(f"--- {head} (symlink) ---\n{tgt}\n")
             else:
                 out.append(f"--- {head} (absent) ---\n")
     return "".join(out)

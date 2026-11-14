@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -87,6 +88,8 @@ int run_help(const char *cmd)
 
 int main(int argc, char **argv)
 {
+    // a disconnected peer must surface as EPIPE from the write paths, not as a fatal signal
+    signal(SIGPIPE, SIG_IGN);
     cmd_opts o;
     self_set_argv0(argc > 0 ? argv[0] : NULL);
     cmd_parse(argv + 1, argc - 1, &o);

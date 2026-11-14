@@ -1,3 +1,4 @@
---- .local/share/github-release-manager/applications/mock/owner__tool/current (absent) ---
+--- .local/share/github-release-manager/applications/mock/owner__tool/current (symlink) ---
+versions/1.1.0
 --- .local/bin/tool (0755) ---
 live-1.1.0

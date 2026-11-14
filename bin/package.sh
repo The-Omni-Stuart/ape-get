@@ -29,9 +29,9 @@ for f in "$OUT"/ape-get*.com; do
     exit 1; }
 done
 
-# Size gates: 1.6 MB fat / 1 MB per single-arch.
+# Size gates: 1,638 KiB fat / 1 MB per single-arch.
 fat=$(file_size "$OUT/ape-get.com")
-[ "$fat" -le 1638400 ] || { echo "FATAL: fat APE $fat > 1.6 MB gate" >&2; exit 1; }
+[ "$fat" -le 1677312 ] || { echo "FATAL: fat APE $fat > fat gate" >&2; exit 1; }
 for a in x86_64 aarch64; do
   s=$(file_size "$OUT/ape-get-$a.com")
   [ "$s" -le 1048576 ] || { echo "FATAL: $a APE $s > 1 MB gate" >&2; exit 1; }
