@@ -59,7 +59,7 @@ int lock_run(const cmd_opts *o, state_ctx *st, bool locking)
 
     char *file = manifest_path(st->root, prov, path);
     bool locked = false;
-    bool found = file != NULL && manifest_get_locked(file, &locked);
+    bool found = file != NULL && manifest_get_locked(st->root, file, &locked);
     if (!found) {
         char msg[768];
         snprintf(msg, sizeof(msg), "Release %s is not found.", ref);
@@ -78,7 +78,7 @@ int lock_run(const cmd_opts *o, state_ctx *st, bool locking)
             snprintf(done, sizeof(done), "Release %s is already locked.",
                 ref);
             result = done;
-        } else if (!manifest_set_locked(file, true)) {
+        } else if (!manifest_set_locked(st->root, file, true)) {
             put_fail("Failed to update the release state.");
             oplog_append(st, cmd, ref, "-",
                 "Failed to update the release state.");
@@ -89,7 +89,7 @@ int lock_run(const cmd_opts *o, state_ctx *st, bool locking)
         if (!locked) {
             snprintf(done, sizeof(done), "Release %s is not locked.", ref);
             result = done;
-        } else if (!manifest_set_locked(file, false)) {
+        } else if (!manifest_set_locked(st->root, file, false)) {
             put_fail("Failed to update the release state.");
             oplog_append(st, cmd, ref, "-",
                 "Failed to update the release state.");

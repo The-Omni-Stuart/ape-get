@@ -1,5 +1,7 @@
 // Startup recovery: prepared journals roll back, committing ones
-// roll forward; a journal-absent boot sweeps staged .tmp-<id> files.
+// roll forward; journal-named paths run only when they resolve
+// inside the managed roots; a journal-absent boot sweeps staged
+// .tmp-<id> files.
 
 #include "txn.h"
 #include "txn/internal.h"
@@ -224,6 +226,50 @@ static int has_ancestor(const char *path, const struct stat *ancestor)
     return found;
 }
 
+// Journal-supplied paths are filesystem instructions. Nothing named here
+// is executed unless it physically resolves inside a managed root; a
+// symlink is judged where it sits (deleting a link never touches its
+// target), anything else by its own resolved location.
+static bool contained(const char *path, const char *root,
+    const char *install_root)
+{
+    struct stat sb;
+    char *probe;
+    if (lstat(path, &sb) == 0 && S_ISLNK(sb.st_mode)) {
+        char *dir = dir_of(path);
+        probe = dir != NULL ? resolve_missing(dir) : NULL;
+        free(dir);
+    } else {
+        probe = resolve_missing(path);
+    }
+    if (probe == NULL) return false;
+    const char *roots[2] = { root, install_root };
+    bool ok = false;
+    for (int k = 0; k < 2 && !ok; k++) {
+        if (roots[k] == NULL) continue;
+        size_t n = strlen(roots[k]);
+        ok = !strncmp(probe, roots[k], n)
+            && (probe[n] == '\0' || probe[n] == '/');
+    }
+    free(probe);
+    return ok;
+}
+
+// Refuse every instruction set that names a present (or unprovable) path
+// outside the managed roots; absent paths execute nothing and stay legal
+// so legacy journals keep parsing. NULL entries are absent fields.
+static bool instructions_trusted(const char *const *paths, size_t n,
+    const char *root, const char *install_root)
+{
+    struct stat sb;
+    for (size_t k = 0; k < n; k++) {
+        if (paths[k] == NULL) continue;
+        if (lstat(paths[k], &sb) != 0 && errno == ENOENT) continue;
+        if (!contained(paths[k], root, install_root)) return false;
+    }
+    return true;
+}
+
 // Only a dedicated applications/<provider>/<package> directory is a tree
 // deletion target. Never use old_generation: older writers put dirname of
 // an adopted binary there, which can be the shared install root.
@@ -294,18 +340,38 @@ static bool roll_forward(const txn *t, const char *root,
     const char *install_root, char *err,
     size_t errcap)
 {
+    char *rroot = resolve_missing(root);
+    char *rinst = install_root != NULL ? resolve_missing(install_root) : NULL;
     if (strcmp(t->op, "uninstall") == 0) {
-        char *dir = uninstall_app_dir(t, root, install_root);
+        const char *const del[] = { t->old_launcher, t->old_binary };
+        bool trusted = rroot != NULL
+            && instructions_trusted(del, sizeof(del) / sizeof(del[0]),
+                                    rroot, rinst);
+        char *dir = trusted ? uninstall_app_dir(t, root, install_root) : NULL;
         struct stat sb;
-        bool ok = dir != NULL && unlink_missing_ok(t->old_launcher)
+        bool ok = trusted && dir != NULL && unlink_missing_ok(t->old_launcher)
             && unlink_missing_ok(t->old_binary);
         if (ok && lstat(dir, &sb) == 0) ok = fs_rm_tree(dir);
         else if (ok && errno != ENOENT) ok = false;
         free(dir);
+        free(rroot);
+        free(rinst);
         if (!ok)
             snprintf(err, errcap, "Could not safely finish uninstall "
                 "transaction %s; journal retained for recovery.", t->id);
         return ok;
+    }
+    const char *const stage[] = { t->new_binary_tmp, t->new_launcher_tmp,
+        t->new_manifest_tmp, t->new_manifest };
+    bool trusted = rroot != NULL
+        && instructions_trusted(stage, sizeof(stage) / sizeof(stage[0]),
+                                rroot, rinst);
+    free(rroot);
+    free(rinst);
+    if (!trusted) {
+        snprintf(err, errcap, "Transaction journal names a path outside "
+            "the managed roots; manual recovery required.");
+        return false;
     }
     if ((t->new_binary_tmp != NULL
             && !apply_file(t->new_binary_tmp, NULL, t->new_asset_sha256))
@@ -340,27 +406,45 @@ bool txn_recover_startup(const char *root, const char *install_root,
     }
     bool ok = true;
     if (strcmp(t.phase, "prepared") == 0) {
-        if (t.new_binary_tmp != NULL) remove(t.new_binary_tmp);
-        if (t.new_manifest_tmp != NULL) remove(t.new_manifest_tmp);
-        if (t.new_launcher_tmp != NULL) remove(t.new_launcher_tmp);
         // a record staged between the two journal writes is not named by
-        // this phase; its name is derived, so derive it to clean up
-        if (t.new_manifest != NULL && t.id != NULL) {
-            char *d = path_fmt("%s.tmp-%s", t.new_manifest, t.id);
-            if (d != NULL) { remove(d); free(d); }
-        }
+        // this phase; its name is derived, so derive it to clean up. The
         // decode scratch (xz envelope, delta apply) lives only inside the
-        // prepared window and is named from the staged path; derive both
-        if (t.new_binary_tmp != NULL && t.id != NULL) {
-            char *s = path_fmt("%s.xdec.tmp-%s", t.new_binary_tmp, t.id);
-            if (s != NULL) { remove(s); free(s); }
-            s = path_fmt("%s.xdel.tmp-%s", t.new_binary_tmp, t.id);
-            if (s != NULL) { remove(s); free(s); }
+        // prepared window and is named from the staged path.
+        char *d = t.new_manifest != NULL && t.id != NULL
+            ? path_fmt("%s.tmp-%s", t.new_manifest, t.id) : NULL;
+        char *xdec = t.new_binary_tmp != NULL && t.id != NULL
+            ? path_fmt("%s.xdec.tmp-%s", t.new_binary_tmp, t.id) : NULL;
+        char *xdel = t.new_binary_tmp != NULL && t.id != NULL
+            ? path_fmt("%s.xdel.tmp-%s", t.new_binary_tmp, t.id) : NULL;
+        char *rroot = resolve_missing(root);
+        char *rinst = install_root != NULL
+            ? resolve_missing(install_root) : NULL;
+        const char *const del[] = { t.new_binary_tmp, t.new_manifest_tmp,
+            t.new_launcher_tmp, d, xdec, xdel };
+        bool trusted = rroot != NULL
+            && instructions_trusted(del, sizeof(del) / sizeof(del[0]),
+                                    rroot, rinst);
+        free(rroot);
+        free(rinst);
+        if (trusted) {
+            if (t.new_binary_tmp != NULL) remove(t.new_binary_tmp);
+            if (t.new_manifest_tmp != NULL) remove(t.new_manifest_tmp);
+            if (t.new_launcher_tmp != NULL) remove(t.new_launcher_tmp);
+            if (d != NULL) remove(d);
+            if (xdec != NULL) remove(xdec);
+            if (xdel != NULL) remove(xdel);
+            char *p = path_join(root, TXN_FILE);
+            if (p != NULL) { remove(p); free(p); }
+            info_line(quiet, json, "Rolled back interrupted %s for %s.",
+                t.op, t.ref);
+        } else {
+            fputs("Transaction journal names a path outside the managed "
+                "roots; manual recovery required.\n", stderr);
+            ok = false;
         }
-        char *p = path_join(root, TXN_FILE);
-        if (p != NULL) { remove(p); free(p); }
-        info_line(quiet, json, "Rolled back interrupted %s for %s.",
-            t.op, t.ref);
+        free(d);
+        free(xdec);
+        free(xdel);
     } else {
         char err[800] = "";
         ok = roll_forward(&t, root, install_root, err, sizeof(err));

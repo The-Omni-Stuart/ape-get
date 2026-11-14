@@ -312,13 +312,46 @@ char *manifest_install_name(const char *provider, const char *repo)
 
 // --- locked member ---
 
-bool manifest_get_locked(const char *file, bool *locked)
+// A mutator's precondition, in one place: the file must hold a supported
+// manifest whose embedded provider/repo identity resolves to exactly the
+// directory the file sits in. A foreign or future record parked at this
+// path is refused, so lock never rewrites state it does not own.
+static bool manifest_owned_here(const char *root, const char *file,
+    const jobject *o)
+{
+    if (!manifest_json_valid(o)) return false;
+    bool bad = false;
+    char *prov = NULL, *repo = NULL;
+    str_member(o, "provider", &prov, &bad);
+    str_member(o, "repo", &repo, &bad);
+    char *own = !bad && prov != NULL && repo != NULL
+        ? manifest_app_dir(root, prov, repo) : NULL;
+    char *nown = own != NULL ? path_norm_dup(own) : NULL;
+    char *copy = file != NULL ? strdup(file) : NULL;
+    char *slash = copy != NULL ? strrchr(copy, '/') : NULL;
+    bool ok = false;
+    if (slash != NULL && strcmp(slash + 1, "grm_manifest.json") == 0) {
+        *slash = '\0';
+        char *ndir = path_norm_dup(copy);
+        ok = ndir != NULL && nown != NULL && !strcmp(ndir, nown);
+        free(ndir);
+    }
+    free(copy);
+    free(nown);
+    free(own);
+    free(prov);
+    free(repo);
+    return ok;
+}
+
+bool manifest_get_locked(const char *root, const char *file, bool *locked)
 {
     size_t n = 0;
     char *text = fs_read_file(file, &n);
     if (text == NULL) return false;
     jobject o = {0};
-    bool ok = jobject_parse(text, &o);
+    bool ok = jobject_parse(text, &o)
+        && manifest_owned_here(root, file, &o);
     if (ok) {
         int i = jobject_find(&o, "locked");
         *locked = false;
@@ -331,13 +364,14 @@ bool manifest_get_locked(const char *file, bool *locked)
 
 // rewrite every member verbatim (order preserved), dropping or replacing
 // "locked"; reserialisation whitespace may differ from the original writer
-bool manifest_set_locked(const char *file, bool locked)
+bool manifest_set_locked(const char *root, const char *file, bool locked)
 {
     size_t n = 0;
     char *text = fs_read_file(file, &n);
     if (text == NULL) return false;
     jobject o = {0};
-    if (!jobject_parse(text, &o)) { jobject_free(&o); free(text); return false; }
+    bool owned = jobject_parse(text, &o) && manifest_owned_here(root, file, &o);
+    if (!owned) { jobject_free(&o); free(text); return false; }
     jbuf b = {0};
     jb_lit(&b, "{");
     for (int i = 0; i < o.n; i++) {

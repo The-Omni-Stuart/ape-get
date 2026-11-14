@@ -1,0 +1,1 @@
+{"kind": "grm.transaction", "schema_version": 1, "id": "0123456789abcdef", "op": "update", "ref": "mock:owner/tool", "phase": "prepared", "created_at": "2026-01-02T03:04:05Z", "new": {"binary_tmp": "{home}/outside/tool-1.1.0.AppImage.tmp-0123456789abcdef"}}

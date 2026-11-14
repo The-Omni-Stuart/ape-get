@@ -5,6 +5,7 @@
 
 #include "pipeline.h"
 
+#include "fs.h"
 #include "manifest.h"
 #include "path.h"
 #include "pipeline/internal.h"
@@ -68,7 +69,7 @@ static int phase_decode(pipe_ctx *pc)
     if (ci_endswith(pc->asset->name, ".xz")) {
         char *sc = path_fmt("%s.xdec.tmp-%s", pc->tmp, pc->j_id);
         if (sc == NULL) return PIPE_DONE;
-        if (xz_decode_file(pc->tmp, sc) != 0 || rename(sc, pc->tmp) != 0) {
+        if (xz_decode_file(pc->tmp, sc) != 0 || !fs_rename(sc, pc->tmp)) {
             remove(sc);
             free(sc);
             return decode_failed(pc);
@@ -79,7 +80,7 @@ static int phase_decode(pipe_ctx *pc)
         char *sc = path_fmt("%s.xdel.tmp-%s", pc->tmp, pc->j_id);
         if (sc == NULL) return PIPE_DONE;
         if (xdelta_apply_fd(pc->delta_fd, pc->tmp, sc) != 0
-            || rename(sc, pc->tmp) != 0) {
+            || !fs_rename(sc, pc->tmp)) {
             remove(sc);
             free(sc);
             return decode_failed(pc);
@@ -111,7 +112,10 @@ static void pipe_ctx_free(pipe_ctx *pc)
         free(pc->compat_tmp);
     }
     if (pc->mtmp != NULL) {
-        remove(pc->mtmp);       // renamed away on success; gone either way
+        // After commit the committing journal names mtmp as manifest_tmp;
+        // leave the staged file for recovery and free only the pointer.
+        if (!pc->j_committed)
+            remove(pc->mtmp);    // renamed away on success; gone either way
         free(pc->mtmp);
     }
     free(pc->wine_abs);
@@ -185,7 +189,10 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
     if (rc == PIPE_GO) rc = phase_verify(&c);
     if (rc == PIPE_GO) rc = phase_install(&c);
     if (rc == PIPE_CLEANUP) {
-        if (c.tmp != NULL) {
+        // After the commit point the staged download is named by the
+        // committing journal as binary_tmp; keep the file for recovery and
+        // let pipe_ctx_free release only its memory.
+        if (c.tmp != NULL && !c.j_committed) {
             remove(c.tmp);
             free(c.tmp);
             c.tmp = NULL;

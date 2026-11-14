@@ -155,6 +155,12 @@ apeget_test_entry(test_commit_staging COMMIT_STAGING_TEST_EXE)
 add_test(NAME commit_staging_check
   COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_commit_staging.py
     --driver "${COMMIT_STAGING_TEST_EXE}")
+add_executable(test_postcommit_cleanup ${CMAKE_SOURCE_DIR}/src/test/ci/test_postcommit_cleanup.c)
+target_link_libraries(test_postcommit_cleanup PRIVATE m_path)
+apeget_test_entry(test_postcommit_cleanup POSTCOMMIT_CLEANUP_TEST_EXE)
+add_test(NAME postcommit_cleanup_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_postcommit_cleanup.py
+    --driver "${POSTCOMMIT_CLEANUP_TEST_EXE}")
 add_executable(test_preflight_names ${CMAKE_SOURCE_DIR}/src/test/ci/test_preflight_names.c)
 target_link_libraries(test_preflight_names PRIVATE m_pipeline m_path m_json)
 apeget_test_entry(test_preflight_names PREFLIGHT_NAMES_TEST_EXE)

@@ -30,10 +30,16 @@
 #include "main.h"
 
 // stateful commands run journal recovery under the lock before anything else
-// touches state; false blocks the command
-static bool recover_gate(const state_ctx *st, const cmd_opts *o)
+// touches state; false blocks the command, and the blocked attempt joins
+// the operation history like every other refused command
+static bool recover_gate(const state_ctx *st, const cmd_opts *o,
+    const char *cmd)
 {
-    return state_recover_gate(st, o->quiet, o->json);
+    if (state_recover_gate(st, o->quiet, o->json)) return true;
+    oplog_append(st, cmd, "-", "-",
+        "Blocked by pending transaction recovery; manual recovery "
+        "required.");
+    return false;
 }
 
 // state load + proxy arm (config "proxy" drives every later request)
@@ -152,7 +158,7 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o, "install")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = pipeline_install(&o, &st);
         if (rv == 0) pipeline_self_after(&o, &st);
@@ -162,7 +168,7 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o, "update")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = o.all ? pipeline_update_all(&o, &st)
                     : pipeline_update(&o, &st);
@@ -173,7 +179,7 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o, "uninstall")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = uninstall_run(&o, &st);
         if (rv == 0) pipeline_self_after(&o, &st);
@@ -183,7 +189,7 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o, "adopt")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = adopt_run(&o, &st);
         if (rv == 0) pipeline_self_after(&o, &st);
@@ -193,7 +199,7 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o, "list")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = list_run(&o, &st);
         if (rv == 0) pipeline_self_after(&o, &st);
@@ -209,7 +215,7 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o, "rollback")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = rollback_run(&o, &st);
         if (rv == 0) pipeline_self_after(&o, &st);
@@ -219,7 +225,7 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o, "providers")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = providers_run(&o, &st);
         if (rv == 0) pipeline_self_after(&o, &st);
@@ -230,7 +236,8 @@ int main(int argc, char **argv)
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o)) return 1;
+        if (!recover_gate(&st, &o,
+                o.id == CMD_LOCK ? "lock" : "unlock")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = lock_run(&o, &st, o.id == CMD_LOCK);
         if (rv == 0) pipeline_self_after(&o, &st);

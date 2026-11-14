@@ -16,7 +16,8 @@ bool fs_mkdir_p(const char *path);
 char *fs_read_file(const char *path, size_t *len);
 bool fs_write_file(const char *path, const char *text);
 
-// Replaces an existing target.
+// Replaces an existing target; parent-directory syncs are best-effort,
+// so a completed rename never reports failure.
 bool fs_rename(const char *from, const char *to);
 
 // Usable bytes of the volume hosting path; probes the path, else its

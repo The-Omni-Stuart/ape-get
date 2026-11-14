@@ -318,6 +318,9 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
             ? open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600) : -1;
         if (fd >= 0) {
             if (write(fd, data, rn) != (ssize_t)rn) fail = true;
+            // the committing journal names this stage; its bytes must be
+            // durable before txn_write announces them
+            else if (fsync(fd) != 0) fail = true;
             close(fd);
             if (!fail && chmod(tmp, sb.st_mode & 07777) != 0) fail = true;
         } else {
@@ -477,7 +480,7 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
     // not ride back in on the next update --all
     bool locked = false;
     if (o->lock)
-        locked = manifest_set_locked(m->file, true);
+        locked = manifest_set_locked(st->root, m->file, true);
 
     if (o->json) {
         jbuf b = {0};

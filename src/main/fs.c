@@ -2,6 +2,7 @@
 #include "path.h"
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -87,9 +88,45 @@ bool fs_write_file(const char *path, const char *text)
     return ok;
 }
 
+// fsync a directory so names created, renamed or unlinked inside it
+// survive power loss.
+static bool fs_sync_dir(const char *dir)
+{
+    int fd = open(dir, O_RDONLY);
+    if (fd < 0) return false;
+    bool ok = fsync(fd) == 0;
+    close(fd);
+    return ok;
+}
+
+// Directory component of a path ("" collapses to ".").
+static char *dir_part(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    if (slash == NULL) return strdup(".");
+    if (slash == path) return strdup("/");
+    char *r = malloc((size_t)(slash - path) + 1);
+    if (r != NULL) {
+        memcpy(r, path, (size_t)(slash - path));
+        r[slash - path] = '\0';
+    }
+    return r;
+}
+
 bool fs_rename(const char *from, const char *to)
 {
-    return rename(from, to) == 0;
+    if (rename(from, to) != 0) return false;
+    // Both directory entries are synced best-effort: fsync on a dir fd can
+    // legitimately fail, and a completed rename must never read as failure;
+    // the journal/recovery design bridges that durability window.
+    char *a = dir_part(from), *b = dir_part(to);
+    if (a != NULL && b != NULL) {
+        (void)fs_sync_dir(a);
+        if (strcmp(a, b) != 0) (void)fs_sync_dir(b);
+    }
+    free(a);
+    free(b);
+    return true;
 }
 
 bool fs_free_bytes(const char *path, unsigned long long *out)
@@ -164,8 +201,13 @@ bool fs_copy_file(const char *from, const char *to)
         if (fwrite(buf, 1, n, out) != n) { ok = false; break; }
     if (ferror(in)) ok = false;
     fclose(in);
-    if (fclose(out) != 0) ok = false;
-    if (ok) chmod(to, sb.st_mode & 07777);
+    if (ok) ok = fflush(out) == 0 && fsync(fileno(out)) == 0;
+    if (fclose(out) != 0) ok = false; // flushes userspace tail; keep strict
+    if (ok) {
+        chmod(to, sb.st_mode & 07777);
+        char *d = dir_part(to); // name persistence is best-effort
+        if (d != NULL) { (void)fs_sync_dir(d); free(d); }
+    }
     return ok;
 }
 
@@ -211,6 +253,13 @@ bool fs_copy_tree(const char *from, const char *to)
         free(b);
     }
     closedir(d);
+    // the copy already completed; syncing the tree's dir and its parent
+    // name is best-effort and must not flip a completed copy to failure
+    if (ok) {
+        (void)fs_sync_dir(to);
+        char *up = dir_part(to);
+        if (up != NULL) { (void)fs_sync_dir(up); free(up); }
+    }
     chmod(to, sb.st_mode & 07777);
     return ok;
 }

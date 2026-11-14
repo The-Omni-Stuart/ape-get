@@ -103,6 +103,20 @@ static void read_manifest(const char *file, mlist *l)
     }
     free(kind);
 
+    // A record of another schema version is neither ours to interpret nor
+    // corrupt: report it and keep the bytes for a later migration, never
+    // quarantine or rewrite them.
+    long sv = 0;
+    int sci = jobject_find(&root, "schema_version");
+    if (sci >= 0 && json_span_int(root.vals[sci], root.vends[sci], &sv)
+        && sv != 1) {
+        fprintf(stderr, "Ignoring manifest with unsupported schema: %s\n",
+            file);
+        jobject_free(&root);
+        free(text);
+        return;
+    }
+
     char *path = NULL;
     if (!manifest_is_valid(&root, &path)) {
         free(path);

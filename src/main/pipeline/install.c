@@ -21,7 +21,7 @@ static void post_install_lock(const cmd_opts *o, state_ctx *st,
     if (!o->lock) return;
     char *ad = manifest_app_dir(st->root, prov, path);
     char *mf = ad != NULL ? path_join(ad, "grm_manifest.json") : NULL;
-    bool ok = mf != NULL && manifest_set_locked(mf, true);
+    bool ok = mf != NULL && manifest_set_locked(st->root, mf, true);
     if (!o->json && !o->quiet) {
         if (ok) ui_msg(stderr, UI_OK, "Locked %s:%s.", prov, path);
         else ui_msg(stderr, UI_WARN, "Failed to lock %s:%s.", prov, path);

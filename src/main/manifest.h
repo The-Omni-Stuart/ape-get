@@ -47,9 +47,12 @@ char *manifest_path(const char *root, const char *provider,
 char *manifest_install_name(const char *provider, const char *repo);
 
 // Read/rewrite the locked member (omitted when false). Rewrites preserve
-// member order and raw value text.
-bool manifest_get_locked(const char *file, bool *locked);
-bool manifest_set_locked(const char *file, bool locked);
+// member order and raw value text. Both refuse a record that is not a
+// supported manifest whose embedded provider/repo identity resolves to the
+// file's own directory under root, so a foreign or future-format file is
+// never rewritten and a mismatched one is left untouched.
+bool manifest_get_locked(const char *root, const char *file, bool *locked);
+bool manifest_set_locked(const char *root, const char *file, bool locked);
 
 // Validity of an already parsed manifest.
 bool manifest_json_valid(const jobject *root);

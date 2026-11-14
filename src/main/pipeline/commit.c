@@ -287,7 +287,7 @@ int phase_install(pipe_ctx *pc)
         if (pc->j_on) {
             char *rf = path_fmt("%s.tmp-%s", pc->target, pc->j_id);
             if (rf != NULL && strcmp(rf, pc->tmp) != 0) {
-                if (rename(pc->tmp, rf) == 0) {
+                if (fs_rename(pc->tmp, rf)) { // also syncs the stage dir
                     free(pc->tmp);
                     pc->tmp = rf; // ownership moves to tmp
                 } else {

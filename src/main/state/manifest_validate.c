@@ -68,8 +68,11 @@ bool manifest_is_valid(const jobject *root, char **path)
 
     long schema = 0;
     int si = jobject_find(root, "schema_version");
+    // only the supported schema reads as valid; anything else is handled
+    // by the scan's unsupported-schema path (kept, not rewritten)
     if (si >= 0) {
-        if (!json_span_int(root->vals[si], root->vends[si], &schema))
+        if (!json_span_int(root->vals[si], root->vends[si], &schema)
+            || schema != 1)
             ok = false;
     } else {
         ok = false;
