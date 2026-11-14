@@ -81,10 +81,17 @@ static int tcp_connect_timeout(const char *host, const char *port, int ms,
     struct addrinfo hints = { .ai_family = AF_UNSPEC,
                               .ai_socktype = SOCK_STREAM }, *res = NULL;
     int ga = getaddrinfo(host, port, &hints, &res);
+    // A transient failure in one DNS family can hide a usable A answer.
+    // Keep dual-stack lookup first, then retry IPv4 without changing DNS servers.
+    if (ga == EAI_AGAIN) {
+        hints.ai_family = AF_INET;
+        ga = getaddrinfo(host, port, &hints, &res);
+    }
     if (ga != 0) { *kind = TLS_DNS; return -1; }
     int fd = -1;
     for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
-        fd = socket(ai->ai_family, ai->ai_socktype | O_NONBLOCK, 0);
+        // Socket flags use SOCK_*, not the platform-dependent fcntl O_*.
+        fd = socket(ai->ai_family, ai->ai_socktype | SOCK_NONBLOCK, 0);
         if (fd < 0) continue;
         int rc = connect(fd, ai->ai_addr, ai->ai_addrlen);
         if (rc == 0) { errno = 0; }

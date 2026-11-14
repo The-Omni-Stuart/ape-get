@@ -8,7 +8,8 @@ AA_TREE=${2:?}
 OUT=${3:-build}
 mkdir -p "$OUT"
 
-apelink() { "$COSMO_DIR/bin/apelink" "$@"; }
+apelink() { /bin/sh "$COSMO_DIR/bin/apelink" "$@"; }
+file_size() { wc -c < "$1" | tr -d '[:space:]'; }
 
 # -s: no embedded symbol tables (~61 KB compressed on the fat APE); the tables
 # only name crash-backtrace frames — symbolicate offline on the pre-package ELF.
@@ -29,10 +30,10 @@ for f in "$OUT"/ape-get*.com; do
 done
 
 # Size gates: 1.6 MB fat / 1 MB per single-arch.
-fat=$(stat -c %s "$OUT/ape-get.com")
+fat=$(file_size "$OUT/ape-get.com")
 [ "$fat" -le 1638400 ] || { echo "FATAL: fat APE $fat > 1.6 MB gate" >&2; exit 1; }
 for a in x86_64 aarch64; do
-  s=$(stat -c %s "$OUT/ape-get-$a.com")
+  s=$(file_size "$OUT/ape-get-$a.com")
   [ "$s" -le 1048576 ] || { echo "FATAL: $a APE $s > 1 MB gate" >&2; exit 1; }
   echo "ape-get-$a.com: $s"
 done
@@ -43,7 +44,7 @@ echo "ape-get.com: $fat"
 # the manifest, not the client, decides what ships.
 for f in "$OUT"/ape-get*.com; do
   xz --lzma2=preset=9e,dict=8MiB --check=sha256 -c "$f" > "$f.xz"
-  raw=$(stat -c %s "$f"); enc=$(stat -c %s "$f.xz")
+  raw=$(file_size "$f"); enc=$(file_size "$f.xz")
   if [ $((enc * 100)) -ge $((raw * 95)) ]; then
     rm -f "$f.xz"
     echo "twin skipped (no win): $f.xz $enc/$raw"

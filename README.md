@@ -80,6 +80,30 @@ Example repositories:
 - CMake 3.20+
 - The pinned cosmocc toolchain (URL and SHA-256 in `toolchain/PIN`)
 
+### Building on macOS
+
+Install Apple's Command Line Tools, CMake 3.20+, Python 3, and `xz`, then run:
+
+```bash
+bash bin/build-macos.sh
+./build/ape-get help
+```
+
+The helper downloads and verifies the pinned toolchain into `build/deps`,
+builds both architectures, packages the three APEs and their `.xz` twins,
+and writes a shell entry point at `build/ape-get`. The per-architecture
+`build/<arch>/ape-get` files are intermediate ELF executables; run the
+packaged entry point on macOS. The Apple Silicon loader requires the
+Command Line Tools on its first run.
+
+Run native Apple Silicon checks with:
+
+```bash
+ctest --test-dir build/aarch64 --output-on-failure
+```
+
+On an Intel Mac use `build/x86_64` instead.
+
 ### Building the application
 
 To build the project:
@@ -89,7 +113,8 @@ cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain/cosmo.cmake
 cmake --build build
 ```
 
-This will produce `build/ape-get`, the host binary.
+This produces `build/ape-get`, the per-architecture executable used by
+packaging. On macOS, use the helper above to run the packaged APE.
 
 To package the portable binaries:
 
@@ -109,7 +134,9 @@ This produces three portable binaries:
 | `ape-get-x86_64.com` | everywhere x86 (in theory) | < 1 MB |
 | `ape-get-aarch64.com` | everywhere arm (in theory) | < 1 MB |
 
-Unfortunately macOS has not yet been tested, but any and all reports are welcome.
+The macOS helper packages the same APEs used on Linux and Windows.
+Supported package kinds still apply: a repository's macOS `.tar.xz` asset
+is not a single-file `.xz` transport and cannot currently be installed.
 
 Packagers can build with `-DAPEGET_SELF=OFF`: self-registration and self-update are compiled out entirely, leaving the package manager in charge of upgrades.
 

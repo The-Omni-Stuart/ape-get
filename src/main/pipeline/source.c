@@ -139,6 +139,7 @@ bool resolve_source_ref(const cmd_opts *o, state_ctx *st,
     memset(found, 0, sizeof(found));
     int nf = 0;
     bool memfail = false;
+    bool lookup_failed = false;
     if (slashed) {
         for (int k = 0; k < n; k++) {
             if (!strcasecmp(list[k].type, "rngit")) {
@@ -154,6 +155,7 @@ bool resolve_source_ref(const cmd_opts *o, state_ctx *st,
                 memfail = !src_add(found, &nf, 64, list[k].name, path,
                     NULL);
             } else if (rel.reason != PROV_NOT_FOUND) {
+                if (rel.reason != PROV_UNSUPPORTED) lookup_failed = true;
                 ui_warn_subject(stderr, list[k].name, "%s", rel.message);
             }
             prov_release_free(&rel);
@@ -176,6 +178,7 @@ bool resolve_source_ref(const cmd_opts *o, state_ctx *st,
                     if (memfail) break;
                 }
             } else if (res.reason != PROV_NOT_FOUND) {
+                if (res.reason != PROV_UNSUPPORTED) lookup_failed = true;
                 if (res.reason == PROV_UNSUPPORTED)
                     ui_warn_subject(stderr, list[k].name,
                         "%s (use provider:owner/repo)", res.message);
@@ -188,7 +191,10 @@ bool resolve_source_ref(const cmd_opts *o, state_ctx *st,
     }
 
     if (nf == 0) {
-        char *l = slashed
+        char *l = lookup_failed
+            ? path_fmt("Could not resolve '%s': one or more providers failed. "
+                "Try again or use provider:owner/repo.", argument)
+            : slashed
             ? path_fmt("No repository with a published release matching "
                 "'%s'; try 'search %s' or use provider:owner/repo.",
                 argument, name)

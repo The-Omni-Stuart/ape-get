@@ -120,6 +120,60 @@ target_link_libraries(ape-get PRIVATE LINKER:--start-group ${APESRC_LIBS} LINKER
 
 enable_testing()
 find_program(PYTHON3 python3 REQUIRED)
+
+# A cross-compiled ELF is not directly executable by macOS. Package native
+# test targets just like the product, and use an explicit shell entry point.
+function(apeget_test_entry target result)
+  if(CMAKE_HOST_APPLE)
+    set(loader_source)
+    if(APEGET_ARCH STREQUAL "aarch64")
+      set(loader_source -M "${COSMO_DIR}/bin/ape-m1.c")
+    endif()
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND /bin/sh "${COSMO_DIR}/bin/apelink" -s -V -1
+        -l "${COSMO_DIR}/bin/ape-${APEGET_ARCH}.elf"
+        ${loader_source}
+        -o "$<TARGET_FILE:${target}>.com" "$<TARGET_FILE:${target}>"
+      VERBATIM)
+    set(entry "${CMAKE_CURRENT_BINARY_DIR}/run/${target}")
+    file(GENERATE OUTPUT "${entry}"
+      CONTENT "#!/bin/sh\nexec /bin/sh \"$<TARGET_FILE:${target}>.com\" \"$@\"\n"
+      FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+    set(${result} "${entry}" PARENT_SCOPE)
+  else()
+    set(${result} "$<TARGET_FILE:${target}>" PARENT_SCOPE)
+  endif()
+endfunction()
+
+apeget_test_entry(ape-get APEGET_TEST_EXE)
+if(APEGET_SELF)
+  add_executable(test_self_path ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_path.c)
+  target_link_libraries(test_self_path PRIVATE m_path)
+  apeget_test_entry(test_self_path SELF_PATH_TEST_EXE)
+  add_test(NAME self_executable_path COMMAND "${SELF_PATH_TEST_EXE}")
+endif()
+
+add_executable(test_tcp_connect ${CMAKE_SOURCE_DIR}/src/test/ci/test_tcp_connect.c)
+target_link_libraries(test_tcp_connect PRIVATE m_crypto)
+target_link_options(test_tcp_connect PRIVATE -Wl,--wrap=getaddrinfo)
+apeget_test_entry(test_tcp_connect TCP_CONNECT_TEST_EXE)
+add_test(NAME tcp_connect_check COMMAND "${TCP_CONNECT_TEST_EXE}")
+set_tests_properties(tcp_connect_check PROPERTIES TIMEOUT 10)
+
+add_executable(test_source_lookup ${CMAKE_SOURCE_DIR}/src/test/ci/test_source_lookup.c)
+target_link_libraries(test_source_lookup PRIVATE m_pipeline m_ui m_path)
+apeget_test_entry(test_source_lookup SOURCE_LOOKUP_TEST_EXE)
+add_test(NAME source_search_failure COMMAND "${SOURCE_LOOKUP_TEST_EXE}" failed tool)
+add_test(NAME source_probe_failure COMMAND "${SOURCE_LOOKUP_TEST_EXE}" failed owner/tool)
+set_tests_properties(source_search_failure source_probe_failure PROPERTIES
+  PASS_REGULAR_EXPRESSION "one or more providers failed")
+add_test(NAME source_search_missing COMMAND "${SOURCE_LOOKUP_TEST_EXE}" missing tool)
+set_tests_properties(source_search_missing PROPERTIES
+  PASS_REGULAR_EXPRESSION "No repository matching 'tool'")
+add_test(NAME source_probe_missing COMMAND "${SOURCE_LOOKUP_TEST_EXE}" missing owner/tool)
+set_tests_properties(source_probe_missing PROPERTIES
+  PASS_REGULAR_EXPRESSION "No repository with a published release matching 'owner/tool'")
+
 add_test(NAME deps_graph_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/check_deps_graph.py
                  ${CMAKE_SOURCE_DIR}/src/main/deps.mk)
@@ -130,16 +184,16 @@ add_test(NAME provenance_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/check_provenance.py)
 add_test(NAME smoke_help
          COMMAND ${CMAKE_COMMAND}
-           -Dexe=$<TARGET_FILE:ape-get>
+           -Dexe=${APEGET_TEST_EXE}
            -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_help.cmake)
 add_test(NAME completions_check
          COMMAND ${CMAKE_COMMAND}
-           -Dexe=$<TARGET_FILE:ape-get>
+           -Dexe=${APEGET_TEST_EXE}
            -Dsrcdir=${CMAKE_SOURCE_DIR}
            -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions.cmake)
 add_test(NAME completions_pty_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions_pty.py
-                 $<TARGET_FILE:ape-get>)
+                 ${APEGET_TEST_EXE})
 
 # delta round-trip: vendored xdelta3 encoder (test-only build; never
 # linked into the product) -> product decode path (xdelta_apply_fd).
@@ -153,8 +207,10 @@ target_compile_options(rt_xdelta_enc PRIVATE -w
   -include ${CMAKE_SOURCE_DIR}/toolchain/xdelta3_enctest.h)
 add_executable(rt_xdelta_dec ${CMAKE_SOURCE_DIR}/src/test/ci/test_delta_rt_dec.c)
 target_link_libraries(rt_xdelta_dec PRIVATE m_pipeline)
+apeget_test_entry(rt_xdelta_enc DELTA_ENC_TEST_EXE)
+apeget_test_entry(rt_xdelta_dec DELTA_DEC_TEST_EXE)
 add_test(NAME delta_roundtrip
          COMMAND ${CMAKE_COMMAND}
-           -DENC=$<TARGET_FILE:rt_xdelta_enc>
-           -DDEC=$<TARGET_FILE:rt_xdelta_dec>
+           -DENC=${DELTA_ENC_TEST_EXE}
+           -DDEC=${DELTA_DEC_TEST_EXE}
            -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_delta_roundtrip.cmake)

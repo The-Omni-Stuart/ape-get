@@ -152,13 +152,14 @@ static char *self_exe_path(void)
 {
     char buf[8192];
     ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
-    if (n <= 0) return NULL;
-    buf[n] = '\0';
-    if (self_file_is_apeget(buf)) return strdup(buf);
+    if (n > 0) {
+        buf[n] = '\0';
+        if (self_file_is_apeget(buf)) return strdup(buf);
+    }
     char *alt = self_argv0 != NULL && self_argv0[0] != '\0'
         ? self_resolve(self_argv0) : NULL;
     if (alt != NULL) return alt;
-    return strdup(buf); // keep the /proc path: tests stage fakes
+    return n > 0 ? strdup(buf) : NULL; // keep a valid /proc path for staged fakes
 }
 
 static bool self_identical(const char *a, const char *b)

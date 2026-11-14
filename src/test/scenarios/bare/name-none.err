@@ -2,4 +2,4 @@ Looking for zzqnothing99 across 4 provider(s)...
 Warning: codeberg: tls handshake failed: X509 - certificate verification failed
 Warning: github: tls handshake failed: X509 - certificate verification failed
 Warning: gitlab: tls handshake failed: X509 - certificate verification failed
-Error: No repository matching 'zzqnothing99'; try 'search zzqnothing99' or use provider:owner/repo.
+Error: Could not resolve 'zzqnothing99': one or more providers failed. Try again or use provider:owner/repo.

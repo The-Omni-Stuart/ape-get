@@ -192,7 +192,9 @@ int main(int argc, char **argv)
         if (!state_lock(st.root)) return 1;
         if (!recover_gate(&st, &o)) return 1;
         state_ensure(&st, o.quiet, o.json);
-        return list_run(&o, &st);
+        int rv = list_run(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
+        return rv;
     }
     case CMD_INFO: {
         // info is not stateful: no lock, no ensure
