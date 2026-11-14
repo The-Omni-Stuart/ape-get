@@ -222,10 +222,23 @@ tls_conn *tls_connect_fd(int fd, const char *host, const char *ca_file,
         fail(c, errbuf, errcap, "tls handshake timed out", 0);
         return NULL;
     }
-    if (rc != 0) { fail(c, errbuf, errcap, "tls handshake failed", rc); return NULL; }
-
-    if (mbedtls_ssl_get_verify_result(&c->ssl) != 0) {
-        fail(c, errbuf, errcap, "certificate verification failed", 0);
+    if (rc != 0) {
+        // authmode REQUIRED makes verify failures surface as handshake
+        // errors; the rc alone loses the reason, so read the verify flags
+        unsigned int v = mbedtls_ssl_get_verify_result(&c->ssl);
+        if (v != 0) {
+            const char *why = "certificate verification failed";
+            if (v & MBEDTLS_X509_BADCERT_EXPIRED) why = "certificate has expired";
+            else if (v & MBEDTLS_X509_BADCERT_FUTURE) why = "certificate is not yet valid";
+            else if (v & MBEDTLS_X509_BADCERT_REVOKED) why = "certificate revoked";
+            else if (v & MBEDTLS_X509_BADCERT_CN_MISMATCH) why = "hostname mismatch";
+            else if (v & MBEDTLS_X509_BADCERT_NOT_TRUSTED) why = "certificate authority not trusted";
+            else if (v & (MBEDTLS_X509_BADCERT_BAD_KEY | MBEDTLS_X509_BADCERT_BAD_MD))
+                why = "weak certificate parameters";
+            fail(c, errbuf, errcap, why, 0);
+            return NULL;
+        }
+        fail(c, errbuf, errcap, "tls handshake failed", rc);
         return NULL;
     }
     return c;

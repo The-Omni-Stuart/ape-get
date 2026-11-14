@@ -20,6 +20,11 @@
 #define MBEDTLS_ENTROPY_C
 #define MBEDTLS_ERROR_C
 #define MBEDTLS_GCM_C
+/* certificate notBefore/notAfter checks are compiled out of upstream x509
+   unless the calendar clock is enabled; VERIFY_REQUIRED and hostname
+   checks do not restore them. A clock frozen at epoch fails closed. */
+#define MBEDTLS_HAVE_TIME
+#define MBEDTLS_HAVE_TIME_DATE
 #define MBEDTLS_HMAC_DRBG_C
 #define MBEDTLS_MD_C
 #define MBEDTLS_NET_C
