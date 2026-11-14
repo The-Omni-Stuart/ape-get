@@ -296,6 +296,15 @@ void tls_close(tls_conn *c)
     free(c);
 }
 
+bool crypto_sha256_data(const void *data, size_t n, char out[65])
+{
+    unsigned char md[32];
+    if (mbedtls_sha256(data, n, md, 0) != 0) return false;
+    for (int i = 0; i < 32; i++)
+        sprintf(out + i * 2, "%02x", md[i]);
+    return true;
+}
+
 bool crypto_sha256_fd(int fd, char out[65])
 {
     unsigned char md[32];

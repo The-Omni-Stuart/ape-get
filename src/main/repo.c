@@ -99,6 +99,10 @@ static bool parse_core(const char *arg, char *prov, size_t provcap,
         if (slash2 == NULL) break;
         s = slash2 + 1;
     }
+    if (strlen(p) >= pathcap) {
+        PARSE_FAIL("Repository path is too long");
+        return false;
+    }
     snprintf(path, pathcap, "%s", p);
     return true;
 }

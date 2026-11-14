@@ -5,6 +5,6 @@ Warning: gitlab: tls handshake failed: X509 - certificate verification failed
 Using mock:zzq-apeget/apegetzzq99.
 Warning: No checksum found for apegetzzq99-1.0.0.AppImage. Continuing without verification.
 Warning: No signature found for apegetzzq99-1.0.0.AppImage. Continuing without a verified signature.
-Installed to: <STATE_ROOT>/applications/mock/zzq-apeget__apegetzzq99/versions/1.0.0/apegetzzq99-1.0.0.AppImage
+Installed to: <STATE_ROOT>/applications/mock/~0426ee1e4766cca3677b57afdf56df3b51fcba8740238aca557aca31b18b4d71/versions/1.0.0/apegetzzq99-1.0.0.AppImage
 Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/apegetzzq99 directly.
 Installation successful.

@@ -3,6 +3,7 @@
 #include "pipeline/internal.h"
 
 #include "txn.h"
+#include "crypto.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -37,7 +38,15 @@ bool journal_phase_write(const state_ctx *st, const char *op,
         if (prev->path != NULL)
             t.old_binary = strdup(prev->path);
     }
-    char *j = txn_build(&t);
+    bool ready = true;
+    if (strcmp(phase, "prepared")) {
+        char digest[65];
+        const char *manifest = !strcmp(phase, "committing") ? mtmp : mfile;
+        ready = manifest != NULL && crypto_sha256_file(manifest, digest)
+            && (t.new_manifest_sha256 = strdup(digest)) != NULL;
+        if (staged != NULL) ready = ready && t.new_asset_sha256 != NULL;
+    }
+    char *j = ready ? txn_build(&t) : NULL;
     bool ok = j != NULL && txn_write(st->root, j);
     free(j);
     txn_free(&t);

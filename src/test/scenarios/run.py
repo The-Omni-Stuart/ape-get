@@ -36,6 +36,10 @@ def normalize(text: str, state: str, install: str, home: str = "") -> str:
     t = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z", "<INSTANT>", t)
     t = re.sub(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
                r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", "<UUID>", t)
+    # manifest_sha256 covers bytes containing a wall-clock timestamp, so a
+    # crash-window journal digest varies per run; mask like the ids above
+    t = re.sub(r'"manifest_sha256"\s*:\s*"[0-9a-f]{64}"',
+               '"manifest_sha256": "<SHA>"', t)
     t = re.sub(r"\b\d{13}-", "<EPOCH_MILLIS>-", t)   # backup dir names
     t = re.sub(r"\.corrupt-\d+", ".corrupt-<EPOCH_MILLIS>", t)
     # transaction ids are random hex; journals and staged names pin

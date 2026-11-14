@@ -317,11 +317,10 @@ int phase_install(pipe_ctx *pc)
         pc->entry = desktop_entry_path(pc->st, pc->command);
         char now[40];
         now_instant(now, sizeof(now));
-        crypto_sha256_file(pc->tmp, pc->sha_final);
-        char *text = manifest_text(pc, now, pc->sha_final);
+        char *text = crypto_sha256_file(pc->tmp, pc->sha_final)
+            ? manifest_text(pc, now, pc->sha_final) : NULL;
         pc->mtmp = path_fmt("%s.tmp-%s", pc->j_mfile, pc->j_id);
         if (pc->mtmp == NULL || text == NULL || !fs_write_file(pc->mtmp, text)) {
-            free(text);
             ui_msg(stderr, UI_ERROR, "Installation failed.");
             oplog_append(pc->st, pc->op, pc->ref, "-", "Installation failed.");
             inst_failed = true;
@@ -433,10 +432,9 @@ void phase_record(pipe_ctx *pc)
 {
     // the record was staged before the commit point, so it lands with one
     // rename; a crash before this line leaves the staged file for recovery
-    char *mfile = manifest_path(pc->st->root, pc->prov, pc->path);
+    const char *mfile = pc->j_mfile;
     bool saved = pc->mtmp != NULL && fs_rename(pc->mtmp, mfile);
     if (saved) chmod(mfile, 0600); // like the other state files
-    free(mfile);
     if (!saved) {
         ui_msg(stderr, UI_ERROR, "Installed, but failed to write "
             "manifest: cannot write state");
@@ -485,7 +483,8 @@ void phase_record(pipe_ctx *pc)
         oplog_append(pc->st, pc->op, pc->ref, odet, NULL);
         if (pc->j_on) {
             bool w = journal_phase_write(pc->st, pc->op, pc->ref, pc->j_id, pc->j_created,
-                "committed", pc->j_vdir, pc->j_mfile, NULL, NULL, NULL,
+                "committed", pc->j_vdir, pc->j_mfile, pc->mtmp, pc->tmp,
+                pc->sha_final,
                 NULL, true, pc->updating ? pc->prev : NULL);
             if (w) {
                 char *jp = path_join(pc->st->root,

@@ -17,10 +17,10 @@ prompt:ui
 platform:fs,proc,path
 compat:fs,proc,path
 http:crypto,fs,proc,redact,clock
-txn:fs,json,path,clock
+txn:fs,json,path,clock,crypto
 keys:crypto,fs,json,path
 provider:repo,json,http,path,proc
-state:json,repo,platform,txn,fs,path,clock
+state:json,repo,platform,txn,fs,path,clock,crypto
 select:platform,path,repo
 verify:crypto,keys,fs,proc,path
 probe:provider,repo,clock,http

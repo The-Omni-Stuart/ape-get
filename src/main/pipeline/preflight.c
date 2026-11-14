@@ -228,6 +228,11 @@ int phase_preflight(pipe_ctx *pc)
 
     bool asset_named = !blank(pc->o->asset)
         && strspn(pc->o->asset, "0123456789") != strlen(pc->o->asset);
+    if (asset_named && strlen(pc->o->asset) >= sizeof pc->base) {
+        ui_msg(stderr, UI_ERROR, "Asset name is too long (maximum %zu bytes).",
+            sizeof pc->base - 1);
+        return PIPE_DONE;
+    }
     pc->pool = calloc((size_t)(pc->rel.n > 0 ? pc->rel.n : 1), sizeof(*pc->pool));
     int pool_n = 0;
     bool grouped = false;   // a collapsed pool owes the user one "Selected" line
@@ -236,6 +241,10 @@ int phase_preflight(pipe_ctx *pc)
             && (compat_state || req_kind == K_PORTABLE_EXE);
         for (int k = 0; k < pc->rel.n; k++) {
             char b[512];
+            // All selection identities use 512-byte buffers, including the
+            // encoded .xz name: skip oversized metadata, never truncate it.
+            if (pc->rel.assets[k].name == NULL
+                || strlen(pc->rel.assets[k].name) >= sizeof b) continue;
             artifact_base_name(pc->rel.assets[k].name, b, sizeof b);
             if (pe_pool) {
                 if (ci_endswith(b, ".exe"))
@@ -254,6 +263,8 @@ int phase_preflight(pipe_ctx *pc)
             && !pc->updating) {
             for (int k = 0; k < pc->rel.n; k++) {
                 char b[512];
+                if (pc->rel.assets[k].name == NULL
+                    || strlen(pc->rel.assets[k].name) >= sizeof b) continue;
                 artifact_base_name(pc->rel.assets[k].name, b, sizeof b);
                 if (ci_endswith(b, ".exe"))
                     pc->pool[pool_n++] = pc->rel.assets[k];

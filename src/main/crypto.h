@@ -43,5 +43,7 @@ bool crypto_sha256_file(const char *path, char out[65]);
 // hash an already-open fd from its current offset to EOF; used as the
 // single-read gate for delta sources (open-once, no reopen race)
 bool crypto_sha256_fd(int fd, char out[65]);
+// Hash exact bytes, including embedded identity separators.
+bool crypto_sha256_data(const void *data, size_t n, char out[65]);
 
 #endif

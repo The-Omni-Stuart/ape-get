@@ -7,9 +7,11 @@
 #include "json.h"
 #include "path.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 static const char *OPS[] = { "install", "update", "reinstall",
     "downgrade", "rollback", "uninstall", "self-update", NULL };
@@ -79,15 +81,38 @@ static bool keys_known(const jobject *o, const char *const *known)
     return true;
 }
 
+// A malformed digest member must not become an absent legacy digest.
+static bool digest_member(const jobject *o, const char *key, char **out)
+{
+    int i = jobject_find(o, key);
+    if (i < 0) return true;
+    const char *s = o->vals[i], *e = o->vends[i];
+    if (e - s == 4 && !memcmp(s, "null", 4)) return true;
+    return json_span_string(s, e, out);
+}
+
 txn_load txn_load_journal(const char *root, txn *t)
 {
     txn_init(t);
     char *p = path_join(root, TXN_FILE);
     if (p == NULL) return TXN_UNREADABLE;
+    struct stat sb;
+    if (lstat(p, &sb) != 0) {
+        txn_load result = errno == ENOENT ? TXN_ABSENT : TXN_UNREADABLE;
+        free(p);
+        return result;
+    }
+    // A dangling link is present, and non-files must not be opened (a
+    // FIFO could block). Once present, even an ENOENT read failure blocks.
+    if ((S_ISLNK(sb.st_mode) && stat(p, &sb) != 0)
+        || !S_ISREG(sb.st_mode)) {
+        free(p);
+        return TXN_UNREADABLE;
+    }
     size_t n = 0;
     char *text = fs_read_file(p, &n);
     free(p);
-    if (text == NULL) { free(text); return TXN_ABSENT; }
+    if (text == NULL) return TXN_UNREADABLE;
 
     bool bad = false;
     jobject o = {0};
@@ -98,7 +123,8 @@ txn_load txn_load_journal(const char *root, txn *t)
     static const char *const OLDK[] = { "manifest_path", "manifest",
         "generation", "launcher", "binary", NULL };
     static const char *const NEWK[] = { "generation", "manifest_tmp",
-        "manifest", "launcher_tmp", "binary_tmp", "asset_sha256", NULL };
+        "manifest", "launcher_tmp", "binary_tmp", "asset_sha256",
+        "manifest_sha256", NULL };
     if (!bad && !keys_known(&o, TOP)) bad = true;
     if (!bad) {
         char *kind = o_str(&o, "kind");
@@ -150,7 +176,10 @@ txn_load txn_load_journal(const char *root, txn *t)
         t->new_manifest_tmp = o_str(&newo, "manifest_tmp");
         t->new_launcher_tmp = o_str(&newo, "launcher_tmp");
         t->new_binary_tmp = o_str(&newo, "binary_tmp");
-        t->new_asset_sha256 = o_str(&newo, "asset_sha256");
+        if (!digest_member(&newo, "asset_sha256", &t->new_asset_sha256))
+            bad = true;
+        if (!digest_member(&newo, "manifest_sha256", &t->new_manifest_sha256))
+            bad = true;
     }
     free(old_text);
     free(new_text);
@@ -207,7 +236,8 @@ char *txn_build(const txn *t)
     }
     if (t->new_generation != NULL || t->new_manifest != NULL
         || t->new_manifest_tmp != NULL || t->new_launcher_tmp != NULL
-        || t->new_binary_tmp != NULL || t->new_asset_sha256 != NULL) {
+        || t->new_binary_tmp != NULL || t->new_asset_sha256 != NULL
+        || t->new_manifest_sha256 != NULL) {
         jb_lit(&b, ",\"new\":{");
         bool nf = true;
         put_opt_str(&b, "generation", t->new_generation, &nf);
@@ -216,6 +246,7 @@ char *txn_build(const txn *t)
         put_opt_str(&b, "launcher_tmp", t->new_launcher_tmp, &nf);
         put_opt_str(&b, "binary_tmp", t->new_binary_tmp, &nf);
         put_opt_str(&b, "asset_sha256", t->new_asset_sha256, &nf);
+        put_opt_str(&b, "manifest_sha256", t->new_manifest_sha256, &nf);
         jb_lit(&b, "}");
     }
     if (t->backup != NULL) {

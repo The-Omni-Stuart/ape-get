@@ -152,7 +152,7 @@ int main(int argc, char **argv)
         if (!recover_gate(&st, &o)) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = pipeline_install(&o, &st);
-        pipeline_self_after(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     case CMD_UPDATE: {
@@ -163,7 +163,7 @@ int main(int argc, char **argv)
         state_ensure(&st, o.quiet, o.json);
         int rv = o.all ? pipeline_update_all(&o, &st)
                     : pipeline_update(&o, &st);
-        pipeline_self_after(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     case CMD_UNINSTALL: {
@@ -173,7 +173,7 @@ int main(int argc, char **argv)
         if (!recover_gate(&st, &o)) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = uninstall_run(&o, &st);
-        pipeline_self_after(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     case CMD_ADOPT: {
@@ -183,7 +183,7 @@ int main(int argc, char **argv)
         if (!recover_gate(&st, &o)) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = adopt_run(&o, &st);
-        pipeline_self_after(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     case CMD_LIST: {
@@ -209,7 +209,7 @@ int main(int argc, char **argv)
         if (!recover_gate(&st, &o)) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = rollback_run(&o, &st);
-        pipeline_self_after(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     case CMD_PROVIDERS: {
@@ -219,7 +219,7 @@ int main(int argc, char **argv)
         if (!recover_gate(&st, &o)) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = providers_run(&o, &st);
-        pipeline_self_after(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     case CMD_LOCK:
@@ -230,7 +230,7 @@ int main(int argc, char **argv)
         if (!recover_gate(&st, &o)) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = lock_run(&o, &st, o.id == CMD_LOCK);
-        pipeline_self_after(&o, &st);
+        if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     default:

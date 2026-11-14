@@ -4,6 +4,7 @@
 #include "txn.h"
 #include "txn/internal.h"
 #include "fs.h"
+#include "json.h"
 #include "path.h"
 
 #include <fcntl.h>
@@ -25,6 +26,7 @@ void txn_free(txn *t)
     free(t->new_generation); free(t->new_manifest_tmp);
     free(t->new_manifest); free(t->new_launcher_tmp);
     free(t->new_binary_tmp); free(t->new_asset_sha256);
+    free(t->new_manifest_sha256);
     txn_init(t);
 }
 
@@ -39,7 +41,23 @@ static bool fsync_dir(const char *dir)
 
 bool txn_write(const char *root, const char *text)
 {
-    if (!fs_mkdir_p(root)) return false;
+    // Callers hold the state lock. An existing transaction may advance its
+    // phases, but another owner (or an unreadable journal) must stay intact.
+    char *id = NULL, *op = NULL, *ref = NULL;
+    bool valid = text != NULL && json_valid(text, strlen(text))
+        && json_get_string(text, "id", &id) && id != NULL && *id != '\0'
+        && json_get_string(text, "op", &op) && op != NULL && *op != '\0'
+        && json_get_string(text, "ref", &ref) && ref != NULL && *ref != '\0';
+    txn pending;
+    txn_load load = txn_load_journal(root, &pending);
+    bool owned = valid && (load == TXN_ABSENT
+        || (load == TXN_READ && !strcmp(pending.id, id)
+            && !strcmp(pending.op, op) && !strcmp(pending.ref, ref)));
+    txn_free(&pending);
+    free(id);
+    free(op);
+    free(ref);
+    if (!owned || !fs_mkdir_p(root)) return false;
     char *p = path_join(root, TXN_FILE);
     char *t = path_join(root, TXN_FILE ".tmp");
     bool ok = p != NULL && t != NULL;

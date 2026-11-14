@@ -1,4 +1,5 @@
 #include "cmd.h"
+#include "crypto.h"
 #include "doctor.h"
 #include "fs.h"
 #include "json.h"
@@ -47,7 +48,12 @@ static bool rollback_journal_write(const state_ctx *st, const char *ref,
     t.new_binary_tmp = strdup(bin_tmp);
     t.new_manifest_tmp = strdup(man_tmp);
     t.new_manifest = strdup(man);
-    char *j = txn_build(&t);
+    char sha[65];
+    bool ready = crypto_sha256_file(bin_tmp, sha)
+        && (t.new_asset_sha256 = strdup(sha)) != NULL
+        && crypto_sha256_file(man_tmp, sha)
+        && (t.new_manifest_sha256 = strdup(sha)) != NULL;
+    char *j = ready ? txn_build(&t) : NULL;
     bool ok = j != NULL && txn_write(st->root, j);
     free(j);
     txn_free(&t);

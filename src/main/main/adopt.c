@@ -112,10 +112,27 @@ int adopt_run(const cmd_opts *o, state_ctx *st)
             "Failed to load application state: state scan failed");
         goto fail;
     }
-    bool tracked = false;
-    for (size_t k = 0; k < mc; k++)
+    bool tracked = false, owned_elsewhere = false;
+    for (size_t k = 0; k < mc; k++) {
         if (!strcmp(ms[k].provider, prov) && !strcmp(ms[k].repo, path))
             tracked = true;
+        else {
+            const char *paths[] = {ms[k].path, ms[k].launcher};
+            for (size_t j = 0; j < sizeof(paths) / sizeof(paths[0]); j++) {
+                struct stat owner;
+                if (paths[j] != NULL && stat(paths[j], &owner) == 0
+                    && owner.st_dev == sb.st_dev && owner.st_ino == sb.st_ino)
+                    owned_elsewhere = true;
+            }
+        }
+    }
+    if (owned_elsewhere) {
+        put_fail("Cannot adopt a file already owned by another package.");
+        oplog_append(st, "adopt", ref, "-",
+            "Cannot adopt a file already owned by another package.");
+        manifest_list_free(ms, mc);
+        goto fail;
+    }
     if (tracked) {
         char *msg = path_fmt("Release %s is already tracked.", ref);
         put_s(stderr, UI_WARN, "%s", msg != NULL ? msg : "already tracked");

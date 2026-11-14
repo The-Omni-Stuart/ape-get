@@ -3,11 +3,13 @@
 
 #include "txn.h"
 #include "txn/internal.h"
+#include "crypto.h"
 #include "fs.h"
 #include "path.h"
 
 #include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +45,8 @@ static char *strip_tmp(const char *path)
 static char *dir_of(const char *path)
 {
     const char *slash = strrchr(path, '/');
+    const char *back = strrchr(path, '\\');
+    if (back != NULL && (slash == NULL || back > slash)) slash = back;
     if (slash == NULL || slash == path) return strdup("/");
     char *r = malloc((size_t)(slash - path) + 1);
     if (r != NULL) { memcpy(r, path, (size_t)(slash - path));
@@ -106,46 +110,212 @@ static bool apply_rename(const char *tmp, const char *final_path)
     return ok;
 }
 
-static bool roll_forward(const txn *t, const char *root, char *err,
+static bool file_matches(const char *path, const char *expected)
+{
+    char actual[65];
+    struct stat sb;
+    if (expected == NULL || strlen(expected) != 64
+        || lstat(path, &sb) != 0 || !S_ISREG(sb.st_mode)
+        || !crypto_sha256_file(path, actual)) return false;
+    for (int i = 0; i < 64; i++)
+        if (tolower((unsigned char)expected[i]) != actual[i]) return false;
+    return true;
+}
+
+// Legacy journals can still apply a present stage. Without an expected
+// digest, a missing stage is ambiguous: the final may be the old version.
+// Check present stages too, so corrupt bytes cannot replace a valid final.
+static bool apply_file(const char *tmp, const char *final_path,
+    const char *expected)
+{
+    struct stat sb;
+    bool staged = lstat(tmp, &sb) == 0;
+    if (!staged && errno != ENOENT) return false;
+    char *fin = final_path != NULL ? strdup(final_path) : strip_tmp(tmp);
+    if (fin == NULL) return false;
+    bool ok = staged ? S_ISREG(sb.st_mode)
+        && (expected == NULL || file_matches(tmp, expected))
+        && fs_rename(tmp, fin) : file_matches(fin, expected);
+    free(fin);
+    if (!ok) errno = EINVAL;
+    return ok;
+}
+
+static bool apply_manifest(const txn *t)
+{
+    if (t->new_manifest_tmp != NULL)
+        return apply_file(t->new_manifest_tmp, t->new_manifest,
+            t->new_manifest_sha256);
+    // Older committed records name only the final manifest. Its existence
+    // alone cannot distinguish the intended record from a stale one either.
+    return t->new_manifest == NULL
+        || file_matches(t->new_manifest, t->new_manifest_sha256);
+}
+
+static bool paths_overlap(const char *a, const char *b)
+{
+    size_t an = strlen(a), bn = strlen(b);
+    return !strcmp(a, "/") || !strcmp(b, "/") || !strcmp(a, b)
+        || (an < bn && !strncmp(a, b, an) && b[an] == '/')
+        || (bn < an && !strncmp(a, b, bn) && a[bn] == '/');
+}
+
+// Resolve existing ancestors too: a missing bin directory is valid, but a
+// symlink in its parent path must not hide overlap with the app-state tree.
+static char *resolve_missing(const char *path)
+{
+    char *probe = strdup(path);
+    if (probe == NULL) return NULL;
+    char *resolved = NULL;
+    for (;;) {
+        char *prefix = realpath(probe, NULL);
+        if (prefix != NULL) {
+            const char *tail = path + strlen(probe);
+            resolved = *tail == '\0' ? strdup(prefix)
+                : path_join(prefix, *tail == '/' || *tail == '\\' ? tail + 1 : tail);
+            free(prefix);
+            break;
+        }
+        struct stat sb;
+        if (errno != ENOENT) break;
+        if (lstat(probe, &sb) == 0 || errno != ENOENT
+            || !strcmp(probe, "/")) break;
+        char *slash = strrchr(probe, '/');
+        char *back = strrchr(probe, '\\');
+        if (back != NULL && (slash == NULL || back > slash)) slash = back;
+        if (slash == NULL || slash[1] == '\0') break;
+        if (slash == probe || (slash == probe + 2 && probe[1] == ':')) slash[1] = '\0';
+        else *slash = '\0';
+    }
+    free(probe);
+    return resolved;
+}
+
+static bool directory_or_absent(const char *path)
+{
+    struct stat sb;
+    return path != NULL && (lstat(path, &sb) == 0
+        ? S_ISDIR(sb.st_mode) : errno == ENOENT);
+}
+
+// String prefixes miss case aliases on APFS/Windows. Compare directory
+// identities along existing ancestors; -1 means containment is unknown.
+static int has_ancestor(const char *path, const struct stat *ancestor)
+{
+    char *p = strdup(path);
+    if (p == NULL) return -1;
+    int found = 0;
+    for (;;) {
+        struct stat sb;
+        if (stat(p, &sb) == 0) {
+            if (sb.st_dev == ancestor->st_dev && sb.st_ino == ancestor->st_ino) {
+                found = 1;
+                break;
+            }
+        } else if (errno != ENOENT) { found = -1; break; }
+        char *parent = dir_of(p);
+        if (parent == NULL) { found = -1; break; }
+        bool done = !strcmp(parent, p);
+        free(p);
+        p = parent;
+        if (done) break;
+    }
+    free(p);
+    return found;
+}
+
+// Only a dedicated applications/<provider>/<package> directory is a tree
+// deletion target. Never use old_generation: older writers put dirname of
+// an adopted binary there, which can be the shared install root.
+static char *uninstall_app_dir(const txn *t, const char *root,
+    const char *install_root)
+{
+    char *mf = t->old_manifest_path != NULL
+        ? resolve_missing(t->old_manifest_path) : NULL;
+    char *norm_root = resolve_missing(root);
+    char *apps = norm_root != NULL ? path_join(norm_root, "applications") : NULL;
+    char *dir = mf != NULL ? dir_of(mf) : NULL;
+    char *inst = install_root != NULL ? resolve_missing(install_root) : NULL;
+    char *raw_dir = t->old_manifest_path != NULL ? dir_of(t->old_manifest_path) : NULL;
+    char *raw_provider = raw_dir != NULL ? dir_of(raw_dir) : NULL;
+    char *raw_apps = raw_provider != NULL ? dir_of(raw_provider) : NULL;
+    bool ok = apps != NULL && dir != NULL && inst != NULL
+        && directory_or_absent(raw_apps) && directory_or_absent(raw_provider)
+        && directory_or_absent(raw_dir);
+    if (ok) {
+        size_t n = strlen(apps);
+        const char *tail = strlen(dir) > n && !strncmp(dir, apps, n)
+            && dir[n] == '/' ? dir + n + 1 : NULL;
+        const char *slash = tail != NULL ? strchr(tail, '/') : NULL;
+        const char *name = strrchr(mf, '/');
+        ok = slash != NULL && slash != tail && slash[1] != '\0'
+            && strchr(slash + 1, '/') == NULL && name != NULL
+            && !(slash - tail == 1 && tail[0] == '.')
+            && !(slash - tail == 2 && tail[0] == '.' && tail[1] == '.')
+            && strcmp(slash + 1, ".") && strcmp(slash + 1, "..")
+            && !strcmp(name + 1, "grm_manifest.json")
+            && !paths_overlap(dir, inst);
+    }
+    struct stat sb;
+    if (ok && lstat(t->old_manifest_path, &sb) == 0)
+        ok = S_ISREG(sb.st_mode);
+    else if (ok && errno != ENOENT) ok = false;
+    if (ok && lstat(dir, &sb) == 0) {
+        char *rd = realpath(dir, NULL), *ra = realpath(apps, NULL);
+        ok = S_ISDIR(sb.st_mode) && rd != NULL && ra != NULL
+            && path_under(rd, ra) && !paths_overlap(rd, inst);
+        if (ok) ok = has_ancestor(inst, &sb) == 0;
+        struct stat is;
+        if (ok && stat(inst, &is) == 0)
+            ok = S_ISDIR(is.st_mode) && has_ancestor(rd, &is) == 0;
+        else if (ok && errno != ENOENT) ok = false;
+        free(rd);
+        free(ra);
+    } else if (ok && errno != ENOENT) {
+        ok = false;
+    }
+    free(mf);
+    free(norm_root);
+    free(apps);
+    free(inst);
+    free(raw_dir);
+    free(raw_provider);
+    free(raw_apps);
+    if (!ok) { free(dir); return NULL; }
+    return dir;
+}
+
+static bool unlink_missing_ok(const char *path)
+{
+    return path == NULL || unlink(path) == 0 || errno == ENOENT;
+}
+
+static bool roll_forward(const txn *t, const char *root,
+    const char *install_root, char *err,
     size_t errcap)
 {
     if (strcmp(t->op, "uninstall") == 0) {
-        // mirror image: the rename to .removing was the commit point, so
-        // the deletions finish even when the manifest is already gone
-        char *dir = t->old_manifest_path != NULL
-            ? dir_of(t->old_manifest_path) : NULL;
-        char *rem = dir != NULL ? path_join(dir,
-            "grm_manifest.json.removing") : NULL;
-        if (t->old_manifest_path != NULL && fs_exists(t->old_manifest_path))
-            fs_rename(t->old_manifest_path, rem);
-        if (rem != NULL) remove(rem);
-        if (t->old_launcher != NULL) remove(t->old_launcher);
-        if (t->old_generation != NULL
-            && fs_is_dir(t->old_generation))
-            fs_rm_tree(t->old_generation);
-        if (dir != NULL) {
-            char *backups = path_join(dir, "backups");
-            if (backups != NULL) {
-                if (fs_is_dir(backups)) fs_rm_tree(backups);
-                free(backups);
-            }
-            rmdir(dir); // only when empty
-        }
-        free(rem);
+        char *dir = uninstall_app_dir(t, root, install_root);
+        struct stat sb;
+        bool ok = dir != NULL && unlink_missing_ok(t->old_launcher)
+            && unlink_missing_ok(t->old_binary);
+        if (ok && lstat(dir, &sb) == 0) ok = fs_rm_tree(dir);
+        else if (ok && errno != ENOENT) ok = false;
         free(dir);
-        return true;
+        if (!ok)
+            snprintf(err, errcap, "Could not safely finish uninstall "
+                "transaction %s; journal retained for recovery.", t->id);
+        return ok;
     }
     if ((t->new_binary_tmp != NULL
-            && !apply_rename(t->new_binary_tmp, NULL))
+            && !apply_file(t->new_binary_tmp, NULL, t->new_asset_sha256))
         || (t->new_launcher_tmp != NULL
             && !apply_rename(t->new_launcher_tmp, NULL))
-        || (t->new_manifest_tmp != NULL
-            && !apply_rename(t->new_manifest_tmp, t->new_manifest))) {
+        || !apply_manifest(t)) {
         snprintf(err, errcap, "Transaction %s is corrupt; manual "
             "recovery required.", t->id);
         return false;
     }
-    (void)root;
     return true;
 }
 
@@ -193,10 +363,17 @@ bool txn_recover_startup(const char *root, const char *install_root,
             t.op, t.ref);
     } else {
         char err[800] = "";
-        ok = roll_forward(&t, root, err, sizeof(err));
+        ok = roll_forward(&t, root, install_root, err, sizeof(err));
         if (ok) {
             char *p = path_join(root, TXN_FILE);
-            if (p != NULL) { remove(p); free(p); }
+            if (p == NULL || (remove(p) != 0 && errno != ENOENT)) {
+                snprintf(err, sizeof(err), "Could not remove transaction "
+                    "journal; recovery remains pending.");
+                ok = false;
+            }
+            free(p);
+        }
+        if (ok) {
             if (need_history != NULL && !t.history_written) {
                 *need_history = true;
                 if (op_buf != NULL && ref_buf != NULL) {

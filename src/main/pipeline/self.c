@@ -20,9 +20,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -78,7 +80,16 @@ static bool self_journal(const state_ctx *st, const char *phase,
     if (mtmp != NULL) t.new_manifest_tmp = strdup(mtmp);
     if (btmp != NULL) t.new_binary_tmp = strdup(btmp);
     t.history_written = history;
-    char *j = txn_build(&t);
+    bool ready = true;
+    if (strcmp(phase, "prepared")) {
+        char sha[65];
+        ready = mtmp != NULL && crypto_sha256_file(mtmp, sha)
+            && (t.new_manifest_sha256 = strdup(sha)) != NULL;
+        if (btmp != NULL)
+            ready = ready && crypto_sha256_file(btmp, sha)
+                && (t.new_asset_sha256 = strdup(sha)) != NULL;
+    }
+    char *j = ready ? txn_build(&t) : NULL;
     bool ok = j != NULL && txn_write(st->root, j);
     free(j);
     txn_free(&t);
@@ -243,8 +254,10 @@ static bool self_on_path(const char *dir)
 // manifest shape: byte-parallel with the install writer in
 // pipeline/run.c, so scanners and `info` see one manifest kind
 static char *self_manifest_json(const char *target, const char *app_dir,
-    const char *installed_at)
+    const char *installed_at, const char *source)
 {
+    char sha[65];
+    if (!crypto_sha256_file(source, sha)) return NULL;
     char now[40];
     self_instant(now, sizeof now);
     jbuf b = {0};
@@ -256,11 +269,8 @@ static char *self_manifest_json(const char *target, const char *app_dir,
     char *furl = path_fmt("file://%s", target);
     jb_json_string(&b, furl != NULL ? furl : target);
     free(furl);
-    char sha[65] = "";
-    crypto_sha256_file(target, sha);
     jb_lit(&b, ",\"sha256\":");
-    if (sha[0] != '\0') jb_json_string(&b, sha);
-    else jb_lit(&b, "null");
+    jb_json_string(&b, sha);
     jb_lit(&b, "},\"install\":{\"kind\":\"ape\",\"path\":");
     jb_json_string(&b, target);
     jb_lit(&b, ",\"root\":");
@@ -289,36 +299,144 @@ static bool self_write_manifest(const char *path, const char *text)
     return chmod(path, 0600) == 0;
 }
 
-// Re-record the version when the canonical copy itself runs a newer build: silent
-// atomic rewrite, no journal; a crash leaves a sweepable .tmp- orphan.
-static void self_refresh(const char *mfile, const char *target,
-    const char *app_dir, const char *txt)
+// Refresh only an unambiguous self record. Do not turn corrupt/foreign state
+// into a fresh installation (or discard extensions we do not understand).
+static bool self_manifest_valid(const char *txt, size_t len, jobject *o)
 {
-    char *ver = NULL, *inst = NULL;
+    if (!json_valid(txt, len) || !jobject_parse(txt, o)
+        || !manifest_json_valid(o)) return false;
+    long schema = 0;
+    if (!json_get_int(txt, "schema_version", &schema) || schema != 1)
+        return false;
+    for (int i = 0; i < o->n; i++)
+        for (int j = 0; j < i; j++)
+            if (strcmp(o->keys[i], o->keys[j]) == 0) return false;
+    char *provider = NULL, *repo = NULL;
+    bool ok = json_get_string(txt, "provider", &provider)
+        && json_get_string(txt, "repo", &repo)
+        && provider != NULL && strcmp(provider, SELF_PROVIDER) == 0
+        && repo != NULL && strcmp(repo, SELF_NAME) == 0;
+    free(provider);
+    free(repo);
+    return ok;
+}
+
+static const char *self_version_identity(const char *v)
+{
+    return v[0] == 'v' && v[1] >= '0' && v[1] <= '9' ? v + 1 : v;
+}
+
+// Only plain X.Y.Z versions are orderable here. Unknown tags/suffixes need an
+// explicit update, and a stale baked version must never downgrade a release.
+static bool self_version_core(const char *v, unsigned long out[3])
+{
+    v = self_version_identity(v);
+    for (int i = 0; i < 3; i++) {
+        if (*v < '0' || *v > '9') return false;
+        char *end;
+        errno = 0;
+        out[i] = strtoul(v, &end, 10);
+        if (errno == ERANGE || (end - v > 1 && *v == '0')) return false;
+        if (i == 2) return *end == '\0';
+        if (*end != '.') return false;
+        v = end + 1;
+    }
+    return false;
+}
+
+static bool self_version_newer(const char *running, const char *recorded)
+{
+    unsigned long a[3], b[3];
+    if (!self_version_core(running, a) || !self_version_core(recorded, b))
+        return false;
+    for (int i = 0; i < 3; i++)
+        if (a[i] != b[i]) return a[i] > b[i];
+    return false;
+}
+
+static bool self_raw_append(jbuf *b, const char *s, const char *e)
+{
+    size_t n = (size_t)(e - s);
+    if (n >= b->cap - b->n) return false;
+    memcpy(b->p + b->n, s, n);
+    b->n += n;
+    b->p[b->n] = '\0';
+    return true;
+}
+
+// Re-record only the version observation, keeping raw policy/history/provenance.
+// Existing trust remains valid only for the recorded bytes; a different binary
+// must pass the ordinary update/repair path, not inherit its old signature.
+static void self_refresh(const char *mfile, const char *target,
+    const char *txt, const jobject *o)
+{
+    char *ver = NULL;
     if (!json_get_string(txt, "version", &ver) || ver == NULL
-        || strcmp(ver, APEGET_VERSION) == 0) {
+        || strcmp(self_version_identity(ver),
+            self_version_identity(APEGET_VERSION)) == 0) {
         free(ver);
         return;
     }
-    if (!json_get_string(txt, "installed_at", &inst) || inst == NULL) {
-        free(inst);
-        inst = NULL;
-        if (!json_get_string(txt, "updated_at", &inst) || inst == NULL) {
-            free(inst);
-            inst = NULL;
-        }
+    if (!self_version_newer(APEGET_VERSION, ver)) {
+        free(ver);
+        self_warn("self version is newer than the baked version or cannot "
+            "be ordered; keeping its recorded metadata");
+        return;
     }
-    char *m2 = self_manifest_json(target, app_dir, inst);
-    free(inst);
     free(ver);
-    if (m2 == NULL) return;
+    const char *as, *ae;
+    char *asset = NULL, *recorded = NULL;
+    char sha[65];
+    bool same = json_raw(txt, "asset", &as, &ae)
+        && (asset = strndup(as, (size_t)(ae - as))) != NULL
+        && json_get_string(asset, "sha256", &recorded)
+        && recorded != NULL && strlen(recorded) == 64
+        && crypto_sha256_file(target, sha) && strcasecmp(recorded, sha) == 0;
+    free(asset);
+    free(recorded);
+    if (!same) {
+        self_warn("self manifest does not identify the running binary; "
+            "keeping its recorded metadata. Use an explicit update or repair.");
+        return;
+    }
+    char now[40];
+    self_instant(now, sizeof now);
+    // jbuf has no allocation-failure flag. Reserve all possible output up
+    // front, including worst-case version escaping and a missing updated_at.
+    size_t extra = 6 * sizeof(APEGET_VERSION) + sizeof now + 64;
+    size_t len = strlen(txt);
+    if (len > SIZE_MAX - extra) return;
+    jbuf b = {.cap = len + extra};
+    b.p = malloc(b.cap);
+    if (b.p == NULL) return;
+    const char *cursor = txt;
+    for (int i = 0; i < o->n; i++) {
+        bool version = strcmp(o->keys[i], "version") == 0;
+        if (!version && strcmp(o->keys[i], "updated_at") != 0) continue;
+        if (!self_raw_append(&b, cursor, o->vals[i])) goto drop;
+        jb_json_string(&b, version ? APEGET_VERSION : now);
+        cursor = o->vends[i];
+    }
+    if (jobject_find(o, "updated_at") < 0) {
+        const char *end = txt + len;
+        while (end > txt && strchr(" \t\r\n", end[-1]) != NULL) end--;
+        if (!self_raw_append(&b, cursor, end - 1)) goto drop;
+        jb_lit(&b, ",\"updated_at\":");
+        jb_json_string(&b, now);
+        cursor = end - 1;
+    }
+    if (!self_raw_append(&b, cursor, txt + len)) goto drop;
+    if (!json_valid(b.p, b.n)) { jb_free(&b); return; }
     char id[17];
     txn_new_id(id);
     char *t2 = path_fmt("%s.tmp-%s", mfile, id);
-    if (t2 != NULL && self_write_manifest(t2, m2)) fs_rename(t2, mfile);
-    remove(t2);
+    if (t2 != NULL) {
+        if (self_write_manifest(t2, b.p)) fs_rename(t2, mfile);
+        remove(t2);
+    }
     free(t2);
-    free(m2);
+drop:
+    jb_free(&b);
 }
 
 void pipeline_self_after(const cmd_opts *o, state_ctx *st)
@@ -326,6 +444,16 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st)
     const char *off = getenv("APEGET_NO_SELF");
     if (off != NULL && strcmp(off, "1") == 0) return;
     if (o->dry_run) return;
+
+    // Recovery owns any present journal, including an unreadable one. Check
+    // before either first registration or an existing manifest refresh.
+    txn pending;
+    txn_load load = txn_load_journal(st->root, &pending);
+    txn_free(&pending);
+    if (load != TXN_ABSENT) {
+        self_warn("transaction journal is pending or unreadable; recover it first");
+        return;
+    }
 
     char *exe = self_exe_path();
     if (exe == NULL) {
@@ -336,18 +464,35 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st)
     char *target = path_join(st->install_root, SELF_NAME);
     char *app_dir = NULL, *btmp = NULL, *mtmp = NULL;
     bool jl = false, ml = false, bl = false;
-    if (mfile == NULL || target == NULL) goto done;
+    if (mfile == NULL) {
+        self_warn("cannot resolve an owned self manifest; use an explicit update or repair");
+        goto done;
+    }
+    if (target == NULL) goto done;
 
-    bool mf = fs_exists(mfile), tg = fs_exists(target);
-    if (mf && tg) {
+    struct stat ms;
+    bool mf = lstat(mfile, &ms) == 0;
+    if (!mf && errno != ENOENT) {
+        self_warn("cannot inspect the self manifest; leaving it alone");
+        goto done;
+    }
+    bool tg = fs_exists(target);
+    if (mf) {
+        if (!tg) {
+            self_warn("self manifest exists but its binary is missing; "
+                "use an explicit update or repair");
+            goto done;
+        }
         struct stat se, stt;
         if (stat(exe, &se) == 0 && stat(target, &stt) == 0
             && se.st_dev == stt.st_dev && se.st_ino == stt.st_ino) {
-            app_dir = manifest_app_dir(st->root, SELF_PROVIDER,
-                SELF_NAME);
-            char *txt = fs_read_file(mfile, NULL);
-            if (app_dir != NULL && txt != NULL)
-                self_refresh(mfile, target, app_dir, txt);
+            size_t n = 0;
+            char *txt = fs_read_file(mfile, &n);
+            jobject o2 = {0};
+            if (txt != NULL && self_manifest_valid(txt, n, &o2))
+                self_refresh(mfile, target, txt, &o2);
+            else self_warn("cannot read a valid self manifest; leaving it alone");
+            jobject_free(&o2);
             free(txt);
         }
         goto done;
@@ -391,21 +536,8 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st)
         bl = true;
     }
 
-    char *inst = NULL;
-    if (mf) {
-        char *old = fs_read_file(mfile, NULL);
-        if (old != NULL) {
-            if (!json_get_string(old, "installed_at", &inst)
-                || inst == NULL) {
-                free(inst);
-                inst = NULL;
-            }
-            free(old);
-        }
-    }
-    char *mtxt = self_manifest_json(target, app_dir,
-        inst != NULL ? inst : created);
-    free(inst);
+    char *mtxt = self_manifest_json(target, app_dir, created,
+        need_copy ? btmp : target);
     if (mtxt == NULL || !self_write_manifest(mtmp, mtxt)) {
         self_warn("cannot write the self manifest");
         free(mtxt);

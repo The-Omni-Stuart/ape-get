@@ -6,4 +6,4 @@ ELF-v2
 --- .local/bin/tool.tmp-<ID> (0644) ---
 ELF-v1
 --- .local/share/github-release-manager/grm_transaction.json (0644) ---
-{"kind":"grm.transaction","schema_version":1,"id": "<ID>","op":"rollback","ref":"forge:owner/tool","phase":"committing","created_at":"<INSTANT>","new":{"manifest_tmp":"<STATE_ROOT>/applications/forge/owner__tool/grm_manifest.json.tmp-<ID>","manifest":"<STATE_ROOT>/applications/forge/owner__tool/grm_manifest.json","binary_tmp":"<INSTALL_ROOT>/tool.tmp-<ID>"}}
+{"kind":"grm.transaction","schema_version":1,"id": "<ID>","op":"rollback","ref":"forge:owner/tool","phase":"committing","created_at":"<INSTANT>","new":{"manifest_tmp":"<STATE_ROOT>/applications/forge/owner__tool/grm_manifest.json.tmp-<ID>","manifest":"<STATE_ROOT>/applications/forge/owner__tool/grm_manifest.json","binary_tmp":"<INSTALL_ROOT>/tool.tmp-<ID>","asset_sha256":"bf77da519a35183f03d012f450be27b785e3318759cc5d5e3cc7c728e73aa629","manifest_sha256": "<SHA>"}}

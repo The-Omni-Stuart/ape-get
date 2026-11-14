@@ -1,5 +1,5 @@
 Warning: No checksum found for app-1.0.0.AppImage. Continuing without verification.
 Warning: No signature found for app-1.0.0.AppImage. Continuing without a verified signature.
-Installed to: <STATE_ROOT>/applications/rn/group__repo/versions/1.0.0/app-1.0.0.AppImage
+Installed to: <STATE_ROOT>/applications/rn/~138643fca0db619e33eb8072c0bb76f9bd60b423153c49fda709cff534d75fd3/versions/1.0.0/app-1.0.0.AppImage
 Note: <INSTALL_ROOT> is not on PATH; run <INSTALL_ROOT>/app directly.
 Installation successful.

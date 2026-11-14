@@ -7,6 +7,16 @@
 
 #include "fuzz_util.h"
 
+// This parser/doctor target never replays journals. Keep crypto out of the
+// fuzz link closure; an accidental recovery call must fail loudly. Native
+// recovery_identity_check exercises the real product hash implementation.
+bool crypto_sha256_file(const char *path, char out[65])
+{
+    (void)path;
+    (void)out;
+    abort();
+}
+
 static const char *journal_dir(void)
 {
     static char *dir;
@@ -50,6 +60,7 @@ static void fields_equal(const txn *a, const txn *b)
     FUZZ_ASSERT(seq(a->new_launcher_tmp, b->new_launcher_tmp));
     FUZZ_ASSERT(seq(a->new_binary_tmp, b->new_binary_tmp));
     FUZZ_ASSERT(seq(a->new_asset_sha256, b->new_asset_sha256));
+    FUZZ_ASSERT(seq(a->new_manifest_sha256, b->new_manifest_sha256));
     FUZZ_ASSERT(a->history_written == b->history_written);
     FUZZ_ASSERT(a->pid > 0 ? a->pid == b->pid : b->pid == 0);
 }

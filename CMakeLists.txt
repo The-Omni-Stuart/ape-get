@@ -95,6 +95,8 @@ add_executable(ape-get ${CMAKE_SOURCE_DIR}/src/main/main.c ${MAIN_PARTS})
 
 # the one module allowed to consume mbed TLS (crypto row)
 target_link_libraries(m_crypto PUBLIC mbedall)
+target_link_libraries(m_txn PUBLIC m_crypto)
+target_link_libraries(m_state PUBLIC m_crypto)
 
 # the one module allowed to consume liblzma and xdelta3 (the decode stage)
 target_link_libraries(m_pipeline PUBLIC lzmadec xdelta3dec)
@@ -146,11 +148,52 @@ function(apeget_test_entry target result)
 endfunction()
 
 apeget_test_entry(ape-get APEGET_TEST_EXE)
+add_executable(test_commit_staging ${CMAKE_SOURCE_DIR}/src/test/ci/test_commit_staging.c)
+target_link_libraries(test_commit_staging PRIVATE
+  m_pipeline m_crypto m_fs m_path m_json mbedall)
+apeget_test_entry(test_commit_staging COMMIT_STAGING_TEST_EXE)
+add_test(NAME commit_staging_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_commit_staging.py
+    --driver "${COMMIT_STAGING_TEST_EXE}")
+add_executable(test_preflight_names ${CMAKE_SOURCE_DIR}/src/test/ci/test_preflight_names.c)
+target_link_libraries(test_preflight_names PRIVATE m_pipeline m_path m_json)
+apeget_test_entry(test_preflight_names PREFLIGHT_NAMES_TEST_EXE)
+add_test(NAME preflight_names_check COMMAND "${PREFLIGHT_NAMES_TEST_EXE}")
+add_executable(test_journal_load ${CMAKE_SOURCE_DIR}/src/test/ci/test_journal_load.c)
+target_link_libraries(test_journal_load PRIVATE
+  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+apeget_test_entry(test_journal_load JOURNAL_LOAD_TEST_EXE)
+add_test(NAME journal_load_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_journal_load.py
+    --driver "${JOURNAL_LOAD_TEST_EXE}" --bin "${APEGET_TEST_EXE}")
+add_executable(test_manifest_identity ${CMAKE_SOURCE_DIR}/src/test/ci/test_manifest_identity.c)
+target_link_libraries(test_manifest_identity PRIVATE
+  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+apeget_test_entry(test_manifest_identity MANIFEST_IDENTITY_TEST_EXE)
+add_test(NAME manifest_identity_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_manifest_identity.py
+    --driver "${MANIFEST_IDENTITY_TEST_EXE}" --bin "${APEGET_TEST_EXE}")
+add_test(NAME recovery_identity_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_recovery_identity.py
+    --bin "${APEGET_TEST_EXE}")
+add_test(NAME uninstall_recovery_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_uninstall_recovery.py
+    --bin "${APEGET_TEST_EXE}")
 if(APEGET_SELF)
   add_executable(test_self_path ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_path.c)
   target_link_libraries(test_self_path PRIVATE m_path)
   apeget_test_entry(test_self_path SELF_PATH_TEST_EXE)
   add_test(NAME self_executable_path COMMAND "${SELF_PATH_TEST_EXE}")
+  add_executable(test_self_refresh ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_refresh.c)
+  target_link_libraries(test_self_refresh PRIVATE
+    LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  apeget_test_entry(test_self_refresh SELF_REFRESH_TEST_EXE)
+  add_test(NAME self_refresh_check
+    COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_refresh.py
+      --driver "${SELF_REFRESH_TEST_EXE}" --bin "${APEGET_TEST_EXE}")
+  add_test(NAME self_pending_check
+    COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_pending.py
+      --driver "${SELF_REFRESH_TEST_EXE}" --bin "${APEGET_TEST_EXE}")
 endif()
 
 add_executable(test_tcp_connect ${CMAKE_SOURCE_DIR}/src/test/ci/test_tcp_connect.c)

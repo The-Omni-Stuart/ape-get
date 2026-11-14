@@ -8,9 +8,9 @@
 // rolls back, committing/committed roll forward; recovery runs under the lock.
 
 typedef enum {
-    TXN_ABSENT,     // no journal file
+    TXN_ABSENT,     // journal entry is missing (lstat ENOENT only)
     TXN_READ,       // parsed, fields filled (owned by the struct)
-    TXN_UNREADABLE  // bad JSON or unknown kind/schema/op/phase/field
+    TXN_UNREADABLE  // access/read/allocation failure, non-file or invalid JSON/schema
 } txn_load;
 
 typedef struct {
@@ -23,7 +23,8 @@ typedef struct {
          *old_launcher, *old_binary;
     // new side (nullable)
     char *new_generation, *new_manifest_tmp, *new_manifest,
-         *new_launcher_tmp, *new_binary_tmp, *new_asset_sha256;
+         *new_launcher_tmp, *new_binary_tmp, *new_asset_sha256,
+         *new_manifest_sha256;
 } txn;
 
 void txn_init(txn *t);
@@ -33,7 +34,8 @@ void txn_free(txn *t);
 txn_load txn_load_journal(const char *root, txn *t);
 
 // Journal text in canonical member order; the write is atomic (tmp +
-// fsync + rename + dir fsync).
+// fsync + rename + dir fsync). Under the caller's state lock, writes refuse
+// unreadable journals and may replace only the same id/op/ref owner.
 char *txn_build(const txn *t);
 bool txn_write(const char *root, const char *json_text);
 

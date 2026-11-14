@@ -7,7 +7,7 @@
 #include "json.h"
 
 // Installed-release manifests: scan, validity checks and directory
-// naming all follow the state format the Java wrote.
+// naming retain guarded compatibility with the state format the Java wrote.
 
 typedef struct {
     char *file;       // grm_manifest.json path
@@ -37,7 +37,8 @@ void manifest_entry_free(manifest_entry *e);
 // foreign kinds reported to stderr, corrupt ones quarantined; -1 on failure.
 int manifests_scan(const char *root, manifest_entry **out, size_t *count);
 
-// Path helpers; NULL when repo cannot produce a directory name.
+// Stable identity keys, with existing legacy directories reused only when a
+// valid manifest proves exact provider/repo ownership. NULL on key conflict.
 char *manifest_provider_dir(const char *provider);
 char *manifest_app_dir(const char *root, const char *provider,
                        const char *repo);
@@ -54,7 +55,6 @@ bool manifest_set_locked(const char *file, bool locked);
 bool manifest_json_valid(const jobject *root);
 
 // Remove the whole app state directory (providers remove --purge).
-bool manifest_remove_app_dir(const char *root, const char *provider,
-                             const char *repo);
+bool manifest_remove_app_dir(const char *manifest_file);
 
 #endif

@@ -80,9 +80,11 @@ bool uninstall_one(const state_ctx *st, manifest_entry *m)
             m->repo);
         return false;
     }
-    if (!manifest_remove_app_dir(st->root, m->provider, m->repo))
+    if (!manifest_remove_app_dir(m->file)) {
         ui_msg(stderr, UI_ERROR, "Uninstalled %s, but failed to update state.",
             m->repo);
+        return false;
+    }
     return true;
 }
 
@@ -101,12 +103,9 @@ static bool uninstall_txn_write(const state_ctx *st,
     t.created_at = strdup(created);
     if (m->file != NULL) t.old_manifest_path = strdup(m->file);
     if (m->launcher != NULL) t.old_launcher = strdup(m->launcher);
-    if (m->path != NULL) {
-        t.old_binary = strdup(m->path);
-        const char *sl = strrchr(m->path, '/');
-        if (sl != NULL)
-            t.old_generation = strndup(m->path, (size_t)(sl - m->path));
-    }
+    // The artifact may live directly in a shared install directory (adopt).
+    // Its parent is not an owned generation and must never be tree-deleted.
+    if (m->path != NULL) t.old_binary = strdup(m->path);
     char *j = txn_build(&t);
     bool ok = j != NULL && txn_write(st->root, j);
     free(j);
