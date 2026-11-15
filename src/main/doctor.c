@@ -88,8 +88,7 @@ static void heal_apply(state_ctx *st, const cmd_opts *o, bool *index_fixed,
     int ln = providers_load(st, &list);
     strv want = {0};
     for (size_t k = 0; k < mc; k++) {
-        // the self entry has no provider registry to recover
-        if (ms[k].provider == NULL || !strcmp(ms[k].provider, "self")
+        if (ms[k].provider == NULL
             || providers_find(list, ln, ms[k].provider) != NULL) continue;
         sv_add_uniq(&want, ms[k].provider);
     }

@@ -35,12 +35,6 @@ chmod +x ape-get.com
 
 On Windows, run it from Command Prompt (`ape-get.com list`) or from PowerShell (`.\ape-get.com list`).
 
-The first run registers `ape-get` (pun intended) as a command by installing a copy to `~/.local/bin/ape-get`; the downloaded file can then be deleted. From there `ape-get` updates itself like any release it manages:
-
-```bash
-ape-get update ape-get
-```
-
 ---
 
 ## Supported commands
@@ -137,8 +131,6 @@ This produces three portable binaries:
 The macOS helper packages the same APEs used on Linux and Windows.
 Supported package kinds still apply: a repository's macOS `.tar.xz` asset
 is not a single-file `.xz` transport and cannot currently be installed.
-
-Packagers can build with `-DAPEGET_SELF=OFF`: self-registration and self-update are compiled out entirely, leaving the package manager in charge of upgrades.
 
 To remove the generated files:
 

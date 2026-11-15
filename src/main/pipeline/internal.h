@@ -39,9 +39,6 @@ typedef struct {
     bool updating;
     const char *op;
     char prov[128], path[512];
-    // where to fetch, which for self-update differs from the manifest's own
-    // coordinates: state keeps self:ape-get, the bytes come from upstream
-    char fprov[128], fpath[512];
     int timeout_ms;
     provider_entry *plist;
     int pn;
@@ -189,12 +186,6 @@ bool resolve_pin(const cmd_opts *o, state_ctx *st, const char *op,
 
 int run_pipeline(const cmd_opts *o, state_ctx *st, const char *prov_in,
     const char *path_in, const char *ref, const manifest_entry *prev,
-    bool report, bool ask, const char *version, char **to_out);
-// as run_pipeline, fetching from fetch_prov:fetch_path while committing
-// under prov_in:path_in (self-update: state stays self:ape-get)
-int run_pipeline_at(const cmd_opts *o, state_ctx *st, const char *prov_in,
-    const char *path_in, const char *ref, const char *fetch_prov,
-    const char *fetch_path, const manifest_entry *prev,
     bool report, bool ask, const char *version, char **to_out);
 
 // pipeline/source.c: owner/repo or bare name -> provider:path

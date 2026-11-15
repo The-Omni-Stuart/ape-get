@@ -171,9 +171,9 @@ static int pool_group(pipe_ctx *pc, prov_asset *pool, int n)
 int phase_preflight(pipe_ctx *pc)
 {
     pc->pn = providers_load(pc->st, &pc->plist);
-    pc->pe = providers_find(pc->plist, pc->pn, pc->fprov);
+    pc->pe = providers_find(pc->plist, pc->pn, pc->prov);
     if (pc->pe == NULL) {
-        pc->detail = path_fmt("Provider '%s' is not configured.", pc->fprov);
+        pc->detail = path_fmt("Provider '%s' is not configured.", pc->prov);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "provider missing");
         return PIPE_DONE;
     }
@@ -209,7 +209,7 @@ int phase_preflight(pipe_ctx *pc)
     pc->timeout_ms = (pc->st->timeout_seconds > 0 ? pc->st->timeout_seconds : 30)
         * 1000;
 
-    if (!provider_release_fetch(pc->pe, pc->fpath, pc->version, beta, pc->timeout_ms,
+    if (!provider_release_fetch(pc->pe, pc->path, pc->version, beta, pc->timeout_ms,
                                 &pc->rel)) {
         pc->detail = path_fmt("Failed to read releases from %s: %s", pc->ref,
             pc->rel.message);

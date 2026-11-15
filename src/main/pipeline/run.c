@@ -138,9 +138,8 @@ static void pipe_ctx_free(pipe_ctx *pc)
 
 // install (prev == NULL) or update: updates pick the
 // same-named asset, carry kind/command, back up, and keep installed_at
-int run_pipeline_at(const cmd_opts *o, state_ctx *st,
+int run_pipeline(const cmd_opts *o, state_ctx *st,
     const char *prov_in, const char *path_in, const char *ref,
-    const char *fetch_prov, const char *fetch_path,
     const manifest_entry *prev, bool report, bool ask, const char *version,
     char **to_out)
 {
@@ -160,10 +159,6 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
     c.op = c.updating ? "update" : "install";
     snprintf(c.prov, sizeof(c.prov), "%s", prov_in);
     snprintf(c.path, sizeof(c.path), "%s", path_in);
-    snprintf(c.fprov, sizeof(c.fprov), "%s",
-        fetch_prov != NULL ? fetch_prov : prov_in);
-    snprintf(c.fpath, sizeof(c.fpath), "%s",
-        fetch_path != NULL ? fetch_path : path_in);
     c.rv = RES_FAILED;
 
     int rc = phase_preflight(&c);
@@ -207,12 +202,4 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
     }
     pipe_ctx_free(&c);
     return c.rv;
-}
-
-int run_pipeline(const cmd_opts *o, state_ctx *st, const char *prov_in,
-    const char *path_in, const char *ref, const manifest_entry *prev,
-    bool report, bool ask, const char *version, char **to_out)
-{
-    return run_pipeline_at(o, st, prov_in, path_in, ref, NULL, NULL,
-        prev, report, ask, version, to_out);
 }

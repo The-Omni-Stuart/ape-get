@@ -49,5 +49,5 @@ cat > build/ape-get <<'LAUNCHER'
 exec /bin/sh "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/ape-get.com" "$@"
 LAUNCHER
 chmod +x build/ape-get
-APEGET_NO_SELF=1 ./build/ape-get help >/dev/null
+./build/ape-get help >/dev/null
 printf 'Built successfully. Run: %s/build/ape-get help\n' "$PWD"

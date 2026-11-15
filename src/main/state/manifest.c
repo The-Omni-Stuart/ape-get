@@ -171,13 +171,9 @@ char *manifest_provider_dir(const char *provider)
         : identity_name(provider, "");
 }
 
-// the self entry's repo is a bare name, never owner/repo; its directory
-// is the sanitised name under applications/self
 bool repo_dir_ok(const char *provider, const char *repo)
 {
-    if (provider != NULL && strcmp(provider, "self") == 0)
-        return repo != NULL && *repo != '\0'
-            && strchr(repo, '/') == NULL && strchr(repo, '\\') == NULL;
+    (void)provider;
     char *d = repo_directory_name(repo);
     bool ok = d != NULL;
     free(d);
@@ -246,22 +242,14 @@ char *manifest_app_dir(const char *root, const char *provider,
         return dir;
     }
     char *lp = sanitize(provider);
-    char *lr = strcmp(provider, "self") == 0 && strchr(repo, '/') == NULL
-        ? sanitize(repo) : repo_directory_name(repo);
+    char *lr = repo_directory_name(repo);
     char *legacy = app_directory(root, lp, lr);
     free(lp);
     free(lr);
     if (legacy == NULL) { free(dir); return NULL; }
     int old = directory_identity(legacy, provider, repo);
     if (old == 1) { free(dir); return legacy; }
-    // Automatic self registration must not step around a lost policy record.
-    // Explicit package operations can keep foreign ordinary legacy identities
-    // separate; self must retain the conservative S04 repair requirement.
-    struct stat sb;
-    bool self_policy = !strcmp(provider, "self") && !strcmp(repo, "ape-get")
-        && (old < 0 || lstat(legacy, &sb) == 0 || errno != ENOENT);
     free(legacy);
-    if (self_policy) { free(dir); return NULL; }
     return dir;
 }
 

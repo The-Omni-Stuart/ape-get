@@ -34,7 +34,7 @@ bool parse_ref(const char *arg, char *prov, size_t provcap,
                char *path, size_t pathcap);
 
 // Provider-less argument -> installed ref by repo tail, command or binary
-// name (never self): one hit echoes, many set *many, none leave it unset.
+// name: one hit echoes, many set *many, none leave it unset.
 manifest_entry *resolve_installed(const cmd_opts *o, const char *arg,
     manifest_entry *ms, size_t mc, bool *many);
 

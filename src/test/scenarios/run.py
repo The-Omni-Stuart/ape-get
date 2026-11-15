@@ -210,9 +210,6 @@ def run_case(case_dir: Path, name: str, cmd, update: bool) -> bool:
         env = dict(os.environ)
         env.update({"HOME": home, "USERPROFILE": home,
                     "TZ": "UTC", "TERM": "dumb", "NO_COLOUR": "1"})
-        # self-integration stays off for every scenario run; self
-        # scenarios opt back in.
-        env["APEGET_NO_SELF"] = "1"
         # Desktop-entry lookups follow XDG_DATA_HOME; pin it out unless a
         # scenario sets it explicitly.
         env.pop("XDG_CONFIG_HOME", None)

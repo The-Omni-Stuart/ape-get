@@ -11,14 +11,8 @@ endif()
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Self-integration: ON for direct releases; packagers (rpm/nix/brew) build
-# -DAPEGET_SELF=OFF and the mechanism is absent from the binary.
-option(APEGET_SELF "Compile self-integration in " ON)
 set(APEGET_VERSION "2.0.0" CACHE STRING
-    "Version baked into the self manifest ")
-if(APEGET_SELF)
-  add_compile_definitions(APEGET_SELF=1)
-endif()
+    "Version reported by about")
 add_compile_definitions(APEGET_VERSION="${APEGET_VERSION}")
 
 file(READ ${CMAKE_SOURCE_DIR}/src/main/deps.mk DEPS_MK)
@@ -197,22 +191,6 @@ apeget_test_entry(test_tls_dates TLS_DATES_TEST_EXE)
 add_test(NAME tls_dates_check
   COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_tls_dates.py
     --driver "${TLS_DATES_TEST_EXE}")
-if(APEGET_SELF)
-  add_executable(test_self_path ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_path.c)
-  target_link_libraries(test_self_path PRIVATE m_path)
-  apeget_test_entry(test_self_path SELF_PATH_TEST_EXE)
-  add_test(NAME self_executable_path COMMAND "${SELF_PATH_TEST_EXE}")
-  add_executable(test_self_refresh ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_refresh.c)
-  target_link_libraries(test_self_refresh PRIVATE
-    -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
-  apeget_test_entry(test_self_refresh SELF_REFRESH_TEST_EXE)
-  add_test(NAME self_refresh_check
-    COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_refresh.py
-      --driver "${SELF_REFRESH_TEST_EXE}" --bin "${APEGET_TEST_EXE}")
-  add_test(NAME self_pending_check
-    COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_pending.py
-      --driver "${SELF_REFRESH_TEST_EXE}" --bin "${APEGET_TEST_EXE}")
-endif()
 
 add_executable(test_tcp_connect ${CMAKE_SOURCE_DIR}/src/test/ci/test_tcp_connect.c)
 target_link_libraries(test_tcp_connect PRIVATE m_crypto)

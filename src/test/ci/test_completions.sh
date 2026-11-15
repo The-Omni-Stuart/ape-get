@@ -10,7 +10,7 @@ cat > "$work/ape-get" <<'STUB'
 #!/bin/sh
 case "$*" in
 'list --json')
-    echo '{"apps":[{"provider":"github","repo":"neovim/neovim","version":"v0.12.6"},{"provider":"gitlab","repo":"group/tool","version":"1.0"},{"provider":"self","repo":"ape-get","version":"2.0.0"}]}' ;;
+    echo '{"apps":[{"provider":"github","repo":"neovim/neovim","version":"v0.12.6"},{"provider":"gitlab","repo":"group/tool","version":"1.0"}]}' ;;
 'providers list --json')
     echo '{"providers":[{"name":"codeberg","type":"gitea"},{"name":"github","type":"github"},{"name":"gitlab","type":"gitlab"}]}' ;;
 *) exit 0 ;;
@@ -95,7 +95,7 @@ check "list has no version" NONE                ape-get list --v
 check "install --v"        --version            ape-get install --v
 check "uninstall ref"      github:neovim/neovim ape-get uninstall ""
 check "uninstall ref two"  gitlab:group/tool    ape-get uninstall ""
-check "update ref"         self:ape-get         ape-get update ""
+check "update ref"         github:neovim/neovim ape-get update ""
 check "install prefix"     github:              ape-get install gi
 check "help subcommand"    uninstall            ape-get help un
 check "providers verbs"    recover              ape-get providers ""

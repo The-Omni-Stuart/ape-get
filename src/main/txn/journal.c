@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 
 static const char *OPS[] = { "install", "update", "reinstall",
-    "downgrade", "rollback", "uninstall", "self-update", NULL };
+    "downgrade", "rollback", "uninstall", NULL };
 static const char *PHASES[] = { "prepared", "committing", "committed",
     NULL };
 

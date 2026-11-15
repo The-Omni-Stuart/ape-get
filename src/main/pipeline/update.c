@@ -48,17 +48,6 @@ static int update_one(const cmd_opts *o, state_ctx *st,
     snprintf(prov, sizeof(prov), "%s", prev->provider);
     snprintf(path, sizeof(path), "%s", prev->repo);
     snprintf(ref, sizeof(ref), "%s:%s", prev->provider, prev->repo);
-    if (!strcmp(prev->provider, "self")) {
-        // the self entry updates from the release repo but stays self:ape-get
-        char fp[128], fq[512];
-        if (!self_upstream(fp, sizeof fp, fq, sizeof fq)) {
-            ui_msg(stderr, UI_ERROR, "Invalid self-update upstream.");
-            oplog_append(st, "update", ref, "-", "invalid self upstream");
-            return RES_FAILED;
-        }
-        return run_pipeline_at(o, st, prov, path, ref, fp, fq, prev, report,
-            ask, version, to_out);
-    }
     return run_pipeline(o, st, prov, path, ref, prev, report, ask, version,
         to_out);
 }
@@ -76,11 +65,7 @@ static const char *status_id(int rv)
 int pipeline_update(const cmd_opts *o, state_ctx *st)
 {
     char prov[128], path[512], ref[700];
-    if (strcmp(o->args[1], "ape-get") == 0) {
-        // `update ape-get` names the self entry without its provider prefix
-        snprintf(prov, sizeof(prov), "self");
-        snprintf(path, sizeof(path), "ape-get");
-    } else if (!repo_parse_ref(o->args[1], prov, sizeof(prov),
+    if (!repo_parse_ref(o->args[1], prov, sizeof(prov),
         path, sizeof(path)))
         return 1;
     snprintf(ref, sizeof(ref), "%s:%s", prov, path);
@@ -125,7 +110,7 @@ int pipeline_update_all(const cmd_opts *o, state_ctx *st)
             "Failed to load applications: state scan failed");
         return 1;
     }
-    // locked releases never ride the batch; self does, like any package
+    // locked releases never ride the batch
     size_t n_locked = 0;
     for (size_t k = 0; k < mc; ) {
         if (ms[k].locked) {
@@ -263,17 +248,7 @@ int pipeline_outdated(const cmd_opts *o, state_ctx *st)
     int failed = 0;
 
     for (size_t k = 0; k < mc; k++) {
-        bool isself = !strcmp(ms[k].provider, "self");
-        char fprov[128], fpath[512];
         const char *up = ms[k].provider, *ur = ms[k].repo;
-        if (isself) {
-            if (!self_upstream(fprov, sizeof fprov, fpath, sizeof fpath)) {
-                failed = 1;
-                continue;
-            }
-            up = fprov;
-            ur = fpath;
-        }
         provider_entry *pe = providers_find(plist, pn, up);
         if (pe == NULL) {
             char *d = path_fmt("Provider '%s' is not configured.", up);

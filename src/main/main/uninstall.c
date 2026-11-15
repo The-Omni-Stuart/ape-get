@@ -170,14 +170,6 @@ int uninstall_run(const cmd_opts *o, state_ctx *st)
         oplog_append(st, "uninstall", ref, "-", msg);
         return 1;
     }
-    if (!strcmp(prov, "self")) {
-        // the self entry owns the running tool; always refuse
-        const char *msg = "ape-get cannot uninstall itself.";
-        put_s(stderr, UI_ERROR, "%s", msg);
-        manifest_list_free(ms, mc);
-        oplog_append(st, "uninstall", ref, "-", msg);
-        return 1;
-    }
     const char *upath = m->launcher != NULL ? m->launcher : m->path;
 
     if (o->dry_run) {

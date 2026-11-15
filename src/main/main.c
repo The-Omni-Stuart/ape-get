@@ -106,7 +106,6 @@ int main(int argc, char **argv)
     // a disconnected peer must surface as EPIPE from the write paths, not as a fatal signal
     signal(SIGPIPE, SIG_IGN);
     cmd_opts o;
-    self_set_argv0(argc > 0 ? argv[0] : NULL);
     cmd_parse(argv + 1, argc - 1, &o);
     ui_setup(o.colour, o.json);
     ui_suppress_progress(o.quiet || o.json || o.no_progress);
@@ -175,9 +174,7 @@ int main(int argc, char **argv)
         if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "install")) return 1;
         state_ensure(&st, o.quiet, o.json);
-        int rv = pipeline_install(&o, &st);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return pipeline_install(&o, &st);
     }
     case CMD_UPDATE: {
         state_ctx st;
@@ -185,10 +182,7 @@ int main(int argc, char **argv)
         if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "update")) return 1;
         state_ensure(&st, o.quiet, o.json);
-        int rv = o.all ? pipeline_update_all(&o, &st)
-                    : pipeline_update(&o, &st);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return o.all ? pipeline_update_all(&o, &st) : pipeline_update(&o, &st);
     }
     case CMD_UNINSTALL: {
         state_ctx st;
@@ -196,9 +190,7 @@ int main(int argc, char **argv)
         if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "uninstall")) return 1;
         state_ensure(&st, o.quiet, o.json);
-        int rv = uninstall_run(&o, &st);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return uninstall_run(&o, &st);
     }
     case CMD_ADOPT: {
         state_ctx st;
@@ -206,21 +198,15 @@ int main(int argc, char **argv)
         if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "adopt")) return 1;
         state_ensure(&st, o.quiet, o.json);
-        int rv = adopt_run(&o, &st);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return adopt_run(&o, &st);
     }
     case CMD_LIST: {
-        // query: no lock, no repair, no recovery, no bootstrap; the
-        // documented first-run registration still runs and serialises
-        // on the lock for its own writes
+        // query: no lock, no repair, no recovery, no bootstrap
         state_set_query();
         state_ctx st;
         if (!state_open_net(&st)) return 2;
         state_report_query(&st, o.quiet);
-        int rv = list_run(&o, &st);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return list_run(&o, &st);
     }
     case CMD_INFO: {
         // info is a query: no lock, no ensure
@@ -236,9 +222,7 @@ int main(int argc, char **argv)
         if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "rollback")) return 1;
         state_ensure(&st, o.quiet, o.json);
-        int rv = rollback_run(&o, &st);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return rollback_run(&o, &st);
     }
     case CMD_PROVIDERS: {
         // providers list/show are queries; the rest mutate the registry
@@ -254,9 +238,7 @@ int main(int argc, char **argv)
         if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "providers")) return 1;
         state_ensure(&st, o.quiet, o.json);
-        int rv = providers_run(&o, &st);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return providers_run(&o, &st);
     }
     case CMD_LOCK:
     case CMD_UNLOCK: {
@@ -266,9 +248,7 @@ int main(int argc, char **argv)
         if (!recover_gate(&st, &o,
                 o.id == CMD_LOCK ? "lock" : "unlock")) return 1;
         state_ensure(&st, o.quiet, o.json);
-        int rv = lock_run(&o, &st, o.id == CMD_LOCK);
-        if (rv == 0) pipeline_self_after(&o, &st);
-        return rv;
+        return lock_run(&o, &st, o.id == CMD_LOCK);
     }
     default:
         // help [command]: args[1] picks the page (C-only layout)

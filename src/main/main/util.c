@@ -86,8 +86,6 @@ manifest_entry *resolve_installed(const cmd_opts *o, const char *arg,
     *many = false;
     size_t idx[64], n = 0;
     for (size_t k = 0; k < mc; k++) {
-        if (ms[k].provider != NULL
-            && strcmp(ms[k].provider, "self") == 0) continue;
         const char *repo = ms[k].repo != NULL ? ms[k].repo : "";
         const char *tail = strrchr(repo, '/');
         tail = tail != NULL ? tail + 1 : repo;

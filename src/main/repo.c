@@ -14,18 +14,6 @@
 // ui_msg formats the text unchanged.
 #define PARSE_FAIL(...) ui_msg(stderr, UI_ERROR, __VA_ARGS__)
 
-// provider-name grammar, also the SelfId name grammar
-static bool name_ok(const char *s)
-{
-    if (*s == '\0' || !isalnum((unsigned char)*s)) return false;
-    for (const char *q = s + 1; *q != '\0'; q++) {
-        char c = *q;
-        if (!isalnum((unsigned char)c) && c != '.' && c != '_'
-            && c != '-') return false;
-    }
-    return true;
-}
-
 static bool parse_core(const char *arg, char *prov, size_t provcap,
                        char *path, size_t pathcap)
 {
@@ -76,14 +64,8 @@ static bool parse_core(const char *arg, char *prov, size_t provcap,
     for (const char *s = p; *s != '\0'; s++)
         if (*s == '/') nseg++;
     if (nseg < 2) {
-        // `self:<name>` (SelfId) is a bare name under the reserved self
-        // provider; everything else demands owner/repo
-        bool selfid = strcmp(prov, "self") == 0
-            && strchr(p, '/') == NULL && name_ok(p);
-        if (!selfid) {
-            PARSE_FAIL("Expected provider:owner/repo: %s", p);
-            return false;
-        }
+        PARSE_FAIL("Expected provider:owner/repo: %s", p);
+        return false;
     }
     for (const char *s = p; *s != '\0';) {
         const char *slash2 = strchr(s, '/');
