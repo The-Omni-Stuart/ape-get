@@ -39,8 +39,10 @@ bool json_span_bool(const char *vs, const char *ve, bool *out);
 bool json_span_int(const char *vs, const char *ve, long *out);
 
 // Growable output buffer; jb_lit appends a NUL-terminated literal,
-// jb_json_string appends s JSON-escaped inside quotes.
-typedef struct jbuf { char *p; size_t n, cap; } jbuf;
+// jb_json_string appends s JSON-escaped inside quotes. On an allocation
+// failure the buffer is poisoned: p becomes NULL, oom latches, and every
+// later append is refused (p == NULL means out of memory).
+typedef struct jbuf { char *p; size_t n, cap; bool oom; } jbuf;
 void jb_lit(jbuf *b, const char *lit);
 void jb_json_string(jbuf *b, const char *s);
 void jb_free(jbuf *b);

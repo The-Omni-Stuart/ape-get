@@ -221,7 +221,7 @@ int cmd_providers_add(const cmd_opts *o, state_ctx *st,
         jb_lit(&b, ",\"api\":");
         jb_json_string(&b, api);
         jb_lit(&b, "}}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
     } else {
         put_s(stderr, UI_OK, "Added provider %s (%s, %s).", name, ltype, api);

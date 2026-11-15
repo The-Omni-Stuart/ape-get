@@ -113,7 +113,7 @@ int lock_run(const cmd_opts *o, state_ctx *st, bool locking)
         jb_lit(&b, ",\"locked\":");
         jb_lit(&b, now ? "true" : "false");
         jb_lit(&b, "}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
     } else {
         put_s(stderr, UI_OK, "%s", result);

@@ -221,7 +221,13 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
         else if (!strcmp(a, "--diagnose")) out->diagnose = 1;
         else if (!strcmp(a, "--heal")) out->heal = 1;
         else if (!strcmp(a, "--experimental-compat")) out->experimental_compat = 1;
-        else if (n < 64) pos[n++] = argv[i];   // unknown flags included
+        // pos keeps the terminator reserved: 63 slots, and a word that
+        // no longer fits is a usage error, never a silent drop
+        else if (n < 63) pos[n++] = argv[i];   // unknown flags included
+        else {
+            out->usage_error = 1;
+            out->usage_msg = "Too many arguments";
+        }
     }
     pos[n] = NULL;
     out->args = pos;

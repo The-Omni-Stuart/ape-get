@@ -94,6 +94,17 @@ static bool drain(int fd, const unsigned char *buf, size_t len)
     return true;
 }
 
+// Another byte (or an error) where the stream should have ended: the
+// decoder consumed ib fully, so anything the file still holds is junk.
+static bool input_at_eof(int fd)
+{
+    unsigned char b;
+    ssize_t n;
+    do n = read(fd, &b, 1);
+    while (n < 0 && errno == EINTR);
+    return n == 0;
+}
+
 // Decode in_path (.xz) into out_path (caller-chosen .tmp form).
 // 0 on success; anything else means: out_path is gone, take another asset.
 int xz_decode_file(const char *in_path, const char *out_path)
@@ -140,8 +151,9 @@ int xz_decode_file(const char *in_path, const char *out_path)
         if (!drain(out, ob, sizeof ob - strm.avail_out)) break;
         if (r == LZMA_STREAM_END) {
             // padding after the stream is forbidden; flags 0 already
-            // rejects concatenated streams, this catches trailing bytes
-            ok = strm.avail_in == 0;
+            // rejects concatenated streams, and this catches trailing
+            // bytes both in ib and still unread in the file
+            ok = strm.avail_in == 0 && input_at_eof(in);
             break;
         }
         if (r != LZMA_OK) break;

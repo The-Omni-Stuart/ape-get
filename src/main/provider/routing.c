@@ -136,7 +136,13 @@ bool provider_download(const provider_entry *e, const char *url,
     } else {
         // mkstemp: PID-derived names are guessable on shared machines and
         // a planted symlink would be truncated by our fopen("wb")
-        snprintf(tmp, sizeof(tmp), "/tmp/ape-get-dl-XXXXXX");
+        const char *tdir = getenv("TMPDIR");
+        if (tdir == NULL || *tdir == '\0') tdir = "/tmp";
+        if (snprintf(tmp, sizeof(tmp), "%s/ape-get-dl-XXXXXX", tdir)
+                >= (int)sizeof(tmp)) {
+            snprintf(msg, cap, "temp path too long");
+            return false;
+        }
         int tfd = mkstemp(tmp);
         if (tfd == -1) {
             snprintf(msg, cap, "cannot write %s", tmp);
@@ -166,47 +172,52 @@ bool provider_download(const provider_entry *e, const char *url,
             return false;
         }
         *tmp_path = strdup(tmp);
+        if (*tmp_path == NULL) {
+            remove(tmp);   // a staged file nobody owns is a leak
+            snprintf(msg, cap, "out of memory");
+            return false;
+        }
         return true;
     }
-    // side files (checksums, signatures) stay on the buffered route
+    // side files (checksums, signatures) stay on the buffered route;
+    // the mkstemp file stays ours until its body lands fully on disk
     http_resp r;
-    bool ok = http_get_hdr_prog(url, hdr, have_auth ? authv : NULL,
-                                timeout_ms, cb, ud, &r, errbuf,
-                                sizeof(errbuf));
-    if (!ok) {
+    bool got = http_get_hdr_prog(url, hdr, have_auth ? authv : NULL,
+                                 timeout_ms, cb, ud, &r, errbuf,
+                                 sizeof(errbuf));
+    if (!got)
         prov_net_error(label, r.errkind, url, timeout_ms / 1000, errbuf,
             msg, cap);
-        return false;
-    }
-    if (r.status != 200) {
+    else if (r.status != 200)
         dl_status_msg(label, r.status, name, msg, cap);
-        http_resp_free(&r);
-        return false;
-    }
-    if (r.body == NULL || r.len == 0) {
+    else if (r.body == NULL || r.len == 0)
         snprintf(msg, cap, "Downloaded file is empty: %s", name);
-        http_resp_free(&r);
-        return false;
-    }
-    FILE *f = fopen(tmp, "wb");
-    if (f == NULL) {
-        snprintf(msg, cap, "cannot write %s", tmp);
-        http_resp_free(&r);
-        return false;
-    }
-    // a partial write here feeds truncated bytes straight to checksum
-    // or signature verification, so it must fail the download
-    bool wr = fwrite(r.body, 1, r.len, f) == r.len;
-    if (fclose(f) != 0) wr = false;
-    if (!wr) {
-        remove(tmp);
-        snprintf(msg, cap, "cannot write %s", tmp);
-        http_resp_free(&r);
-        return false;
+    else {
+        FILE *f = fopen(tmp, "wb");
+        bool wr = false;
+        if (f == NULL) {
+            snprintf(msg, cap, "cannot write %s", tmp);
+        } else {
+            // a partial write here feeds truncated bytes straight to
+            // checksum or signature verification, so it must fail
+            wr = fwrite(r.body, 1, r.len, f) == r.len;
+            if (fclose(f) != 0) wr = false;
+            if (!wr) snprintf(msg, cap, "cannot write %s", tmp);
+        }
+        if (wr) {
+            http_resp_free(&r);
+            *tmp_path = strdup(tmp);
+            if (*tmp_path == NULL) {
+                remove(tmp);   // a temp file nobody owns is a leak
+                snprintf(msg, cap, "out of memory");
+                return false;
+            }
+            return true;
+        }
     }
     http_resp_free(&r);
-    *tmp_path = strdup(tmp);
-    return true;
+    remove(tmp);
+    return false;
 }
 
 // Parse one release object span into r (version/release_id/draft/

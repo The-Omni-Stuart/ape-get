@@ -87,14 +87,16 @@ static void read_manifest(const char *file, mlist *l)
     }
     bool bad = false;
     char *kind = NULL;
-    bool has_kind = str_member(&root, "kind", &kind, &bad);
+    str_member(&root, "kind", &kind, &bad);
     if (bad) {
         jobject_free(&root);
         free(text);
         quarantine(file);
         return;
     }
-    if (has_kind && strcmp(kind, "grm.manifest") != 0) {
+    // a null kind reads as present-but-NULL: it is not foreign, and the
+    // missing-kind path below (manifest_is_valid) quarantines it
+    if (kind != NULL && strcmp(kind, "grm.manifest") != 0) {
         fprintf(stderr, "Ignoring foreign manifest: %s\n", file);
         free(kind);
         jobject_free(&root);

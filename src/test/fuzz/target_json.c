@@ -1,19 +1,11 @@
 // fuzz target: JSON parser and printer, incl. depth and duplicate-key edges.
-// Round-trip asserts writer → reader equality (the reader's \u drop is expected).
+// Round-trip asserts exact escape/unescape identity over C strings (the
+// \u0000 rejection that guards C-string consumers is pinned in
+// test_json_strict; it cannot appear in the writer's C-string input).
 
 #include "json.c"
 
 #include "fuzz_util.h"
-
-static void drop_dropped(const char *s, char *out)
-{
-    size_t w = 0;
-    for (const unsigned char *p = (const unsigned char *)s; *p != 0; p++)
-        if (*p != 0x7f && !(*p < 0x20 && *p != '\n' && *p != '\t'
-            && *p != '\r'))
-            out[w++] = (char)*p;
-    out[w] = '\0';
-}
 
 static void writer_round_trip(const char *s)
 {
@@ -24,11 +16,7 @@ static void writer_round_trip(const char *s)
     FUZZ_ASSERT(json_valid(b.p, b.n));
     char *got = NULL;
     FUZZ_ASSERT(json_get_string(b.p, "k", &got));
-    char *want = malloc(strlen(s) + 1);
-    if (want == NULL) return;                 // allocator OOM is not a bug
-    drop_dropped(s, want);
-    FUZZ_ASSERT(strcmp(got, want) == 0);
-    free(want);
+    FUZZ_ASSERT(!strcmp(got, s));
     free(got);
     jb_free(&b);
 }

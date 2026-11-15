@@ -148,7 +148,7 @@ int cmd_providers_remove(const cmd_opts *o, state_ctx *st,
         jb_lit(&b, "{\"removed\":");
         jb_json_string(&b, name);
         jb_lit(&b, "}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
     } else {
         put_s(stderr, UI_OK, "Removed provider %s.", name);

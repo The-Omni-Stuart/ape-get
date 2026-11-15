@@ -464,7 +464,7 @@ void phase_record(pipe_ctx *pc)
             jb_json_string(&r, kind_manifest_name(pc->kind));
             jb_kv(&r, "command", pc->command, &g);
             jb_lit(&r, "}}");
-            puts(r.p);
+            puts(r.p ? r.p : "");
             jb_free(&r);
         } else if (!pc->o->quiet) {
             ui_msg(stderr, UI_OK, pc->updating

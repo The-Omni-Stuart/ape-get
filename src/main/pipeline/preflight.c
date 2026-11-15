@@ -551,7 +551,7 @@ int phase_preflight(pipe_ctx *pc)
                 jb_lit(&b, ",\"version\":");
                 json_null_or_string(&b, pc->prev->version);
                 jb_lit(&b, "}}");
-                puts(b.p);
+                puts(b.p ? b.p : "");
                 jb_free(&b);
             } else if (!pc->o->quiet) {
                 ui_msg(stderr, UI_OK, "Already up to date.");
@@ -586,7 +586,7 @@ int phase_preflight(pipe_ctx *pc)
             jb_json_string(&b, kind_manifest_name(pc->kind));
             jb_kv(&b, "command", pc->command, &f);
             jb_lit(&b, "}");
-            puts(b.p);
+            puts(b.p ? b.p : "");
             jb_free(&b);
         } else {
             if (pc->updating)

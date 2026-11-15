@@ -401,8 +401,8 @@ static void self_refresh(const char *mfile, const char *target,
     }
     char now[40];
     self_instant(now, sizeof now);
-    // jbuf has no allocation-failure flag. Reserve all possible output up
-    // front, including worst-case version escaping and a missing updated_at.
+    // self_raw_append bypasses jb_grow, so reserve all possible output
+    // up front, including worst-case version escaping and a missing updated_at.
     size_t extra = 6 * sizeof(APEGET_VERSION) + sizeof now + 64;
     size_t len = strlen(txt);
     if (len > SIZE_MAX - extra) return;

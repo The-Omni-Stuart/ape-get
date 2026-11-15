@@ -65,6 +65,11 @@ static bool http_get_once(const char *url, const char *hdr_line,
     if (port == 443) snprintf(hostp, sizeof(hostp), "%s", host);
     else snprintf(hostp, sizeof(hostp), "%s:%d", host, port);
     char *req = malloc(4096 + (hdr_line != NULL ? strlen(hdr_line) : 0));
+    if (req == NULL) {
+        snprintf(errbuf, errcap, "request failed");
+        tls_close(c);
+        return false;
+    }
     int n = snprintf(req, 4096 + (hdr_line != NULL ? strlen(hdr_line) : 0),
         "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n"

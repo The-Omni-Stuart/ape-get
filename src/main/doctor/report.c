@@ -60,7 +60,7 @@ void report_lines(const state_ctx *st, strv *issues, strv *warnings,
             json_array(&b, declined);
         }
         jb_lit(&b, "}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
         return;
     }

@@ -191,7 +191,7 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
             jb_lit(&b, ",\"backup\":");
             json_null_or_string(&b, bart);
             jb_lit(&b, "}");
-            puts(b.p);
+            puts(b.p ? b.p : "");
             jb_free(&b);
         } else {
             printf("Dry run: would roll back %s from %s to %s.\n", ref, cur,
@@ -491,7 +491,7 @@ int rollback_run(const cmd_opts *o, state_ctx *st)
         jb_lit(&b, ",\"version\":");
         json_null_or_string(&b, bver);
         jb_lit(&b, "}}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
     } else if (!o->quiet) {
         char *msg = locked

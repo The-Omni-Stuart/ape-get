@@ -62,7 +62,7 @@ int list_run(const cmd_opts *o, state_ctx *st)
             jb_lit(&b, "}");
         }
         jb_lit(&b, "]}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
     } else if (mc == 0) {
         put_out("No releases installed.");

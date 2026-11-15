@@ -219,7 +219,7 @@ int adopt_run(const cmd_opts *o, state_ctx *st)
         jb_lit(&j, ",\"version\":null,\"asset\":");
         jb_json_string(&j, iname);
         jb_lit(&j, ",\"kind\":\"unknown\",\"command\":null}}");
-        puts(j.p);
+        puts(j.p ? j.p : "");
         jb_free(&j);
     } else {
         char *msg = path_fmt("Adopted %s at %s.", ref, file);

@@ -134,7 +134,7 @@ static int cmd_providers_list(const cmd_opts *o, state_ctx *st)
     }
     if (o->json) {
         jb_lit(&out, "]}");
-        puts(out.p);
+        puts(out.p ? out.p : "");
     }
     jb_free(&out);
     manifest_list_free(ms, mc);
@@ -188,7 +188,7 @@ static int cmd_providers_show(const cmd_opts *o, state_ctx *st, const char *name
                 free(ref);
             }
         jb_lit(&b, "]}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
     } else {
         char ln[1100];
@@ -241,7 +241,7 @@ static void print_provider_result(const char *token_env, bool built_in,
     jb_lit(&b, ",\"api\":");
     jb_json_string(&b, api);
     jb_lit(&b, "}}");
-    puts(b.p);
+    puts(b.p ? b.p : "");
     jb_free(&b);
 }
 

@@ -73,14 +73,13 @@ static bool gitlab_release_from_json(const char *text, prov_release *r,
                         char *dl = direct != NULL && *direct != '\0'
                             ? direct
                             : url != NULL && *url != '\0' ? url : NULL;
+                        // nm transfers to the asset only once its url copy
+                        // exists; until then the free below owns it
                         if (nm != NULL && dl != NULL) {
-                            r->assets[r->n].name = nm;
                             r->assets[r->n].url = strdup(dl);
-                            if (r->assets[r->n].url == NULL) {
-                                free(nm);
-                            } else {
+                            if (r->assets[r->n].url != NULL) {
+                                r->assets[r->n].name = nm;
                                 nm = NULL;
-                                dl = NULL;
                                 r->n++;
                             }
                         }

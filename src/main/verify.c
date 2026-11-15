@@ -166,6 +166,13 @@ sig_status sig_run_gpg(const char *sig_file, const char *artifact,
     const char *av[] = { "gpg", "--batch", "--status-fd=1", "--verify",
         sig_file, artifact, NULL };
     char **env = sanitized_env();
+    if (env == NULL) {
+        // fail closed: without the allowlist gpg must not inherit the
+        // full environment (an OOM must not silently undo the isolation)
+        out->status = S_ERROR;
+        out->detail = strdup("cannot build the gpg environment");
+        return out->status;
+    }
     char *o = NULL;
     long rc = proc_run_env(av, env, gpg_timeout_ms(), &o);
     if (env != NULL) free_env(env);

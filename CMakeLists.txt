@@ -216,6 +216,38 @@ apeget_test_entry(test_tcp_connect TCP_CONNECT_TEST_EXE)
 add_test(NAME tcp_connect_check COMMAND "${TCP_CONNECT_TEST_EXE}")
 set_tests_properties(tcp_connect_check PROPERTIES TIMEOUT 10)
 
+# strict JSON acceptance (parser gates and the shared unescaper)
+add_executable(test_json_strict ${CMAKE_SOURCE_DIR}/src/test/ci/test_json_strict.c)
+target_link_libraries(test_json_strict PRIVATE m_json)
+apeget_test_entry(test_json_strict JSON_STRICT_TEST_EXE)
+add_test(NAME json_strict_check COMMAND "${JSON_STRICT_TEST_EXE}")
+
+# allocator-fault proof: json.c compiled in, one realloc hook (N09)
+add_executable(test_json_oom ${CMAKE_SOURCE_DIR}/src/test/ci/test_json_oom.c)
+target_include_directories(test_json_oom PRIVATE ${CMAKE_SOURCE_DIR}/src/main)
+apeget_test_entry(test_json_oom JSON_OOM_TEST_EXE)
+add_test(NAME json_oom_check COMMAND "${JSON_OOM_TEST_EXE}")
+
+# declared-size cap must refuse before touching the destination (N11)
+add_executable(test_download_cap ${CMAKE_SOURCE_DIR}/src/test/ci/test_download_cap.c)
+target_link_libraries(test_download_cap PRIVATE
+  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+target_link_options(test_download_cap PRIVATE
+  -Wl,--wrap=open_conn -Wl,--wrap=tls_read
+  -Wl,--wrap=tls_write_all -Wl,--wrap=tls_close)
+apeget_test_entry(test_download_cap DOWNLOAD_CAP_TEST_EXE)
+add_test(NAME download_cap_check COMMAND "${DOWNLOAD_CAP_TEST_EXE}")
+set_tests_properties(download_cap_check PROPERTIES TIMEOUT 30)
+
+# side-file temp files must not outlive a failed fetch (N10)
+add_executable(test_routing_tmp ${CMAKE_SOURCE_DIR}/src/test/ci/test_routing_tmp.c)
+target_link_libraries(test_routing_tmp PRIVATE
+  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+target_link_options(test_routing_tmp PRIVATE -Wl,--wrap=http_get_hdr_prog)
+apeget_test_entry(test_routing_tmp ROUTING_TMP_TEST_EXE)
+add_test(NAME routing_tmp_check COMMAND "${ROUTING_TMP_TEST_EXE}")
+set_tests_properties(routing_tmp_check PROPERTIES TIMEOUT 30)
+
 add_executable(test_proc_run ${CMAKE_SOURCE_DIR}/src/test/ci/test_proc_run.c)
 target_link_libraries(test_proc_run PRIVATE m_proc)
 apeget_test_entry(test_proc_run PROC_RUN_TEST_EXE)
@@ -276,3 +308,12 @@ add_test(NAME delta_roundtrip
            -DENC=${DELTA_ENC_TEST_EXE}
            -DDEC=${DELTA_DEC_TEST_EXE}
            -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_delta_roundtrip.cmake)
+
+# trailing bytes at the 4096-byte input boundary must be refused (P11)
+add_executable(rt_xz_tail ${CMAKE_SOURCE_DIR}/src/test/ci/test_xz_tail_dec.c)
+target_link_libraries(rt_xz_tail PRIVATE m_pipeline)
+apeget_test_entry(rt_xz_tail XZ_TAIL_TEST_EXE)
+add_test(NAME xz_tail_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_xz_tail.py
+    --driver "${XZ_TAIL_TEST_EXE}")
+set_tests_properties(xz_tail_check PROPERTIES TIMEOUT 120)

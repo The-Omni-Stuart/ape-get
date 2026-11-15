@@ -50,6 +50,11 @@ static bool http_download_once(const char *url, const char *hdr_line,
     if (port == 443) snprintf(hostp, sizeof(hostp), "%s", host);
     else snprintf(hostp, sizeof(hostp), "%s:%d", host, port);
     char *req = malloc(4096 + (hdr_line != NULL ? strlen(hdr_line) : 0));
+    if (req == NULL) {
+        snprintf(errbuf, errcap, "request failed");
+        tls_close(c);
+        return false;
+    }
     int n = snprintf(req, 4096 + (hdr_line != NULL ? strlen(hdr_line) : 0),
         "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n"
@@ -154,21 +159,19 @@ static bool http_download_once(const char *url, const char *hdr_line,
     }
     buf[hoff] = head_end_saved;         // body bytes live again
 
+    long long total = chunked ? -1 : clen;
+    // a lying-enormous declared length refuses before the destination
+    // is opened, let alone truncated by the "wb" below
+    if (max_bytes > 0 && clen > max_bytes) {
+        snprintf(errbuf, errcap, "declared body of %lld bytes exceeds the "
+            "%lld MiB cap", clen, max_bytes >> 20);
+        goto fail_conn;
+    }
     FILE *f = fopen(dest_path, "wb");
     if (f == NULL) {
         snprintf(errbuf, errcap, "failed writing %s: %s", dest_path,
                  strerror(errno));
         goto fail_conn;
-    }
-    long long total = chunked ? -1 : clen;
-    // a lying-enormous declared length refuses before the first byte
-    // is written, let alone read
-    if (max_bytes > 0 && clen > max_bytes) {
-        snprintf(errbuf, errcap, "declared body of %lld bytes exceeds the "
-            "%lld MiB cap", clen, max_bytes >> 20);
-        tls_close(c);
-        free(buf);
-        return false;
     }
     long long written = 0;
     if (cb != NULL) cb(0, total, ud);

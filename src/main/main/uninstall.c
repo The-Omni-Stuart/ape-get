@@ -188,7 +188,7 @@ int uninstall_run(const cmd_opts *o, state_ctx *st)
             jb_lit(&b, ",\"path\":");
             jb_json_string(&b, upath);
             jb_lit(&b, "}");
-            puts(b.p);
+            puts(b.p ? b.p : "");
             jb_free(&b);
         } else {
             printf("Dry run: would uninstall %s.\n", ref);
@@ -265,7 +265,7 @@ int uninstall_run(const cmd_opts *o, state_ctx *st)
         jb_lit(&b, ",\"path\":");
         jb_json_string(&b, done_path != NULL ? done_path : "");
         jb_lit(&b, "}}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
         free(done_path);
     } else if (!o->quiet) {

@@ -78,7 +78,7 @@ static int search_one(const cmd_opts *o, state_ctx *st,
             search_entry_json(&b, e->name, &res.items[k]);
         }
         jb_lit(&b, "]}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
         prov_search_free(&res);
         return 0;
@@ -146,7 +146,7 @@ static int search_all(const cmd_opts *o, state_ctx *st, const char *query)
             jb_lit(&b, "}");
         }
         jb_lit(&b, "]}");
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
     } else {
         for (int k = 0; results != NULL && k < n; k++)

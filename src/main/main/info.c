@@ -333,7 +333,7 @@ int info_run(const cmd_opts *o, state_ctx *st)
     if (o->json) {
         jbuf b = {0};
         app_info_json(&b, text, &root, m);
-        puts(b.p);
+        puts(b.p ? b.p : "");
         jb_free(&b);
         goto done;
     }
