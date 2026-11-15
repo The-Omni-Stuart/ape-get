@@ -143,6 +143,16 @@ int adopt_run(const cmd_opts *o, state_ctx *st)
         goto fail;
     }
 
+    // S09: a dry run reports the plan and writes no manifest
+    if (o->dry_run) {
+        printf("Dry run: would adopt %s as %s.\n", file, ref);
+        puts("  Version and checksum would stay unknown.");
+        puts("No changes were made.");
+        manifest_list_free(ms, mc);
+        free(uri); free(mfile); free(app_dir); free(file); free(iname);
+        return 0;
+    }
+
     {
         char *q = path_fmt(
             "Adopt %s as %s?\nVersion and checksum are unknown.",

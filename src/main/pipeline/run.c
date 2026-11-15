@@ -94,6 +94,7 @@ static void pipe_ctx_free(pipe_ctx *pc)
 {
     free(pc->detail);
     free(pc->backups);
+    free(pc->prune_paths);
     if (pc->delta_fd >= 0) close(pc->delta_fd);
     if (pc->j_on && !pc->j_committed) {
         // crash-window equivalent: undo the transaction, removing the

@@ -51,9 +51,11 @@ void ui_msg(FILE *f, ui_style style, const char *fmt, ...)
 void oplog_append(const state_ctx *st, const char *op, const char *ref,
     const char *change, const char *detail)
 { (void)st; (void)op; (void)ref; (void)change; (void)detail; }
-bool backup_create_and_prune(const state_ctx *s, const manifest_entry *p,
-    int n, char **b, char *e, size_t cap)
-{ (void)s; (void)p; (void)n; (void)b; (void)e; (void)cap; abort(); }
+bool backup_create(const state_ctx *s, const manifest_entry *p,
+    int n, char **b, char **pp, char *e, size_t cap)
+{ (void)s; (void)p; (void)n; (void)b; (void)pp; (void)e; (void)cap; abort(); }
+void backup_prune_trimmed(const char *a, const char *pp)
+{ (void)a; (void)pp; abort(); }
 char *manifest_backups_array(const char *p) { (void)p; abort(); }
 char *assimilate_asset(const char *p, const char *b, char **e)
 { (void)p; (void)b; (void)e; abort(); }
@@ -68,6 +70,7 @@ char *desktop_entry_path(const state_ctx *st, const char *command)
 { (void)st; assert(command == NULL); return NULL; }
 const char *desktop_recorded(const cmd_opts *o, const char *e)
 { (void)o; assert(e == NULL); return NULL; }
+bool desktop_entry_owned(const char *e) { (void)e; abort(); }
 char *desktop_icon_copy(const char *r, const char *a)
 { (void)r; (void)a; abort(); }
 void desktop_entry_write(const char *e, const char *c, const char *l,

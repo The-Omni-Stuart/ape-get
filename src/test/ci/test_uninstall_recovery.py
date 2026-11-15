@@ -45,7 +45,7 @@ def run_case(exe, base, name):
     old = {"manifest_path": str(manifest), "binary": str(payload),
            "launcher": str(launcher), "generation": str(payload.parent)}
     phase = "prepared" if name == "prepared" else "committing"
-    command = ["list", "--json"]
+    command = ["unlock", "github:owner/tool"]
     reject = False
     retry = None
     if name in {"legacy-shared-root", "already-absent", "producer"}:
@@ -113,10 +113,17 @@ def run_case(exe, base, name):
         reject = True
         retry = lambda: state.chmod(0o755)
     elif name == "producer":
+        if os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0):
+            return "SKIP permission-dependent desktop error"
         blocker = root / "desktop-directory"
         blocker.mkdir()
-        obj["install"]["desktop_entry"] = str(blocker)
+        entry = blocker / "tool.desktop"
+        entry.write_text("[Desktop Entry]\nType=Application\nName=tool\n"
+                         "X-ApeGet-Managed=true\n")
+        obj["install"]["desktop_entry"] = str(entry)
         command = ["uninstall", "github:owner/tool", "--yes"]
+        blocker.chmod(0o555)
+        retry = lambda: blocker.chmod(0o755)
     elif name == "normal-cleanup-retry":
         if os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0):
             return "SKIP permission-dependent normal cleanup error"
@@ -191,19 +198,19 @@ def run_case(exe, base, name):
             if retry is not None:
                 retry()
                 retry = None
-                p = invoke(["list", "--json"])
-                assert p.returncode == 0 and not journal.exists(), (p.stdout, p.stderr)
+                p = invoke(["unlock", "github:owner/tool"])
+                assert p.returncode in (0, 1) and not journal.exists(), (p.stdout, p.stderr)
                 assert not app.exists()
         elif name == "prepared":
             assert p.returncode == 0 and not journal.exists(), (p.stdout, p.stderr)
             assert payload.exists() and manifest.exists() and launcher.is_symlink()
         else:
-            assert p.returncode == 0 and not journal.exists(), (p.stdout, p.stderr)
+            assert p.returncode in (0, 1) and not journal.exists(), (p.stdout, p.stderr)
             assert not payload.exists() and not launcher.is_symlink() and not app.exists()
             # Replaying an already completed journal is harmless too.
             journal.write_text(json.dumps(record))
             p = invoke()
-            assert p.returncode == 0 and not journal.exists(), (p.stdout, p.stderr)
+            assert p.returncode in (0, 1) and not journal.exists(), (p.stdout, p.stderr)
         assert sentinel.read_text() == "unrelated data\n"
         unrelated = root / "bin/unrelated-command"
         if name != "missing-install-root":

@@ -21,6 +21,7 @@ typedef struct {
     char *command;    // install.command, NULL when absent
     char *asset;      // asset.name, NULL when absent
     char *asset_url;  // asset.url, NULL when absent (update identity)
+    long release_id;  // numeric release id; 0 when absent or null
     char *sha256;     // asset.sha256, NULL when absent (delta gate, I4)
     char *installed;  // installed_at, always present on valid records
     char *updated;    // updated_at, NULL when absent

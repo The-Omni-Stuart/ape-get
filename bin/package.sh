@@ -11,16 +11,28 @@ mkdir -p "$OUT"
 apelink() { /bin/sh "$COSMO_DIR/bin/apelink" "$@"; }
 file_size() { wc -c < "$1" | tr -d '[:space:]'; }
 
+# Pre-strip inputs: .GCC.command.line/.comment are compile-time bookkeeping,
+# and the input's .zip is the linker's pre-embedded runtime copy that apelink
+# embeds again below — dropping the duplicate saves ~50 KB per member.
+strip_deadweight() { # <arch> <in> <out>
+  "$COSMO_DIR/bin/$1-linux-cosmo-objcopy" \
+    --remove-section=.GCC.command.line --remove-section=.comment \
+    --remove-section=.zip "$2" "$3"
+}
+TMPD=$(mktemp -d); trap 'rm -rf "$TMPD"' EXIT
+strip_deadweight x86_64 "$X86_TREE/ape-get" "$TMPD/x86"
+strip_deadweight aarch64 "$AA_TREE/ape-get" "$TMPD/arm"
+
 # -s: no embedded symbol tables (~61 KB compressed on the fat APE); the tables
 # only name crash-backtrace frames — symbolicate offline on the pre-package ELF.
 apelink -s -V -1 \
         -l "$COSMO_DIR/bin/ape-x86_64.elf" \
         -l "$COSMO_DIR/bin/ape-aarch64.elf" -M "$COSMO_DIR/bin/ape-m1.c" \
-        -o "$OUT/ape-get.com" "$X86_TREE/ape-get" "$AA_TREE/ape-get"
+        -o "$OUT/ape-get.com" "$TMPD/x86" "$TMPD/arm"
 apelink -s -V -1 -l "$COSMO_DIR/bin/ape-x86_64.elf" \
-        -o "$OUT/ape-get-x86_64.com" "$X86_TREE/ape-get"
+        -o "$OUT/ape-get-x86_64.com" "$TMPD/x86"
 apelink -s -V -1 -l "$COSMO_DIR/bin/ape-aarch64.elf" -M "$COSMO_DIR/bin/ape-m1.c" \
-        -o "$OUT/ape-get-aarch64.com" "$AA_TREE/ape-get"
+        -o "$OUT/ape-get-aarch64.com" "$TMPD/arm"
 
 # Magic gate: packaged APEs start with MZqFpD=' or jartsr='.
 for f in "$OUT"/ape-get*.com; do

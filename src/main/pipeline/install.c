@@ -14,11 +14,12 @@
 #include <string.h>
 
 // -l/--lock: arm the lock right after a successful install so
-// update --all skips the release from the very next run
+// update --all skips the release from the very next run; a dry run
+// leaves the lock flag exactly as it found it (P07)
 static void post_install_lock(const cmd_opts *o, state_ctx *st,
     const char *prov, const char *path)
 {
-    if (!o->lock) return;
+    if (!o->lock || o->dry_run) return;
     char *ad = manifest_app_dir(st->root, prov, path);
     char *mf = ad != NULL ? path_join(ad, "grm_manifest.json") : NULL;
     bool ok = mf != NULL && manifest_set_locked(st->root, mf, true);

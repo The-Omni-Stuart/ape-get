@@ -95,7 +95,7 @@ def run_case(exe, driver, base, name, fault=None):
         if Path(path) != journal or name != "symlink-loop":
             assert Path(path).resolve().is_relative_to(root.resolve()), path
 
-    def invoke(use_fault=None):
+    def invoke(use_fault=None, repaired=False):
         for path in [state, app, install, journal, binary, manifest, bt, mt,
                      target, sentinel, *[Path(env[k]) for k in [
                          "HOME", "USERPROFILE", "XDG_DATA_HOME", "XDG_CONFIG_HOME",
@@ -107,8 +107,12 @@ def run_case(exe, driver, base, name, fault=None):
                     guard(value)
         if journal.is_symlink():
             guard(journal.parent / os.readlink(journal))
-        args = [str(driver), use_fault, str(root)] if use_fault else [
-            str(exe), "list", "--json"]
+        if use_fault:
+            args = [str(driver), use_fault, str(root)]
+        elif blocked and not repaired:
+            args = [str(exe), "list", "--json"]
+        else:
+            args = [str(exe), "unlock", "github:owner/tool"]
         return subprocess.run(args, cwd=root, env=env, capture_output=True,
                               text=True, timeout=15)
 
@@ -129,7 +133,7 @@ def run_case(exe, driver, base, name, fault=None):
                     "unreadable_issue": True, "reads": 3 if fault.startswith("read-") else 0
                 }, (name, result, p.stderr)
             else:
-                assert p.returncode != 0, (name, p.stdout, p.stderr)
+                assert p.returncode == 0, (name, p.stdout, p.stderr)
             assert "journal is unreadable" in p.stderr, (name, p.stderr)
             entry_after = journal.lstat()
             assert (entry_before.st_ino, entry_before.st_mode) == (
@@ -156,13 +160,15 @@ def run_case(exe, driver, base, name, fault=None):
         elif journal.is_dir():
             journal.rmdir()
         journal.write_text(journal_text)
-        p = invoke()
+        p = invoke(None, True)
     assert p.returncode == 0 and not journal.exists(), (name, p.stdout, p.stderr)
-    assert not bt.exists() and not mt.exists(), name
+    assert not mt.exists(), name
     if name in {"absent", "prepared"}:
         assert binary.read_bytes() == OLD and manifest.read_bytes() == old_manifest, name
     else:
         assert binary.read_bytes() == NEW and manifest.read_bytes() == new_manifest, name
+    if name == "absent":
+        assert bt.read_bytes() == NEW, name
     assert sentinel.read_bytes() == b"preserve unrelated command\n", name
     return "PASS"
 

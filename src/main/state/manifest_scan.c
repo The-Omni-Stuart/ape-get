@@ -1,7 +1,9 @@
-// Scan under applications/: read each record, quarantine corrupt
-// files, report foreign kinds, collect and sort the valid entries.
+// Scan under applications/: read each record, quarantine corrupt files
+// (query commands only report them), report foreign kinds, collect and
+// sort the valid entries.
 
 #include "manifest.h"
+#include "state.h"
 #include "state/internal.h"
 
 #include <dirent.h>
@@ -37,6 +39,11 @@ static void push(mlist *l, manifest_entry *e)
 
 static void quarantine(const char *file)
 {
+    if (state_is_query()) {
+        fprintf(stderr, "Warning: corrupt manifest left in place: %s\n",
+            file);
+        return;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     long long millis = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
@@ -149,6 +156,9 @@ static void read_manifest(const char *file, mlist *l)
         jobject_free(&ao);
         free(at);
     }
+    long release_id = 0;
+    int ri = jobject_find(&root, "release_id");
+    if (ri >= 0) (void)json_span_int(root.vals[ri], root.vends[ri], &release_id);
     int li = jobject_find(&root, "locked");
     bool locked = false;
     if (li >= 0) json_span_bool(root.vals[li], root.vends[li], &locked);
@@ -160,6 +170,7 @@ static void read_manifest(const char *file, mlist *l)
         .version = version, .path = path, .command = NULL, .asset = asset,
         .asset_url = asset_url, .sha256 = asset_sha,
         .installed = installed, .updated = updated, .locked = locked,
+        .release_id = release_id,
         .compat = compat,
     };
     if (e.file == NULL || e.provider == NULL || e.repo == NULL)

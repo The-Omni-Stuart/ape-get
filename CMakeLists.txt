@@ -185,6 +185,9 @@ add_test(NAME recovery_identity_check
 add_test(NAME uninstall_recovery_check
   COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_uninstall_recovery.py
     --bin "${APEGET_TEST_EXE}")
+add_test(NAME query_purity_check
+  COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_query_purity.py
+    --bin "${APEGET_TEST_EXE}")
 add_executable(test_tls_dates ${CMAKE_SOURCE_DIR}/src/test/ci/test_tls_dates.c)
 target_link_libraries(test_tls_dates PRIVATE
   LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)

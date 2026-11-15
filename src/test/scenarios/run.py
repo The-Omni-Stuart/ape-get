@@ -88,10 +88,6 @@ def load(path: Path):
     return env
 
 
-import re as _re_glob
-_GLOB_ID_RE = _re_glob.compile(r"\.tmp-[0-9a-f]{16}")
-
-
 def dump_files(home: str, rels, state: str, install: str) -> str:
     """Post-run snapshot of listed paths (relative to the fake home) for
     the .files fixtures; absent paths are pinned as such so deletions
@@ -110,7 +106,9 @@ def dump_files(home: str, rels, state: str, install: str) -> str:
             names = [rel]
         for one in names:
             p = Path(one) if one.startswith("/") else Path(home) / one
-            head = _GLOB_ID_RE.sub(".tmp-<ID>", one) if "*" in rel else one
+            # glob names may carry random generation dirs (backups/) —
+            # mask the header exactly like bodies so the golden stays stable
+            head = normalize(one, state, install, home) if "*" in rel else one
             if p.is_file():
                 mode = st.S_IMODE(p.stat().st_mode)
                 body = normalize(p.read_text(errors="replace"),

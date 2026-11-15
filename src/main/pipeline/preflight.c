@@ -529,18 +529,15 @@ int phase_preflight(pipe_ctx *pc)
     pc->launcher = pc->command != NULL
         ? path_fmt("%s/%s", pc->st->install_root, pc->command) : NULL;
 
-    // up-to-date means an identical asset URL, or the same logical
-    // artifact at the same version (twins and deltas change the URL,
-    // never the identity); --reinstall re-runs even an identical asset
-    bool same_version = pc->updating && pc->prev->asset != NULL
-        && pc->prev->version != NULL
-        && pc->rel.version != NULL && pc->prev->version != NULL
-        && ver_eq(pc->prev->version, pc->rel.version)
+    // up-to-date means the same logical artifact at the same release;
+    // twins and deltas change the URL, never the identity, and the URL
+    // itself is transport evidence only, never version proof (P04);
+    // --reinstall re-runs even an identical asset
+    bool same_artifact = pc->updating && pc->prev->asset != NULL
         && !strcmp(pc->prev->asset, pc->base);
-    if (pc->updating && !pc->o->reinstall
-        && ((pc->prev->asset_url != NULL && pc->asset->url != NULL
-             && !strcmp(pc->prev->asset_url, pc->asset->url))
-            || same_version)) {
+    if (pc->updating && !pc->o->reinstall && same_artifact
+        && same_release(pc->prev->version, pc->prev->release_id,
+            pc->rel.version, pc->rel.release_id)) {
         if (pc->report) {
             if (pc->o->json) {
                 jbuf b = {0};

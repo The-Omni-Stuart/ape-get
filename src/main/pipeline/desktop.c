@@ -127,9 +127,23 @@ void desktop_entry_write(const char *entry, const char *command,
 }
 
 // The entry to record: --no-desktop takes it out, --desktop puts it in
-// whatever the old state said; an entry left by an earlier run stays recorded.
+// whatever the old state said. Inheriting an existing file requires our
+// managed marker — an ape-get write — so a foreign entry with the same
+// name is never claimed (P10).
 const char *desktop_recorded(const cmd_opts *o, const char *entry)
 {
     if (entry == NULL || o->no_desktop) return NULL;
-    return o->desktop || fs_exists(entry) ? entry : NULL;
+    if (o->desktop) return entry;
+    return desktop_entry_owned(entry) ? entry : NULL;
+}
+
+// Files ape-get writes carry the X-ApeGet-Managed key; nothing without it
+// may be deleted as one of ours, whatever a manifest once recorded.
+bool desktop_entry_owned(const char *entry)
+{
+    size_t n = 0;
+    char *text = entry != NULL ? fs_read_file(entry, &n) : NULL;
+    bool ok = text != NULL && strstr(text, "X-ApeGet-Managed=true") != NULL;
+    free(text);
+    return ok;
 }

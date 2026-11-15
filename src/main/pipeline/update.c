@@ -30,6 +30,16 @@
 #include <time.h>
 #include <unistd.h>
 
+bool same_release(const char *cur_version, long cur_release_id,
+    const char *new_version, const char *new_release_id)
+{
+    if (!ver_eq(cur_version, new_version)) return false;
+    if (cur_release_id != 0 && new_release_id != NULL
+        && cur_release_id != strtol(new_release_id, NULL, 10)) return false;
+    return true;
+}
+
+
 static int update_one(const cmd_opts *o, state_ctx *st,
                       const manifest_entry *prev, bool report, bool ask,
                       const char *version, char **to_out)
@@ -323,16 +333,12 @@ int pipeline_outdated(const cmd_opts *o, state_ctx *st)
                 }
             }
         if (sel < 0) sel = 0;
-        bool newer;
-        if (isself && rel.version != NULL && ms[k].version != NULL)
-            // the registered file:// URL cannot judge freshness; the version can
-            newer = !ver_eq(rel.version, ms[k].version);
-        else
-            // identity is (artifact, version): a variant swap (raw URL vs
-            // twin URL) at the same version is not "outdated"
-            newer = ms[k].asset_url == NULL
-                || (strcmp(pool[sel].url, ms[k].asset_url) != 0
-                    && !ver_eq(rel.version, ms[k].version));
+        // freshness is the release identity (version, plus release id
+        // where recorded), not the asset URL: stable /latest-style URLs
+        // carry newer releases too, and a variant swap at the same
+        // release is not "outdated" (P04)
+        bool newer = !same_release(ms[k].version, ms[k].release_id,
+            rel.version, rel.release_id);
         if (newer && oc < mc && refv != NULL && cur != NULL
             && latest != NULL && asset != NULL) {
             refv[oc] = strdup(ref);

@@ -1,0 +1,10 @@
+--- .local/share/github-release-manager/applications/mock/owner__tool/grm_manifest.json (0644) ---
+{"kind": "grm.manifest", "schema_version": 1, "provider": "mock", "repo": "owner/tool", "version": "1.0.0", "asset": {"name": "tool-1.0.0.AppImage", "url": "https://127.0.0.1:18081/assets/tool-1.0.0.AppImage"}, "install": {"kind": "appimage", "command": "tool", "path": "<STATE_ROOT>/applications/mock/owner__tool/versions/1.0.0/tool-1.0.0.AppImage"}, "installed_at": "<INSTANT>", "backups": [{"version": "1.0.0", "path": "<STATE_ROOT>/applications/mock/owner__tool/backups/111-aaa", "created_at": "<INSTANT>"}, {"version": "1.0.0", "path": "<STATE_ROOT>/applications/mock/evil", "created_at": "<INSTANT>"}, {"version": "1.0.0", "path": "<STATE_ROOT>/applications/mock/owner__tool/backups/222-bbb", "created_at": "<INSTANT>"}]}
+--- .local/share/github-release-manager/applications/mock/owner__tool/backups/111-aaa/tool (0644) ---
+genA
+--- .local/share/github-release-manager/applications/mock/owner__tool/backups/222-bbb/tool (0644) ---
+genB
+--- .local/share/github-release-manager/applications/mock/evil/tool (0644) ---
+evil
+--- .local/share/github-release-manager/grm_transaction.json (0644) ---
+{"kind":"grm.transaction","schema_version":1,"id": "<ID>","op":"update","ref":"mock:owner/tool","phase":"committing","created_at":"<INSTANT>","old":{"manifest_path":"<STATE_ROOT>/applications/mock/owner__tool/grm_manifest.json","binary":"<STATE_ROOT>/applications/mock/owner__tool/versions/1.0.0/tool-1.0.0.AppImage"},"new":{"generation":"<STATE_ROOT>/applications/mock/owner__tool/versions/1.1.0","manifest_tmp":"<STATE_ROOT>/applications/mock/owner__tool/grm_manifest.json.tmp-<ID>","manifest":"<STATE_ROOT>/applications/mock/owner__tool/grm_manifest.json","binary_tmp":"<STATE_ROOT>/applications/mock/owner__tool/versions/1.1.0/tool-1.1.0.AppImage.tmp-<ID>","asset_sha256":"95c194d073e07b03d7ce77ba65ada92f3784b459efb2799cd4c49ec3832ac9f5","manifest_sha256": "<SHA>"}}

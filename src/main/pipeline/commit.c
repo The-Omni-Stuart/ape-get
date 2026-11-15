@@ -21,6 +21,13 @@
 #include <time.h>
 #include <unistd.h>
 
+static void retire_path(const char *path)
+{
+    struct stat sb;
+    if (path == NULL || lstat(path, &sb) != 0 || S_ISDIR(sb.st_mode)) return;
+    (void)unlink(path);
+}
+
 // static: main/util.c exports an identical now_instant; making this one
 // global would collide with it at the final link
 static void now_instant(char *buf, size_t cap)
@@ -187,13 +194,13 @@ int phase_prepare(pipe_ctx *pc)
 int phase_install(pipe_ctx *pc)
 {
     bool inst_failed = false;
-    // backups for updates only, before the commit point;
-    // pruning runs at create time
+    // backups for updates only, before the commit point; trimmed
+    // generations are deleted in phase_record, after activation (S11)
     if (pc->updating) {
         if (pc->st->backup_count > 0) {
             char berr[512] = "";
-            if (!backup_create_and_prune(pc->st, pc->prev, pc->st->backup_count,
-                    &pc->backups, berr, sizeof(berr))) {
+            if (!backup_create(pc->st, pc->prev, pc->st->backup_count,
+                    &pc->backups, &pc->prune_paths, berr, sizeof(berr))) {
                 pc->detail = path_fmt("Failed to create backup; update "
                     "aborted: %s", berr);
                 ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "backup failed");
@@ -311,10 +318,29 @@ int phase_install(pipe_ctx *pc)
             inst_failed = true;
         }
     }
+    if (!inst_failed) pc->entry = desktop_entry_path(pc->st, pc->command);
+    // retire resources the new generation will not own: a --no-command
+    // update, or a changed command/install_root, would otherwise lose the
+    // only reference to the old launcher/desktop when the manifest swaps,
+    // so they go first the way uninstall removes them (P06); a crash here
+    // still leaves the old manifest and doctor's launcher heal
+    if (!inst_failed && pc->updating) {
+        bool launcher_stale = pc->prev->launcher != NULL
+            && (pc->launcher == NULL
+                || strcmp(pc->launcher, pc->prev->launcher) != 0);
+        const char *desktop = NULL;
+        if (pc->prev->desktop != NULL) {
+            const char *keep = desktop_recorded(pc->o, pc->entry);
+            if ((keep == NULL || strcmp(keep, pc->prev->desktop) != 0)
+                && desktop_entry_owned(pc->prev->desktop))
+                desktop = pc->prev->desktop;
+        }
+        retire_path(launcher_stale ? pc->prev->launcher : NULL);
+        retire_path(desktop);
+    }
     // stage the record before the commit point: once the journal says
     // "committing", recovery can finish the install if this process dies
     if (!inst_failed) {
-        pc->entry = desktop_entry_path(pc->st, pc->command);
         char now[40];
         now_instant(now, sizeof(now));
         char *text = crypto_sha256_file(pc->tmp, pc->sha_final)
@@ -399,7 +425,9 @@ int phase_install(pipe_ctx *pc)
         // --no-desktop removes, --desktop writes, both before the
         // Installed to line; the path itself was resolved earlier
         if (pc->o->no_desktop) {
-            if (pc->entry != NULL) unlink(pc->entry);
+            // only entries carrying our managed marker are ours to remove
+            if (pc->entry != NULL && desktop_entry_owned(pc->entry))
+                unlink(pc->entry);
         } else if (pc->o->desktop) {
             char *ic = desktop_icon_copy(pc->o->icon, pc->app_dir);
             desktop_entry_write(pc->entry, pc->command, pc->launcher, pc->path, ic,
@@ -435,6 +463,9 @@ void phase_record(pipe_ctx *pc)
     const char *mfile = pc->j_mfile;
     bool saved = pc->mtmp != NULL && fs_rename(pc->mtmp, mfile);
     if (saved) chmod(mfile, 0600); // like the other state files
+    // the new manifest is live: only now may the generations trimmed from
+    // its backup list be removed (S11: a failed update keeps every backup)
+    if (saved) backup_prune_trimmed(pc->app_dir, pc->prune_paths);
     if (!saved) {
         ui_msg(stderr, UI_ERROR, "Installed, but failed to write "
             "manifest: cannot write state");

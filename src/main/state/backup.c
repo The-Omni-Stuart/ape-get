@@ -1,5 +1,6 @@
 // Backup records: copy the live install + manifest copy into
-// appDir/backups/<epochMillis>-<uuid>/, extend the record list, prune.
+// appDir/backups/<epochMillis>-<uuid>/, extend the record list; trimmed
+// generations are deleted only once the new manifest activated.
 
 #include "state.h"
 #include "fs.h"
@@ -52,11 +53,12 @@ static void now_iso(char *buf, size_t cap)
         tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
 }
 
-bool backup_create_and_prune(const state_ctx *st, const manifest_entry *prev,
-                             int keep, char **backups_json,
-                             char *err, size_t errcap)
+bool backup_create(const state_ctx *st, const manifest_entry *prev,
+                   int keep, char **backups_json, char **prune_paths,
+                   char *err, size_t errcap)
 {
     *backups_json = NULL;
+    if (prune_paths != NULL) *prune_paths = NULL;
     if (err != NULL && errcap > 0) err[0] = '\0';
     const char *live = prev->path;
     if (live == NULL || !fs_exists(live)) {
@@ -119,6 +121,8 @@ bool backup_create_and_prune(const state_ctx *st, const manifest_entry *prev,
     char **items = calloc((size_t)cnt + 1, sizeof(*items));
     char **keys = calloc((size_t)cnt + 1, sizeof(*keys));
     int m = 0;
+    jbuf prune = {0};
+    int drop = 0;
     if (items != NULL && keys != NULL && rec.p != NULL) {
         for (int k = 0; k < cnt; k++) {
             items[m] = strndup(sp[k].s, (size_t)(sp[k].e - sp[k].s));
@@ -127,8 +131,7 @@ bool backup_create_and_prune(const state_ctx *st, const manifest_entry *prev,
             if (jobject_parse(items[m], &bo)) {
                 int ci = jobject_find(&bo, "created_at");
                 if (ci >= 0)
-                    keys[m] = strndup(bo.vals[ci],
-                        (size_t)(bo.vends[ci] - bo.vals[ci]));
+                    json_span_string(bo.vals[ci], bo.vends[ci], &keys[m]);
             }
             jobject_free(&bo);
             m++;
@@ -143,28 +146,31 @@ bool backup_create_and_prune(const state_ctx *st, const manifest_entry *prev,
                 char *t = keys[bnd - 1]; keys[bnd - 1] = keys[bnd]; keys[bnd] = t;
                 t = items[bnd - 1]; items[bnd - 1] = items[bnd]; items[bnd] = t;
             }
-        while (m > keep && m > 0) {   // prune the oldest beyond keep
+        // trim the oldest beyond keep; deleting them waits until the new
+        // manifest activated, so a failed update keeps every backup (S11)
+        drop = m - keep;
+        if (drop < 0) drop = 0;
+        for (int a = 0; a < drop; a++) {
             jobject bo = {0};
-            if (items[0] != NULL && jobject_parse(items[0], &bo)) {
+            char *p = NULL;
+            if (items[a] != NULL && jobject_parse(items[a], &bo)) {
                 int pi = jobject_find(&bo, "path");
-                char *p = NULL;
-                if (pi >= 0
-                    && json_span_string(bo.vals[pi], bo.vends[pi], &p))
-                    fs_rm_tree(p);
+                if (pi >= 0 && json_span_string(bo.vals[pi], bo.vends[pi], &p)
+                    && *p != '\0') {
+                    jb_lit(&prune, prune.n > 0 ? "\n" : "");
+                    jb_lit(&prune, p);
+                }
                 free(p);
             }
             jobject_free(&bo);
-            free(items[0]); free(keys[0]);
-            for (int bnd = 0; bnd + 1 < m; bnd++) {
-                items[bnd] = items[bnd + 1]; keys[bnd] = keys[bnd + 1];
-            }
-            m--;
+            free(items[a]); free(keys[a]);
+            items[a] = NULL;
         }
     }
     jbuf arr = {0};
     jb_lit(&arr, "[");
     bool first = true;
-    for (int a = 0; items != NULL && a < m; a++) {
+    for (int a = drop; items != NULL && a < m; a++) {
         if (items[a] == NULL) continue;
         jb_lit(&arr, first ? "" : ",");
         first = false;
@@ -176,7 +182,41 @@ bool backup_create_and_prune(const state_ctx *st, const manifest_entry *prev,
     free(sp);
     jb_free(&rec);
     free(old); free(app); free(bdir); free(dest); free(bman); free(mtxt);
-    if (arr.p == NULL) return false;
+    if (arr.p == NULL) {
+        free(prune.p);
+        return false;
+    }
     *backups_json = arr.p;
+    if (prune_paths != NULL) *prune_paths = prune.p;
+    else free(prune.p);
     return true;
+}
+
+void backup_prune_trimmed(const char *app_dir, const char *prune_paths)
+{
+    if (app_dir == NULL || prune_paths == NULL || *prune_paths == '\0') return;
+    char *base = path_join(app_dir, "backups");
+    char *rbase = base != NULL ? realpath(base, NULL) : NULL;
+    const char *s = prune_paths;
+    while (*s != '\0') {
+        const char *e = strchr(s, '\n');
+        size_t len = e != NULL ? (size_t)(e - s) : strlen(s);
+        char *p = strndup(s, len);
+        char *rp = p != NULL ? realpath(p, NULL) : NULL;
+        // our own generation only: inside backups/ and directly
+        // under it — crafted or nested paths are left in place
+        if (rp != NULL && rbase != NULL) {
+            size_t bn = strlen(rbase);
+            const char *tail = rp + bn;
+            if (!strncmp(rp, rbase, bn) && tail[0] == '/' && tail[1] != '\0'
+                && strchr(tail + 1, '/') == NULL)
+                fs_rm_tree(rp);
+        }
+        free(rp);
+        free(p);
+        if (e == NULL) break;
+        s = e + 1;
+    }
+    free(base);
+    free(rbase);
 }

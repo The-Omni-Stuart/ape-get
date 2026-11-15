@@ -27,6 +27,7 @@ def run_case(driver, product, base, name):
     binary = install / "ape-get"
     for path in [root / "home", root / "config", root / "cache", root / "tmp", app, install]:
         path.mkdir(parents=True)
+    (state / "grm_lock").touch()
     image = bytearray(128)
     image[80:87] = b".cosmo\n"
     image[106:110] = b"PK\x05\x06"
@@ -190,7 +191,7 @@ def run_case(driver, product, base, name):
             assert journal.exists() and not binary.exists(), name
             guard()
             recovery_env = dict(env, APEGET_NO_SELF="1")
-            p = subprocess.run([str(product), "list", "--json"], env=recovery_env,
+            p = subprocess.run([str(product), "lock", "self:ape-get"], env=recovery_env,
                                cwd=root, capture_output=True, text=True, timeout=20)
             assert p.returncode == 0, (name, p.stdout, p.stderr)
         record = json.loads(manifest.read_text())

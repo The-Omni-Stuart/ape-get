@@ -1,7 +1,7 @@
 // Startup recovery: prepared journals roll back, committing ones
 // roll forward; journal-named paths run only when they resolve
 // inside the managed roots; a journal-absent boot sweeps staged
-// .tmp-<id> files.
+// .tmp-<id> files under the state root's applications/ tree only.
 
 #include "txn.h"
 #include "txn/internal.h"
@@ -394,9 +394,11 @@ bool txn_recover_startup(const char *root, const char *install_root,
     txn t;
     txn_load l = txn_load_journal(root, &t);
     if (l == TXN_ABSENT) {
+        // Stages live beside their targets under the state root's
+        // applications/ tree; the shared install root is never swept by
+        // name (R14: an unrelated file ending in .tmp-<16hex> is not ours)
         char *apps = path_join(root, "applications");
         if (apps != NULL) { sweep_dir(apps, 8); free(apps); }
-        if (install_root != NULL) sweep_dir(install_root, 4);
         return true;
     }
     if (l == TXN_UNREADABLE) {

@@ -74,6 +74,7 @@ typedef struct {
     bool j_on, j_committed;
     char *detail;
     char *backups;
+    char *prune_paths;  // trimmed backup generations; deleted post-activation
     bool failed;
     int rv;
 } pipe_ctx;
@@ -112,6 +113,7 @@ void desktop_entry_write(const char *entry, const char *command,
     const char *launcher, const char *repo_path, const char *icon,
     bool terminal);
 const char *desktop_recorded(const cmd_opts *o, const char *entry);
+bool desktop_entry_owned(const char *entry);
 
 // pipeline/journal.c: one phase transition of the install journal
 bool journal_phase_write(const state_ctx *st, const char *op,
@@ -210,6 +212,12 @@ static inline bool ver_eq(const char *a, const char *b)
     if (*b == 'v' || *b == 'V') b++;
     return !strcmp(a, b);
 }
+
+// The one freshness decision (P04), compiled once in update.c: version
+// identity with release identity where both sides record one, never the
+// asset URL — a stable /latest-style URL can carry every new release.
+bool same_release(const char *cur_version, long cur_release_id,
+    const char *new_version, const char *new_release_id);
 
 static inline int ci_endswith(const char *name, const char *suffix)
 {

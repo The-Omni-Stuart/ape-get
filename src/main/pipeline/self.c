@@ -1,4 +1,5 @@
-// Self-integration: after stateful commands, copy the executable into the install
+// Self-integration: after successful commands (queries included, under the
+// lock), copy the executable into the install
 // root, journalled and staged .tmp-<id> for recovery; never fails the caller.
 
 #include "pipeline.h"
@@ -445,6 +446,10 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st)
     if (off != NULL && strcmp(off, "1") == 0) return;
     if (o->dry_run) return;
 
+    // Registration writes state, so it serialises on the lock even when a
+    // query command reached it; a busy lock means a mutation is running
+    // and this run simply skips registration.
+    if (!state_lock_held() && !state_lock(st->root)) return;
     // Recovery owns any present journal, including an unreadable one. Check
     // before either first registration or an existing manifest refresh.
     txn pending;

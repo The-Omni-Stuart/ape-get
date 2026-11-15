@@ -1,4 +1,1 @@
-First-time setup complete.
-  config: <STATE_ROOT>/grm_config.json
-  index:  <STATE_ROOT>/grm_index.json
 Error: Provider 'nope' is not configured.

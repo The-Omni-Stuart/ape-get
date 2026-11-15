@@ -50,6 +50,15 @@ static bool state_open_net(state_ctx *st)
     return true;
 }
 
+// R05: query commands surface broken state and pending recovery instead
+// of repairing or recovering them; stdout (JSON included) stays clean.
+static bool lock_repair(state_ctx *st)
+{
+    if (!state_lock(st->root)) return false;
+    state_repair_corrupt(st);
+    return true;
+}
+
 // the bare help page: commands plus global flags; command pages are built by
 // run_help. Usage errors get this on stderr too.
 static void global_help(FILE *f)
@@ -149,15 +158,18 @@ int main(int argc, char **argv)
     case CMD_DOCTOR:
         return doctor_run(&o);
     case CMD_SEARCH: {
+        // search is a query over the providers, not the local state
+        state_set_query();
         state_ctx st;
         if (!state_open_net(&st)) return 2;
+        state_report_query(&st, o.quiet);
         return cmd_search(&o, &st);
     }
     case CMD_INSTALL: {
         if (o.nargs < 2) return run_help("install");
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
+        if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "install")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = pipeline_install(&o, &st);
@@ -167,7 +179,7 @@ int main(int argc, char **argv)
     case CMD_UPDATE: {
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
+        if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "update")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = o.all ? pipeline_update_all(&o, &st)
@@ -178,7 +190,7 @@ int main(int argc, char **argv)
     case CMD_UNINSTALL: {
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
+        if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "uninstall")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = uninstall_run(&o, &st);
@@ -188,7 +200,7 @@ int main(int argc, char **argv)
     case CMD_ADOPT: {
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
+        if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "adopt")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = adopt_run(&o, &st);
@@ -196,25 +208,29 @@ int main(int argc, char **argv)
         return rv;
     }
     case CMD_LIST: {
+        // query: no lock, no repair, no recovery, no bootstrap; the
+        // documented first-run registration still runs and serialises
+        // on the lock for its own writes
+        state_set_query();
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
-        if (!recover_gate(&st, &o, "list")) return 1;
-        state_ensure(&st, o.quiet, o.json);
+        state_report_query(&st, o.quiet);
         int rv = list_run(&o, &st);
         if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
     case CMD_INFO: {
-        // info is not stateful: no lock, no ensure
+        // info is a query: no lock, no ensure
+        state_set_query();
         state_ctx st;
         if (!state_open_net(&st)) return 2;
+        state_report_query(&st, o.quiet);
         return info_run(&o, &st);
     }
     case CMD_ROLLBACK: {
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
+        if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "rollback")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = rollback_run(&o, &st);
@@ -222,9 +238,17 @@ int main(int argc, char **argv)
         return rv;
     }
     case CMD_PROVIDERS: {
+        // providers list/show are queries; the rest mutate the registry
+        bool query = o.nargs >= 2
+            && (!strcmp(o.args[1], "list") || !strcmp(o.args[1], "show"));
+        if (query) state_set_query();
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
+        if (query) {
+            state_report_query(&st, o.quiet);
+            return providers_run(&o, &st);
+        }
+        if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o, "providers")) return 1;
         state_ensure(&st, o.quiet, o.json);
         int rv = providers_run(&o, &st);
@@ -235,7 +259,7 @@ int main(int argc, char **argv)
     case CMD_UNLOCK: {
         state_ctx st;
         if (!state_open_net(&st)) return 2;
-        if (!state_lock(st.root)) return 1;
+        if (!lock_repair(&st)) return 1;
         if (!recover_gate(&st, &o,
                 o.id == CMD_LOCK ? "lock" : "unlock")) return 1;
         state_ensure(&st, o.quiet, o.json);

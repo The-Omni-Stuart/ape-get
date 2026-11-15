@@ -1,0 +1,5 @@
+Dry run: would update mock:owner/tool to 1.1.0.
+  Asset:  tool-1.1.0.AppImage
+  Source: https://127.0.0.1:18081/assets/tool-1.1.0.AppImage
+  Launcher: <INSTALL_ROOT>/tool
+No changes were made.

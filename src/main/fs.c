@@ -159,7 +159,12 @@ static bool in_backups(const char *path, const char *apps_dir)
     return strstr(path + pre, "/backups/") != NULL;
 }
 
-static int count_walk(const char *dir, const char *apps_dir)
+// Mirrors the scanner's walk rules: lstat so symlinked directories are
+// never descended, and the same depth cap — the real tree is
+// provider/app deep, anything deeper or linked round is not state.
+#define COUNT_MAX_DEPTH 8
+
+static int count_walk(const char *dir, const char *apps_dir, int depth)
 {
     DIR *d = opendir(dir);
     if (d == NULL) return 0;
@@ -169,9 +174,15 @@ static int count_walk(const char *dir, const char *apps_dir)
         if (e->d_name[0] == '.') continue;
         char *p = path_join(dir, e->d_name);
         if (p == NULL) continue;
-        if (fs_is_dir(p)) n += count_walk(p, apps_dir);
-        else if (strcmp(e->d_name, "grm_manifest.json") == 0
-                 && fs_is_regular(p) && !in_backups(p, apps_dir)) n++;
+        struct stat sb;
+        if (lstat(p, &sb) == 0) {
+            if (S_ISDIR(sb.st_mode)) {
+                if (depth < COUNT_MAX_DEPTH)
+                    n += count_walk(p, apps_dir, depth + 1);
+            } else if (S_ISREG(sb.st_mode)
+                       && strcmp(e->d_name, "grm_manifest.json") == 0
+                       && !in_backups(p, apps_dir)) n++;
+        }
         free(p);
     }
     closedir(d);
@@ -181,7 +192,7 @@ static int count_walk(const char *dir, const char *apps_dir)
 int fs_count_manifests(const char *state_root)
 {
     char *apps = path_join(state_root, "applications");
-    int n = fs_is_dir(apps) ? count_walk(apps, apps) : 0;
+    int n = fs_is_dir(apps) ? count_walk(apps, apps, 0) : 0;
     free(apps);
     return n;
 }
@@ -235,7 +246,16 @@ bool fs_rm_tree(const char *path)
 bool fs_copy_tree(const char *from, const char *to)
 {
     struct stat sb;
-    if (stat(from, &sb) != 0) return false;
+    // lstat: symlink entries replicate as links; following them could
+    // loop forever or copy bytes from outside the snapshotted tree
+    if (lstat(from, &sb) != 0) return false;
+    if (S_ISLNK(sb.st_mode)) {
+        char tgt[4096];
+        ssize_t n = readlink(from, tgt, sizeof tgt - 1);
+        if (n < 0) return false;
+        tgt[n] = '\0';
+        return symlink(tgt, to) == 0;
+    }
     if (!S_ISDIR(sb.st_mode))
         return fs_copy_file(from, to);
     if (mkdir(to, 0777) != 0 && errno != EEXIST) return false;

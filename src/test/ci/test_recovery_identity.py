@@ -181,7 +181,7 @@ def run_case(exe, base, name):
                 for key, value in json.loads(journal.read_text()).get(side, {}).items():
                     if isinstance(value, str) and value.startswith("/"):
                         assert inside(value, root), ("unsafe journal", key, value)
-        return subprocess.run([str(exe)] + (args or ["list", "--json"]),
+        return subprocess.run([str(exe)] + (args or ["unlock", "github:owner/tool"]),
                               cwd=root, env=dict(env, **({"APEGET_TEST_CRASH": crash} if crash else {})),
                               capture_output=True, text=True, timeout=15)
 

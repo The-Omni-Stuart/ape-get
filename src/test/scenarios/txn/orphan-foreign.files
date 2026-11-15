@@ -1,0 +1,4 @@
+--- .local/bin/unrelated-tool.tmp-0123456789abcdef (0644) ---
+unrelated
+--- .local/share/github-release-manager/applications/mock/owner__tool/versions/1.2.3/tool-1.2.3.AppImage.tmp-ffffffffffffffff (0644) ---
+orphan

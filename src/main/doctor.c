@@ -115,19 +115,27 @@ static void heal_apply(state_ctx *st, const cmd_opts *o, bool *index_fixed,
 
 int doctor_run(const cmd_opts *o)
 {
+    // the diagnosis phase is a query: corrupt state is reported, never
+    // quarantined or rebuilt; --heal below takes the mutation path
+    if (!o->heal) state_set_query();
     state_ctx st;
     if (!state_open(&st)) return 2;
     strv issues = {0}, warnings = {0};
 
-    // doctor --heal is stateful: lock, then run recovery before reporting.
-    // Bare doctor stays read-only and lock-free.
+    // doctor --heal is stateful: lock, repair corrupt records, then run
+    // recovery before reporting.
     if (o->heal) {
         if (!state_lock(st.root)) return 1;
+        state_repair_corrupt(&st);
         if (!state_recover_gate(&st, o->quiet, o->json)) return 1;
     }
 
     if (!st.config_present)
         sv_add(&issues, path_fmt("Config: missing at %s", st.config_file));
+    else if (st.config_corrupt)
+        sv_add(&issues, path_fmt(
+            "Config: corrupt at %s (run a stateful command to repair)",
+            st.config_file));
     if (!st.index_ok)
         sv_add(&issues, strdup(
             "Index: missing or corrupt (run a stateful command to rebuild)"));

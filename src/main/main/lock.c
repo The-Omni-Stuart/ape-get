@@ -72,30 +72,45 @@ int lock_run(const cmd_opts *o, state_ctx *st, bool locking)
     const char *result = NULL;
     bool now = false;
     static char done[800];
-    if (locking) {
-        now = true;
-        if (locked) {
-            snprintf(done, sizeof(done), "Release %s is already locked.",
-                ref);
-            result = done;
-        } else if (!manifest_set_locked(st->root, file, true)) {
-            put_fail("Failed to update the release state.");
-            oplog_append(st, cmd, ref, "-",
-                "Failed to update the release state.");
-            free(file);
-            return 1;
+    // S09: a dry run reports the plan on stdout like every other dry
+    // run, touching nothing — no rewrite, no operation-history line
+    if (o->dry_run) {
+        bool noop = locking == locked;
+        if (noop)
+            snprintf(done, sizeof(done), "Release %s is %s locked.",
+                ref, locking ? "already" : "not");
+        else
+            snprintf(done, sizeof(done), "Dry run: would %s %s.",
+                locking ? "lock" : "unlock", ref);
+        if (o->json) {
+            jbuf b = {0};
+            jb_lit(&b, "{\"dry_run\":true,\"action\":");
+            jb_json_string(&b, cmd);
+            jb_lit(&b, ",\"ref\":");
+            jb_json_string(&b, ref);
+            jb_lit(&b, ",\"locked\":");
+            jb_lit(&b, locked ? "true" : "false");
+            jb_lit(&b, "}");
+            puts(b.p ? b.p : "");
+            jb_free(&b);
+        } else {
+            puts(done);
+            if (!noop) puts("No changes were made.");
         }
-    } else {
-        if (!locked) {
-            snprintf(done, sizeof(done), "Release %s is not locked.", ref);
-            result = done;
-        } else if (!manifest_set_locked(st->root, file, false)) {
-            put_fail("Failed to update the release state.");
-            oplog_append(st, cmd, ref, "-",
-                "Failed to update the release state.");
-            free(file);
-            return 1;
-        }
+        free(file);
+        return 0;
+    }
+    now = locking;
+    if (locking == locked) {
+        snprintf(done, sizeof(done), "Release %s is %s locked.", ref,
+            locking ? "already" : "not");
+        result = done;
+    } else if (!manifest_set_locked(st->root, file, locking)) {
+        put_fail("Failed to update the release state.");
+        oplog_append(st, cmd, ref, "-",
+            "Failed to update the release state.");
+        free(file);
+        return 1;
     }
 
     if (result == NULL) {

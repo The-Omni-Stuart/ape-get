@@ -68,6 +68,14 @@ static bool index_is_valid(const char *text, size_t n)
     return ok;
 }
 
+// Query mode is process-global because both state_open and the manifest
+// scanner (state/manifest_scan.c) need it before any context flows.
+static bool s_query;
+void state_set_query(void) { s_query = true; }
+bool state_is_query(void) { return s_query; }
+
+// Detects corrupt records without touching them: repair happens later,
+// by mutation commands only, once the state lock is held (S08).
 bool state_open(state_ctx *out)
 {
     memset(out, 0, sizeof(*out));
@@ -79,8 +87,6 @@ bool state_open(state_ctx *out)
     out->index_file = path_join(out->root, "grm_index.json");
     out->install_root = platform_install_root_default();
 
-    // A missing config stays missing (bare doctor never creates it; only
-    // state_ensure bootstraps). A corrupt one is quarantined and replaced.
     out->config_present = fs_exists(out->config_file);
     size_t n = 0;
     char *cfg = out->config_present ? fs_read_file(out->config_file, &n) : NULL;
@@ -130,22 +136,57 @@ bool state_open(state_ctx *out)
         else
             free(ch);
     } else if (cfg != NULL) {
-        quarantine(out->config_file, "config");
-        fs_write_file(out->config_file, DEFAULT_CONFIG);
+        out->config_corrupt = true;
     }
     free(cfg);
 
     char *idx = fs_read_file(out->index_file, &n);
     if (idx == NULL) out->index_ok = false;
     else if ((out->index_ok = index_is_valid(idx, n)) == false)
-        quarantine(out->index_file, "index");
+        out->index_corrupt = true;
     free(idx);
 
     out->manifests = fs_count_manifests(out->root);
     return true;
 }
 
+// Quarantine-and-replace corrupt records (the pre-lock state_open behaviour
+// that mutation paths keep, just moved behind the lock).
+void state_repair_corrupt(state_ctx *st)
+{
+    if (st->config_corrupt) {
+        quarantine(st->config_file, "config");
+        fs_write_file(st->config_file, DEFAULT_CONFIG);
+        st->config_corrupt = false;
+    }
+    if (st->index_corrupt) {
+        quarantine(st->index_file, "index");
+        st->index_ok = false;
+        st->index_corrupt = false;
+    }
+}
+
+void state_report_query(const state_ctx *st, bool quiet)
+{
+    if (quiet) return;
+    if (st->config_corrupt)
+        fprintf(stderr, "Warning: config at %s is corrupt; defaults used, "
+            "file left in place\n", st->config_file);
+    if (st->index_corrupt)
+        fprintf(stderr, "Warning: index at %s is corrupt; left in place\n",
+            st->index_file);
+    char *pend = txn_doctor_issue(st->root);
+    if (pend != NULL) {
+        fprintf(stderr, "%s\n", pend);
+        free(pend);
+    }
+}
+
 // --- lock ---
+
+static int s_lock_fd = -1;   // held until exit on purpose
+
+bool state_lock_held(void) { return s_lock_fd >= 0; }
 
 bool state_lock(const char *root)
 {
@@ -157,7 +198,10 @@ bool state_lock(const char *root)
     char *p = path_join(root, "grm_lock");
     if (p == NULL) return false;
     int fd = open(p, O_CREAT | O_RDWR, 0644);
-    if (fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0) return true;
+    if (fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0) {
+        s_lock_fd = fd;
+        return true;
+    }
     int e = errno;
     fprintf(stderr, "Cannot acquire state lock at %s: %s\n", p, strerror(e));
     if (fd >= 0) close(fd);

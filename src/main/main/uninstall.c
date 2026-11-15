@@ -60,12 +60,15 @@ bool uninstall_one(const state_ctx *st, manifest_entry *m)
             removed = false;
         }
     }
-    // a recorded desktop entry is ours whichever kind produced it (adopted
-    // packages record one too), so it goes with every install
-    if (removed && m->desktop != NULL && unlink(m->desktop) != 0
-        && errno != ENOENT) {
-        ui_msg(stderr, UI_ERROR, "Failed to uninstall: %s", strerror(errno));
-        removed = false;
+    // a recorded desktop entry is ours only when the managed marker in
+    // the file says so; a foreign entry that was merely claimed by older
+    // state survives untouched (P10)
+    if (removed && m->desktop != NULL && desktop_entry_owned(m->desktop)) {
+        if (unlink(m->desktop) != 0 && errno != ENOENT) {
+            ui_msg(stderr, UI_ERROR, "Failed to uninstall: %s",
+                strerror(errno));
+            removed = false;
+        }
     }
     if (!removed) {
         ui_msg(stderr, UI_ERROR, "Failed to uninstall %s.", m->repo);
