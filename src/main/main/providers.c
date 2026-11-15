@@ -331,8 +331,39 @@ static int cmd_providers_update(const cmd_opts *o, state_ctx *st,
     char *urlc = strip_slash_dup(url);
     char *api = provider_resolved_api(ltype, urlc, apiv);
 
-    // endpoint-change confirmation is manifest-gated: unreachable until
-    // the manifest module counts packages for this provider
+    // a provenance change with packages installed is exactly the case the
+    // documented --force safeguard gates: the installed manifests keep
+    // their old provenance, so the operator must accept the retarget
+    if (pv.type != NULL || pv.api != NULL || pv.url != NULL) {
+        bool changed = strcmp(ltype, ex->type) != 0
+            || strcmp(urlc, ex->url) != 0
+            || (api != NULL && ex->api != NULL && strcmp(api, ex->api) != 0);
+        size_t inst = 0;
+        if (changed) {
+            manifest_entry *ms = NULL;
+            size_t mc = 0;
+            if (manifests_scan(st->root, &ms, &mc) != 0) {
+                put_fail("Failed to read installed packages: state scan failed");
+                free(api); free(urlc); providers_free(list, ln);
+                return 1;
+            }
+            for (size_t j = 0; j < mc; j++)
+                if (ms[j].provider != NULL
+                    && !strcmp(ms[j].provider, name)) inst++;
+            manifest_list_free(ms, mc);
+        }
+        if (inst > 0 && !pv.force) {
+            put_s(stderr, UI_ERROR,
+                "Provider '%s' has %zu installed package(s); changing its"
+                " type or endpoint needs --force.", name, inst);
+            PVLOG_ERR(st, "providers update", refbuf,
+                "Refused provider change: %zu installed package(s), no"
+                " --force.", inst);
+            free(api); free(urlc);
+            providers_free(list, ln);
+            return 1;
+        }
+    }
 
     char *cfg = state_config_edit(st, name, ltype, urlc, api, tok, NULL);
     int rc = 0;

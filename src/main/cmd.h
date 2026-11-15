@@ -37,16 +37,23 @@ int cmd_names(const char **out, int cap);
 int run_help(const char *cmd);
 
 // Help-rendering registry: cmd_lookup is NULL for unknown names; options
-// are NULL-terminated.
+// are NULL-terminated. extra_min/extra_max bound the positional words that
+// follow the command name (max <0 means unbounded); arity is enforced while
+// parsing, so a command never silently ignores a word.
 typedef struct {
     const char *name;
     const char *usage;   // argument part of the per-command usage line
     const char *const *options;
     int id;
+    int extra_min, extra_max;
 } cmd_help;
 const cmd_help *cmd_lookup(const char *name);
 int cmd_help_all(const cmd_help **out, int cap);
 const char *const *cmd_help_commands(void);
 const char *const *cmd_global_options(void);
+
+// registry name for a command id (NULL if none): lets a missing/extra-arg
+// usage error re-print that command's help
+const char *cmd_usage_name(cmd_id id);
 
 #endif

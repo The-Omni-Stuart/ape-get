@@ -135,13 +135,15 @@ int run_completions(const cmd_opts *o)
               "bind 'set show-all-if-ambiguous on' 2>/dev/null || :\n",
               stdout);
 
+    // ${COMP_WORDS[0]} is the word being completed, so the helpers invoke
+    // the very binary being completed for (ape-get, ape-get.com, a path)
     fputs("_apg_refs() {\n"
-          "    ape-get list --json 2>/dev/null |\n"
+          "    \"${COMP_WORDS[0]}\" list --json 2>/dev/null |\n"
           "      grep -o '\"provider\":\"[^\"]*\",\"repo\":\"[^\"]*\"' |\n"
           "      sed -n 's/\"provider\":\"\\([^\"]*\\)\",\"repo\":\"\\([^\"]*\\)\"/\\1:\\2/p'\n"
           "}\n"
           "_apg_providers() {\n"
-          "    ape-get providers list --json 2>/dev/null |\n"
+          "    \"${COMP_WORDS[0]}\" providers list --json 2>/dev/null |\n"
           "      grep -o '\"name\":\"[^\"]*\"' | sed 's/.*:\"\\([^\"]*\\)\"/\\1/'\n"
           "}\n"
           "_apg_values() {\n"

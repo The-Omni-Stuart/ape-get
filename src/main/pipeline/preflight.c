@@ -562,7 +562,12 @@ int phase_preflight(pipe_ctx *pc)
 
     // what the collapsed pool settled on, said once and after the
     // up-to-date gate so a no-op update stays a one-line answer
-    if (grouped) ui_msg(stderr, UI_DIM, "Selected asset: %s", pc->asset->name);
+    if (grouped) {
+        char esafe[2048];
+        ui_esc_into(esafe, sizeof esafe,
+            pc->asset->name != NULL ? pc->asset->name : "");
+        ui_msg(stderr, UI_DIM, "Selected asset: %s", esafe);
+    }
 
     if (pc->o->dry_run) {
       if (pc->report) {

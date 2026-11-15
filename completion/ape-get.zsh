@@ -11,13 +11,14 @@ _ape_get()
         'update:update one release or --all'
         'list:list installed releases'
         'info:show details for an installed release'
-        'providers:list add update remove or recover providers'
+        'providers:list add update remove or recover provider instances'
         'rollback:restore the latest backup'
         'doctor:diagnose state and heal with --heal'
         'adopt:adopt an existing Linux install'
         'lock:lock a release against updates'
         'unlock:unlock a release'
         'about:about ape-get'
+        'completions:print a shell completion script'
         'help:help for a command'
     )
 
@@ -31,15 +32,18 @@ _ape_get()
         '--json[machine-readable output]'
         '--quiet[suppress progress]'
         '--yes[assume yes]'
+        '-y[assume yes]'
         '--colour[terminal styling]:colour:(auto always never)'
         '--no-progress[never render progress bars]'
+        '--experimental-compat[enable the compatibility path]'
         '--help[show help]'
     )
     case $words[CURRENT] in
         -*) compadd -a globals; return ;;
     esac
 
-    case $words[1] in
+    # $words[1] is the executable; the command is $words[2]
+    case $words[2] in
         providers)
             if ((CURRENT == 3 )); then
                 local -a subs=(list show add update remove recover)

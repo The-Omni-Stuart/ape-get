@@ -1,0 +1,1 @@
+{"results":[{"provider":"mock","repo":"mock/app","description":"Evil\u001b[31mred\nforged line — café"},{"provider":"mock","repo":"mock\u0007/beep","description":"plain 日本語 ok"}]}

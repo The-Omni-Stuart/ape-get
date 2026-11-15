@@ -66,4 +66,13 @@ void ui_line_kv_value(FILE *f, const char *label, const char *rest,
 void ui_progress(const char *text, bool force);
 void ui_progress_done(void);
 
+// The single display-escaping routine for remote text: C0/DEL/C1 bytes and
+// non-UTF-8 high bytes render as \xNN so a hostile provider cannot forge
+// terminal layout; printable text (UTF-8 included) passes through. Never
+// apply to JSON/serialization output, which is escaped losslessly already.
+// ui_esc mallocs (NULL on failure); ui_esc_into copies a safe display form
+// into a fixed buffer, truncating the escaped text when needed.
+char *ui_esc(const char *s);
+void ui_esc_into(char *dst, size_t cap, const char *s);
+
 #endif

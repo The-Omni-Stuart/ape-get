@@ -7,12 +7,12 @@
 # tie like 'install info' prints nothing until the second Tab
 bind 'set show-all-if-ambiguous on' 2>/dev/null || :
 _apg_refs() {
-    ape-get list --json 2>/dev/null |
+    "${COMP_WORDS[0]}" list --json 2>/dev/null |
       grep -o '"provider":"[^"]*","repo":"[^"]*"' |
       sed -n 's/"provider":"\([^"]*\)","repo":"\([^"]*\)"/\1:\2/p'
 }
 _apg_providers() {
-    ape-get providers list --json 2>/dev/null |
+    "${COMP_WORDS[0]}" providers list --json 2>/dev/null |
       grep -o '"name":"[^"]*"' | sed 's/.*:"\([^"]*\)"/\1/'
 }
 _apg_values() {

@@ -1,0 +1,6 @@
+Usage: <ENTRYPOINT> list [options]
+
+Options:
+  --outdated - list only packages with newer releases
+
+Common: --json --quiet --yes --colour <auto|always|never>

@@ -6,9 +6,11 @@
    only (no '=' form); anything unrecognised flows into positionals
    . C-only flags join the same list. */
 
+// a word starting with "--" is never an option's value: swallowing the next
+// flag as a value (e.g. "--version --strict") would silently drop it
 #define VALV(o, f)                                     \
     do {                                               \
-        if (++i >= argc) {                             \
+        if (++i >= argc || strncmp(argv[i], "--", 2) == 0) { \
             out->usage_error = 1;                      \
             out->usage_msg = "Missing value for " f;   \
             return;                                    \
@@ -130,21 +132,24 @@ static const char *const OPTS_DOCTOR[] = {
 };
 
 static const cmd_help CMDS[] = {
-    {"search",    "<name> [options]", OPTS_SEARCH, CMD_SEARCH},
-    {"install",   "<name> [options]", OPTS_INSTALL, CMD_INSTALL},
-    {"uninstall", "<name> [options]", OPTS_UNINSTALL, CMD_UNINSTALL},
-    {"update",    "<name>|--all [options]", OPTS_UPDATE, CMD_UPDATE},
-    {"list",      "[options]", OPTS_LIST, CMD_LIST},
-    {"info",      "<name> [options]", OPTS_NONE, CMD_INFO},
-    {"providers", "[subcommand] [options]", OPTS_PROVIDERS, CMD_PROVIDERS},
-    {"rollback",  "<name> [options]", OPTS_ROLLBACK, CMD_ROLLBACK},
-    {"doctor",    "[options]", OPTS_DOCTOR, CMD_DOCTOR},
-    {"adopt",     "<name> [options]", OPTS_NONE, CMD_ADOPT},
-    {"about",     "[options]", OPTS_NONE, CMD_ABOUT},
-    {"lock",      "<provider:owner/repo> [options]", OPTS_NONE, CMD_LOCK},
-    {"unlock",    "<provider:owner/repo> [options]", OPTS_NONE, CMD_UNLOCK},
-    {"completions", "<bash|zsh>", OPTS_NONE, CMD_COMPLETIONS},
-    {"help",      "[command]", OPTS_NONE, CMD_HELP},
+    {"search",    "<name> [options]", OPTS_SEARCH, CMD_SEARCH, 1, -1},
+    {"install",   "<name> [options]", OPTS_INSTALL, CMD_INSTALL, 1, 1},
+    {"uninstall", "<name> [options]", OPTS_UNINSTALL, CMD_UNINSTALL, 1, 1},
+    {"update",    "<name>|--all [options]", OPTS_UPDATE, CMD_UPDATE, 1, 1},
+    {"list",      "[options]", OPTS_LIST, CMD_LIST, 0, 0},
+    {"info",      "<name> [options]", OPTS_NONE, CMD_INFO, 1, 1},
+    {"providers", "[subcommand] [options]", OPTS_PROVIDERS, CMD_PROVIDERS,
+        0, -1},
+    {"rollback",  "<name> [options]", OPTS_ROLLBACK, CMD_ROLLBACK, 1, 1},
+    {"doctor",    "[options]", OPTS_DOCTOR, CMD_DOCTOR, 0, 0},
+    {"adopt",     "<name> [options]", OPTS_NONE, CMD_ADOPT, 1, 1},
+    {"about",     "[options]", OPTS_NONE, CMD_ABOUT, 0, 0},
+    {"lock",      "<provider:owner/repo> [options]", OPTS_NONE, CMD_LOCK,
+        1, 1},
+    {"unlock",    "<provider:owner/repo> [options]", OPTS_NONE, CMD_UNLOCK,
+        1, 1},
+    {"completions", "<bash|zsh>", OPTS_NONE, CMD_COMPLETIONS, 1, 1},
+    {"help",      "[command]", OPTS_NONE, CMD_HELP, 0, 1},
 };
 
 // command names in registry order (shell completion shares this list); fills
@@ -161,6 +166,13 @@ const cmd_help *cmd_lookup(const char *name)
 {
     for (size_t k = 0; k < sizeof(CMDS) / sizeof(CMDS[0]); k++)
         if (!strcmp(name, CMDS[k].name)) return &CMDS[k];
+    return NULL;
+}
+
+const char *cmd_usage_name(cmd_id id)
+{
+    for (size_t k = 0; k < sizeof(CMDS) / sizeof(CMDS[0]); k++)
+        if ((int)CMDS[k].id == (int)id) return CMDS[k].name;
     return NULL;
 }
 
@@ -182,11 +194,22 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
     static char *empty[] = {NULL};
     static char *pos[64];
     int n = 0;
+    int end_opts = 0;            // after "--" every word is positional
+    const char *unknown = NULL;  // first unrecognised --flag, checked later
 
     memset(out, 0, sizeof(*out));
     out->args = empty;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
+        if (end_opts) {
+            if (n < 63) pos[n++] = argv[i];
+            else {
+                out->usage_error = 1;
+                out->usage_msg = "Too many arguments";
+            }
+            continue;
+        }
+        if (!strcmp(a, "--")) { end_opts = 1; continue; }
         if (!strcmp(a, "--strict")) out->strict = 1;
         else if (!strcmp(a, "--yes") || !strcmp(a, "-y")) out->assume_yes = 1;
         else if (!strcmp(a, "--require-signature")) out->require_signature = 1;
@@ -223,7 +246,11 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
         else if (!strcmp(a, "--experimental-compat")) out->experimental_compat = 1;
         // pos keeps the terminator reserved: 63 slots, and a word that
         // no longer fits is a usage error, never a silent drop
-        else if (n < 63) pos[n++] = argv[i];   // unknown flags included
+        else if (n < 63) {
+            if (a[0] == '-' && a[1] == '-' && unknown == NULL)
+                unknown = a;
+            pos[n++] = argv[i];
+        }
         else {
             out->usage_error = 1;
             out->usage_msg = "Too many arguments";
@@ -261,6 +288,21 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
                     out->usage_error = 1;
                     out->usage_msg = "";
                 }
+            } else if (!(unknown != NULL && out->id != CMD_PROVIDERS)) {
+                int extra = n - 1;
+                if ((CMDS[k].extra_max >= 0 && extra > CMDS[k].extra_max)
+                    || extra < CMDS[k].extra_min) {
+                    out->usage_error = 1;
+                    out->usage_msg = "";   // command help, exit 2
+                }
+            }
+            // an unknown option is a usage error, reported first: an
+            // extra word is usually that flag itself (providers
+            // re-parses its own option set, so it is exempt)
+            if (unknown != NULL && out->id != CMD_PROVIDERS
+                && !out->usage_error) {
+                out->usage_error = 1;
+                out->usage_msg = unknown;
             }
             return;
         }

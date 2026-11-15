@@ -53,7 +53,8 @@ static bool heal_launcher(const state_ctx *st, manifest_entry *m, char **to_out)
 }
 
 static void heal_apply(state_ctx *st, const cmd_opts *o, bool *index_fixed,
-    strv *healed, strv *declined, int *n_heal, int *n_decl)
+    strv *healed, strv *declined, strv *issues, int *n_heal, int *n_decl,
+    int *n_fail)
 {
     // Every healed item confirms itself, index rebuild included (silent
     // only when declined); state_recover_gate ran the journal under the lock.
@@ -103,6 +104,15 @@ static void heal_apply(state_ctx *st, const cmd_opts *o, bool *index_fixed,
         } else if (rc == 1) {
             sv_add(declined, strdup(want.v[k]));
             (*n_decl)++;
+        } else {
+            // a heal that could not even be attempted must not read as
+            // "nothing to repair": it stays an issue with its reason
+            sv_add(issues, path_fmt(
+                "Provider recovery failed for '%s'", want.v[k]));
+            if (!o->json && !o->quiet)
+                ui_msg(stderr, UI_ERROR,
+                    "Provider recovery failed for '%s'.", want.v[k]);
+            (*n_fail)++;
         }
         free(rec.type);
         free(rec.url);
@@ -111,6 +121,35 @@ static void heal_apply(state_ctx *st, const cmd_opts *o, bool *index_fixed,
     }
     for (size_t k = 0; k < mc; k++) manifest_entry_free(&ms[k]);
     free(ms);
+}
+
+// tracked launchers that do not resolve, as issue lines. the query pass
+// diagnoses them; the post-heal pass derives health from the actual
+// postconditions so a failed repair never reads as a clean bill
+// tracked launchers that do not resolve, as issue lines. the query pass
+// diagnoses them; the post-heal pass derives health from the actual
+// postconditions so a failed repair never reads as a clean bill. returns
+// how many issues were added (the heal-mode failed-repair count).
+static int check_launchers(state_ctx *st, strv *issues, bool after_heal,
+    bool verbose)
+{
+    int added = 0;
+    manifest_entry *ms = NULL;
+    size_t mc = 0;
+    if (manifests_scan(st->root, &ms, &mc) != 0) return 0;
+    for (size_t k = 0; k < mc; k++) {
+        if (ms[k].launcher == NULL || fs_exists(ms[k].launcher)) continue;
+        char *s = path_fmt("Launcher: missing at %s%s", ms[k].launcher,
+            after_heal ? " (heal could not restore it)" : "");
+        if (s == NULL) continue;
+        sv_add(issues, s);
+        added++;
+        if (after_heal && verbose)
+            ui_msg(stderr, UI_ERROR, "%s", s);
+    }
+    for (size_t k = 0; k < mc; k++) manifest_entry_free(&ms[k]);
+    free(ms);
+    return added;
 }
 
 int doctor_run(const cmd_opts *o)
@@ -240,11 +279,16 @@ int doctor_run(const cmd_opts *o)
         if (pend != NULL) sv_add(&issues, pend);
     }
 
+    // a query diagnoses tracked launchers that do not resolve; under
+    // --heal this runs after the repairs instead (postcondition health)
+    if (!o->heal)
+        check_launchers(&st, &issues, false, false);
+
     // bare doctor ends here read-only; --heal prints the full diagnosis first,
     // then acts; --json runs the heal first so its arrays join the document
     bool index_fixed = false;
     strv healed = {0}, declined = {0};
-    int n_heal = 0, n_decl = 0;
+    int n_heal = 0, n_decl = 0, n_fail = 0;
 
     // availability beyond gpg (wine, tor, reticulum): human report only,
     // probed once
@@ -320,8 +364,15 @@ int doctor_run(const cmd_opts *o)
     if (o->heal && !o->json)
         report_lines(&st, &issues, &warnings, gpg_ok, free_bytes, false,
                      issues.n == 0, NULL, NULL, tools, nt);
-    if (o->heal)
-        heal_apply(&st, o, &index_fixed, &healed, &declined, &n_heal, &n_decl);
+    if (o->heal) {
+        heal_apply(&st, o, &index_fixed, &healed, &declined, &issues,
+            &n_heal, &n_decl, &n_fail);
+        // health is derived from postconditions: launchers still missing
+        // after the repair attempts join the issue list, and every one of
+        // them counts as a failed repair
+        n_fail += check_launchers(&st, &issues, true,
+            !o->json && !o->quiet);
+    }
     bool healthy = (issues.n - (index_fixed ? 1 : 0)) == 0 && n_decl == 0;
     if (!o->heal || o->json)
         report_lines(&st, &issues, &warnings, gpg_ok, free_bytes, o->json,
@@ -342,8 +393,12 @@ int doctor_run(const cmd_opts *o)
                     "Run 'ape-get doctor --heal' to attempt repairs.");
         }
         if (o->heal) {
-            if (n_heal == 0 && n_decl == 0)
+            if (n_heal == 0 && n_decl == 0 && n_fail == 0)
                 ui_msg(stdout, UI_OK, "Heal: nothing to repair.");
+            else if (n_fail > 0)
+                ui_msg(stdout, UI_ERROR,
+                    "Heal: %d repaired, %d declined, %d failed.",
+                    n_heal, n_decl, n_fail);
             else
                 ui_msg(stdout, UI_OK, "Heal: %d repaired, %d declined.",
                     n_heal, n_decl);

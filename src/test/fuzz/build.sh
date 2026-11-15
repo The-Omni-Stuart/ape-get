@@ -63,7 +63,7 @@ done
 
 link json
 link checksums
-link sigstatus   "$OUT/path.o" "$OUT/proc.o"
+link sigstatus   "$OUT/path.o" "$OUT/ui.o" "$OUT/proc.o"
 link rngit       "$OUT/path.o" "$OUT/proc.o"
 link repo "$OUT/ui.o"
 link http

@@ -62,7 +62,9 @@ int phase_checksum(pipe_ctx *pc)
         if (!provider_download(pc->pe, pc->rel.assets[k].url,
                 pc->rel.assets[k].name, pc->timeout_ms, 0, NULL, NULL, NULL,
                 &ctmp, cmsg, sizeof(cmsg))) {
-            pc->detail = path_fmt("Checksum verification failed: %s", cmsg);
+            char esafe[2800];   // provider error text is remote bytes
+            ui_esc_into(esafe, sizeof esafe, cmsg);
+            pc->detail = path_fmt("Checksum verification failed: %s", esafe);
             ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "checksum failed");
             oplog_append(pc->st, pc->op, pc->ref, "-",
                 pc->detail != NULL ? pc->detail : "checksum failed");
@@ -124,10 +126,12 @@ int phase_verify(pipe_ctx *pc)
             : pc->vr.status == V_INVALID ? "Checksum file is invalid for "
                                      : "";
     bool allowed = pc->vr.status == V_VERIFIED || !strict;
+    char safe_base[2048];   // pc->base is a provider asset name
+    ui_esc_into(safe_base, sizeof safe_base, pc->base);
     if (pc->vr.status == V_MISMATCH) {
         pc->detail = path_fmt(
             "Checksum mismatch for %s: expected %s, got %s."
-            " Refusing to install.", pc->base, pc->vr.expected,
+            " Refusing to install.", safe_base, pc->vr.expected,
             pc->vr.actual);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "mismatch");
         oplog_append(pc->st, pc->op, pc->ref, "-",
@@ -137,7 +141,7 @@ int phase_verify(pipe_ctx *pc)
         pc->failed = true;
     } else if (!allowed) {
         pc->detail = path_fmt("%s%s. Refusing to install (strict mode).",
-            base, pc->base);
+            base, safe_base);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "refused");
         oplog_append(pc->st, pc->op, pc->ref, "-",
             pc->detail != NULL ? pc->detail : "refused");
@@ -146,7 +150,7 @@ int phase_verify(pipe_ctx *pc)
         pc->failed = true;
     } else if (pc->vr.status != V_VERIFIED) {
         pc->detail = path_fmt("%s%s. Continuing without verification.",
-            base, pc->base);
+            base, safe_base);
         ui_msg(stderr, UI_WARN, "%s", pc->detail != NULL ? pc->detail : "unverified");
         free(pc->detail);
         pc->detail = NULL;
@@ -209,7 +213,11 @@ int phase_verify(pipe_ctx *pc)
         }
     }
     char *sm = sig_message(&pc->sres);
-    bool allow = prev_verified
+    // required-signature is an independent policy: a previously verified
+    // manifest relaxes the new signature check only when no verified
+    // signature is required — a signer override (below) may accept a
+    // different verified identity, never a missing or invalid signature
+    bool allow = (prev_verified && !required)
         || sig_allows_install(&pc->sres, required);
     if (!allow) {
         char *w = path_fmt("%s Refusing to install.",
@@ -299,7 +307,7 @@ int phase_verify(pipe_ctx *pc)
     // magic beats any compat claim: the file is then a native APE
     if (has_ape_magic(pc->tmp)) { pc->kind = K_APE; pc->compat_run = false; }
     else if (pc->kind == K_APE) {
-        pc->detail = path_fmt("Asset is not an APE: %s", pc->base);
+        pc->detail = path_fmt("Asset is not an APE: %s", safe_base);
         ui_msg(stderr, UI_ERROR, "%s", pc->detail != NULL ? pc->detail : "not ape");
         oplog_append(pc->st, pc->op, pc->ref, "-",
             pc->detail != NULL ? pc->detail : "not ape");

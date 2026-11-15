@@ -1,6 +1,7 @@
 #include "verify.h"
 #include "path.h"
 #include "proc.h"
+#include "ui.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -214,7 +215,11 @@ sig_status sig_run_gpg(const char *sig_file, const char *artifact,
 
 char *sig_message(const sig_result *r)
 {
-    const char *name = r->asset_name != NULL ? r->asset_name : "";
+    // the asset name is provider-sourced: render it inert for display
+    char nbuf[1024];
+    ui_esc_into(nbuf, sizeof nbuf,
+        r->asset_name != NULL ? r->asset_name : "");
+    const char *name = nbuf;
     switch (r->status) {
     case S_VERIFIED: {
         char sb[1024] = "", ib[1024] = "";

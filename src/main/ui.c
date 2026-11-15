@@ -135,19 +135,28 @@ void ui_warn_subject(FILE *f, const char *subject, const char *fmt, ...)
     free(body);
 }
 
+// ref and rest may carry provider-sourced text (repo refs, versions): they
+// join the display escaped so remote bytes cannot forge layout
 void ui_line_ref_tail(FILE *f, const char *ref, const char *rest,
     const char *tail, ui_style tail_style)
 {
+    char *er = ui_esc(ref), *ev = ui_esc(rest);
     if (!ui_on(f)) {
-        fprintf(f, "%s%s%s\n", ref, rest, tail != NULL ? tail : "");
+        fprintf(f, "%s%s%s\n", er != NULL ? er : "", ev != NULL ? ev : "",
+            tail != NULL ? tail : "");
+        free(er);
+        free(ev);
         return;
     }
     const char *s = tail_style == UI_ERROR ? "\033[1;31m"
         : tail_style == UI_OK ? "\033[1;32m"
         : tail_style == UI_WARN ? "\033[1;33m" : "\033[1m";
-    fprintf(f, "\033[36m%s\033[0m%s", ref, rest);
+    fprintf(f, "\033[36m%s\033[0m%s", er != NULL ? er : "",
+        ev != NULL ? ev : "");
     if (tail != NULL) fprintf(f, "%s%s\033[0m", s, tail);
     fputc('\n', f);
+    free(er);
+    free(ev);
 }
 
 void ui_line_ref(FILE *f, const char *ref, const char *rest)
@@ -158,17 +167,21 @@ void ui_line_ref(FILE *f, const char *ref, const char *rest)
 // rest carries the ": value" remainder, colon included; the label is bolded
 void ui_line_kv(FILE *f, const char *label, const char *rest)
 {
+    char *ev = ui_esc(rest);
     if (!ui_on(f))
-        fprintf(f, "%s%s\n", label, rest);
+        fprintf(f, "%s%s\n", label, ev != NULL ? ev : "");
     else
-        fprintf(f, "\033[1m%s\033[0m%s\n", label, rest);
+        fprintf(f, "\033[1m%s\033[0m%s\n", label, ev != NULL ? ev : "");
+    free(ev);
 }
 
 void ui_line_kv_value(FILE *f, const char *label, const char *rest,
     ui_style value)
 {
+    char *ev = ui_esc(rest);
     if (!ui_on(f)) {
-        fprintf(f, "%s%s\n", label, rest);
+        fprintf(f, "%s%s\n", label, ev != NULL ? ev : "");
+        free(ev);
         return;
     }
     const char *s = value == UI_OK ? "\033[1;32m"
@@ -176,9 +189,11 @@ void ui_line_kv_value(FILE *f, const char *label, const char *rest,
         : value == UI_ERROR ? "\033[31m"
         : value == UI_DIM ? "\033[2m" : NULL;
     if (s == NULL)
-        fprintf(f, "\033[1m%s\033[0m%s\n", label, rest);
+        fprintf(f, "\033[1m%s\033[0m%s\n", label, ev != NULL ? ev : "");
     else
-        fprintf(f, "\033[1m%s\033[0m%s%s\033[0m\n", label, s, rest);
+        fprintf(f, "\033[1m%s\033[0m%s%s\033[0m\n", label, s,
+            ev != NULL ? ev : "");
+    free(ev);
 }
 
 void ui_prompt_continue(FILE *f, bool destructive)
@@ -231,4 +246,47 @@ void ui_progress_done(void)
     fputc('\n', stderr);
     fflush(stderr);
     g_prog_last = 0;
+}
+
+char *ui_esc(const char *s)
+{
+    if (s == NULL) return NULL;
+    const unsigned char *p = (const unsigned char *)s;
+    const unsigned char *end = p + strlen(s);
+    char *o = malloc((size_t)(end - p) * 4 + 1);
+    if (o == NULL) return NULL;
+    static const char hx[] = "0123456789abcdef";
+    char *w = o;
+    while (p < end) {
+        unsigned char c = *p;
+        if (c >= 0x20 && c != 0x7f) {
+            if (c < 0x80) { *w++ = (char)c; p++; continue; }
+            // a well-formed UTF-8 sequence is kept intact: bytes inside
+            // one are never terminal controls
+            int extra = c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : c >= 0xc2 ? 1 : 0;
+            bool whole = extra > 0 && (size_t)(end - p) > (size_t)extra;
+            for (int k = 1; whole && k <= extra; k++)
+                whole = p[k] >= 0x80 && p[k] < 0xc0;
+            if (whole) {
+                memcpy(w, p, (size_t)extra + 1);
+                w += extra + 1;
+                p += extra + 1;
+                continue;
+            }
+        }
+        *w++ = '\\'; *w++ = 'x';
+        *w++ = hx[c >> 4]; *w++ = hx[c & 15];
+        p++;
+    }
+    *w = '\0';
+    return o;
+}
+
+void ui_esc_into(char *dst, size_t cap, const char *s)
+{
+    if (cap == 0) return;
+    char *e = ui_esc(s);
+    if (e == NULL) { dst[0] = '\0'; return; }
+    snprintf(dst, cap, "%s", e);
+    free(e);
 }

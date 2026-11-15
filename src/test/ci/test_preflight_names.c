@@ -32,6 +32,8 @@ void oplog_append(const state_ctx *s, const char *a, const char *b,
 { (void)s; (void)a; (void)b; (void)c; (void)d; }
 void ui_msg(FILE *f, ui_style s, const char *fmt, ...)
 { (void)f; (void)s; (void)fmt; }
+void ui_esc_into(char *dst, size_t cap, const char *s)
+{ if (cap > 0) snprintf(dst, cap, "%s", s != NULL ? s : ""); }
 bool crypto_sha256_fd(int fd, char out[65])
 { (void)fd; (void)out; abort(); }
 char *compat_detect_wine(const char *p, char **err)

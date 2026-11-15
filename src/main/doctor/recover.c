@@ -51,7 +51,9 @@ static void jset_line(const char *label, strv *l)
         for (int k = 0; k < l->n && k < 8; k++)
             if ((int)(h[k] & 15u) == b) {
                 if (emitted++) jb_lit(&s, ", ");
-                jb_lit(&s, l->v[k]);
+                char *ev = ui_esc(l->v[k]);   // provenance strings are remote
+                jb_lit(&s, ev != NULL ? ev : l->v[k]);
+                free(ev);
             }
     jb_lit(&s, "]");
     ui_line(stderr, UI_DIM, s.p != NULL ? s.p : "");
@@ -124,14 +126,17 @@ int providers_recover_core(const cmd_opts *o, state_ctx *st, const char *name,
             "No installed packages reference provider '%s'.", name);
         return 2;
     }
-    if (types.n == 0 || apis.n == 0) {
+    // an explicit --type/--api resolves before the stored provenance is
+    // questioned: complain only about fields neither source can answer
+    bool need_type = type_ov == NULL, need_api = api_ov == NULL;
+    if ((need_type && types.n == 0) || (need_api && apis.n == 0)) {
         ui_msg(stderr, UI_ERROR,
             "Installed manifests do not record the provider type and API.");
         ui_msg(stderr, UI_ERROR,
             "Pass --type and --api to recover this provider.");
         return 2;
     }
-    if (types.n > 1 || apis.n > 1) {
+    if ((need_type && types.n > 1) || (need_api && apis.n > 1)) {
         ui_msg(stderr, UI_ERROR,
             "Installed manifests disagree about this provider:");
         jset_line("  types: ", &types);

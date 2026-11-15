@@ -178,7 +178,10 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
             if (c.delta_fd >= 0) { close(c.delta_fd); c.delta_fd = -1; }
             if (c.tmp != NULL) { remove(c.tmp); free(c.tmp); c.tmp = NULL; }
             c.asset = &c.fb_asset;
-            ui_msg(stderr, UI_DIM, "Selected asset: %s", c.asset->name);
+            char esafe[2048];
+            ui_esc_into(esafe, sizeof esafe,
+                c.asset->name != NULL ? c.asset->name : "");
+            ui_msg(stderr, UI_DIM, "Selected asset: %s", esafe);
             oplog_append(c.st, c.op, c.ref, "-",
                 "delta decode failed; re-selected the full variant");
             rc = PIPE_GO;

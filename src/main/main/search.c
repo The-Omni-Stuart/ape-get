@@ -26,11 +26,13 @@
 static void search_report_failure(const char *provider, const prov_search *r)
 {
     if (r->reason == PROV_NOT_FOUND) return;   // not-found stays silent, original quirk
+    char msg[sizeof(r->message) * 4];   // escaped rendering is at most 4x
+    ui_esc_into(msg, sizeof msg, r->message);
     if (r->reason == PROV_UNSUPPORTED)
         ui_warn_subject(stderr, provider,
-            "%s (use provider:owner/repo)", r->message);
+            "%s (use provider:owner/repo)", msg);
     else
-        ui_warn_subject(stderr, provider, "%s", r->message);
+        ui_warn_subject(stderr, provider, "%s", msg);
 }
 
 static bool search_run_one(provider_entry *e, const char *query,
@@ -92,11 +94,17 @@ static int search_one(const cmd_opts *o, state_ctx *st,
     char pfx[512];
     if (strcasecmp(e->name, "github") == 0) pfx[0] = '\0';
     else snprintf(pfx, sizeof(pfx), "%s:", e->name);
-    for (int k = 0; k < res.n; k++)
-        printf("%s%s: %s\n", pfx,
-               res.items[k].full_name != NULL ? res.items[k].full_name : "null",
-               res.items[k].description != NULL ? res.items[k].description
-                                                : "null");
+    for (int k = 0; k < res.n; k++) {
+        // repo name and description are provider bytes: render them inert
+        char *en = ui_esc(res.items[k].full_name != NULL
+            ? res.items[k].full_name : "null");
+        char *ed = ui_esc(res.items[k].description != NULL
+            ? res.items[k].description : "null");
+        printf("%s%s: %s\n", pfx, en != NULL ? en : "",
+            ed != NULL ? ed : "");
+        free(en);
+        free(ed);
+    }
     if (!o->quiet)
         fprintf(stderr, "To install a release, use the 'install' command"
                         " followed by the repository name.\n");
@@ -157,12 +165,17 @@ static int search_all(const cmd_opts *o, state_ctx *st, const char *query)
             puts("No results found.");
         } else {
             for (int k = 0; results != NULL && k < n; k++)
-                for (int h = 0; okv[k] && h < results[k].n; h++)
-                    printf("%s:%s: %s\n", list[k].name,
-                           results[k].items[h].full_name != NULL
-                               ? results[k].items[h].full_name : "null",
-                           results[k].items[h].description != NULL
-                               ? results[k].items[h].description : "");
+                for (int h = 0; okv[k] && h < results[k].n; h++) {
+                    // repo name and description are provider bytes
+                    char *en = ui_esc(results[k].items[h].full_name != NULL
+                        ? results[k].items[h].full_name : "null");
+                    char *ed = ui_esc(results[k].items[h].description != NULL
+                        ? results[k].items[h].description : "");
+                    printf("%s%s: %s\n", list[k].name,
+                        en != NULL ? en : "", ed != NULL ? ed : "");
+                    free(en);
+                    free(ed);
+                }
             printf("Found %zu repositories across %d provider(s).\n",
                    hits, succeeded);
             if (!o->quiet)

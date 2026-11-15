@@ -33,6 +33,9 @@ void dl_progress(size_t done, long long total, void *ud)
     }
     char cur[32];
     dl_bytes(cur, sizeof cur, (double)done);
+    // asset names are provider bytes: the live line must stay inert
+    char *owned = ui_esc(d->asset != NULL ? d->asset : "");
+    const char *aname = owned != NULL ? owned : "";
     if (total > 0) {
         int pct = (int)((double)done * 100.0 / (double)total);
         if (pct > 100) pct = 100;
@@ -49,15 +52,16 @@ void dl_progress(size_t done, long long total, void *ud)
             snprintf(rt, sizeof rt, "%s/s", rb);
         } else snprintf(rt, sizeof rt, "--");
         snprintf(d->line, 320, "%s [%s] %d%% %s - %s/%s",
-            d->asset, bar, pct, rt, cur, tot);
+            aname, bar, pct, rt, cur, tot);
     } else {
         char bar[21];
         int ph = (int)((done / 16384) % 14);
         for (int i = 0; i < 17; i++) bar[i] = '-';
         bar[17] = '\0';
         bar[ph] = bar[ph + 1] = bar[ph + 2] = '>';
-        snprintf(d->line, 320, "%s [%s] %s", d->asset, bar, cur);
+        snprintf(d->line, 320, "%s [%s] %s", aname, bar, cur);
     }
     // the 100% frame must always render: throttling cannot swallow it
     ui_progress(d->line, total > 0 && (long long)done >= total);
+    free(owned);
 }

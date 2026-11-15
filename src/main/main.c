@@ -127,11 +127,14 @@ int main(int argc, char **argv)
         return run_help(o.nargs >= 1 ? o.args[0] : NULL);
 
     if (o.usage_error) {
-        // the argument doubles as the usage-error message (unknown command
-        // or missing value); a blank one — arity errors — prints the dump alone
-        if (o.id == CMD_UPDATE && o.usage_msg != NULL
-            && o.usage_msg[0] == '\0')
-            return run_help("update"); // bare update: styled help
+        // the argument doubles as the usage-error message (unknown command,
+        // unknown option or missing value); a blank one — missing or extra
+        // positional argument — prints the command's own help, but a
+        // request that was never performed must not exit 0
+        if (o.usage_msg != NULL && o.usage_msg[0] == '\0') {
+            run_help(cmd_usage_name(o.id));
+            return 2;
+        }
         const char *arg = NULL;
         if (o.usage_msg != NULL) {
             arg = o.usage_msg;
