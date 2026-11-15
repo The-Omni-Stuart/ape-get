@@ -12,8 +12,12 @@ typedef struct tls_conn tls_conn;
 // Failure classes for network-error messages.
 typedef enum { TLS_OK = 0, TLS_TIMEOUT, TLS_DNS, TLS_CONNECT, TLS_OTHER } tls_err;
 
-// Resolve, connect and handshake on port under one combined deadline;
-// failure returns NULL with the message in errbuf and the class in *kind.
+// Resolve, connect and handshake on port under one absolute
+// CLOCK_MONOTONIC deadline measured from entry: DNS stays blocking
+// (portable) but a slow resolve only shrinks what connect and handshake
+// get; sub-second timeouts are honoured. timeout_ms afterwards bounds
+// each read stall, each full write and the close-notify separately.
+// Failure returns NULL with the message in errbuf and the class in *kind.
 tls_conn *tls_connect(const char *host, int port, const char *ca_file,
                       const char *ca_mem, size_t ca_mem_len,
                       int timeout_ms, tls_err *kind,

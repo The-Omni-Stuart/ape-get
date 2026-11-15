@@ -12,8 +12,9 @@
 typedef enum { HTTP_ERR_NONE = 0, HTTP_ERR_TIMEOUT, HTTP_ERR_DNS,
                HTTP_ERR_CONNECT, HTTP_ERR_OTHER } http_err;
 
-// Process-wide proxy: "http[s]://host[:port]" CONNECTs, "socks5[h]://"
+// Process-wide proxy: "http://host[:port]" CONNECTs, "socks5[h]://"
 // SOCKS5s, "tor" means socks5 127.0.0.1:9050; NULL or empty goes direct.
+// "https://" proxy URLs are rejected at use time (no nested proxy TLS).
 void http_set_proxy(const char *url);
 
 typedef struct {
@@ -24,8 +25,9 @@ typedef struct {
     int errkind;             // http_err, valid when http_get returned false
 } http_resp;
 
-// timeout_ms covers connect+handshake and each read stall; false is a
-// transport failure (errbuf), HTTP errors return with their status.
+// timeout_ms is an absolute budget for resolve+connect+handshake and,
+// separately, each later read stall or write; false is a transport
+// failure (errbuf), HTTP errors return with their status.
 bool http_get(const char *url, const char *auth, int timeout_ms,
               http_resp *out, char *errbuf, size_t errcap);
 

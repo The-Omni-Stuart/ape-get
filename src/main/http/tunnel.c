@@ -83,7 +83,15 @@ static int proxy_via(const char *proxy, const char *host, int port, int ms,
         const char *rest;
         if (!strncasecmp(proxy, "socks5h://", 10)) { socks = true; rest = proxy + 10; }
         else if (!strncasecmp(proxy, "socks5://", 9)) { socks = true; rest = proxy + 9; }
-        else if (!strncasecmp(proxy, "https://", 8)) { socks = false; rest = proxy + 8; }
+        else if (!strncasecmp(proxy, "https://", 8)) {
+            // CONNECT over raw TCP would speak plaintext to a TLS-speaking
+            // proxy; nested proxy TLS is not implemented, so refuse rather
+            // than silently downgrade the scheme
+            snprintf(errbuf, errcap,
+                "https:// proxy URLs are not supported: use http:// "
+                "or socks5:// for %s", proxy);
+            return -1;
+        }
         else if (!strncasecmp(proxy, "http://", 7)) { socks = false; rest = proxy + 7; }
         else {
             snprintf(errbuf, errcap, "Unsupported proxy scheme: %s", proxy);
@@ -97,7 +105,7 @@ static int proxy_via(const char *proxy, const char *host, int port, int ms,
             *col = '\0';
             pp = atoi(col + 1);
         } else {
-            pp = socks ? 1080 : 80;
+            pp = socks ? 1080 : 80;     // per-scheme default ports
         }
         snprintf(ph, sizeof ph, "%s", spec);
     }
@@ -189,7 +197,10 @@ tls_conn *open_conn(const char *host, int port, const char *ca_file,
             timeout_ms, kind, errbuf, errcap);
     int fd = proxy_via(g_proxy, host, port, timeout_ms, errbuf, errcap);
     if (fd < 0) {
-        *kind = TLS_CONNECT;
+        // proxy_via filled errbuf with a self-describing reason; the http
+        // layer shows it verbatim (only a bare connect failure collapses
+        // to the canned "could not connect" text)
+        *kind = TLS_OTHER;
         return NULL;
     }
     return tls_connect_fd(fd, host, ca_file, ca_mem, ca_mem_len,

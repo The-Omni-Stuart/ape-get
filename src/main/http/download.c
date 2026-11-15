@@ -1,5 +1,6 @@
-// The streaming download path: one fixed-buffer attempt per URL and
-// the redirect loop around it; a 200 body goes straight to disk.
+// The streaming download path: one fixed-buffer attempt per URL driven
+// by the shared framing machine, and the redirect loop around it; a
+// 200 body goes straight to disk.
 
 #include "http.h"
 #include "http/internal.h"
@@ -11,9 +12,33 @@
 #include <string.h>
 #include <strings.h>
 
-// Streaming buffer for http_download (header block + body chunks); a
-// header block larger than this is rejected as malformed.
-#define DL_BUF (1UL << 16)
+struct dl_io {
+    tls_conn *c;
+    FILE *f;
+    int werr;                   // errno of a sink write failure
+    long long total;            // declared total for the progress sink
+    long long done;
+    http_prog cb;
+    void *ud;
+};
+
+static int dl_read(void *v, char *b, size_t n)
+{
+    struct dl_io *x = v;
+    return tls_read(x->c, b, n);
+}
+
+static bool dl_sink(void *v, const char *p, size_t n)
+{
+    struct dl_io *x = v;
+    if (fwrite(p, 1, n, x->f) != n) {
+        x->werr = errno;
+        return false;
+    }
+    x->done += (long long)n;
+    if (x->cb != NULL) x->cb((size_t)x->done, x->total, x->ud);
+    return true;
+}
 
 // One streaming attempt on one URL. true = response fully handled (200:
 // whole body written); *status is the final HTTP status, 0 for failure.
@@ -47,9 +72,9 @@ static bool http_download_once(const char *url, const char *hdr_line,
     }
 
     char hostp[300];
-    if (port == 443) snprintf(hostp, sizeof(hostp), "%s", host);
-    else snprintf(hostp, sizeof(hostp), "%s:%d", host, port);
-    char *req = malloc(4096 + (hdr_line != NULL ? strlen(hdr_line) : 0));
+    bool ok = url_authority(host, port, hostp, sizeof hostp);
+    char *req = ok
+        ? malloc(4096 + (hdr_line != NULL ? strlen(hdr_line) : 0)) : NULL;
     if (req == NULL) {
         snprintf(errbuf, errcap, "request failed");
         tls_close(c);
@@ -64,7 +89,7 @@ static bool http_download_once(const char *url, const char *hdr_line,
         "%s"
         "\r\n",
         path, hostp, hdr_line != NULL ? hdr_line : "");
-    bool ok = n > 0 && tls_write_all(c, req, (size_t)n) == 0;
+    ok = n > 0 && tls_write_all(c, req, (size_t)n) == 0;
     free(req);
     if (!ok) {
         snprintf(errbuf, errcap, "request failed");
@@ -72,99 +97,36 @@ static bool http_download_once(const char *url, const char *hdr_line,
         return false;
     }
 
-    char *buf = malloc(DL_BUF);
+    char *buf = malloc(HTTP_BUF);
     if (buf == NULL) {
         snprintf(errbuf, errcap, "connection to %s failed", hostp);
         tls_close(c);
         return false;
     }
-
-    size_t rn = 0, hoff = 0;
-    for (;;) {                          // header block first, capped
-        int r = tls_read(c, buf + rn, DL_BUF - rn);
-        if (r == -2) {
-            *errkind = HTTP_ERR_TIMEOUT;
-            snprintf(errbuf, errcap, "connection to %s failed", hostp);
-            goto fail_conn;
-        }
-        if (r < 0) {
-            snprintf(errbuf, errcap, "connection to %s failed", hostp);
-            goto fail_conn;
-        }
-        if (r == 0) {
-            if (rn >= 12 && strncmp(buf, "HTTP/", 5) == 0)
-                snprintf(errbuf, errcap, "malformed response from %s",
-                         hostp);
-            else
-                snprintf(errbuf, errcap, "connection to %s failed", hostp);
-            goto fail_conn;
-        }
-        rn += (size_t)r;
-        const char *hd = mem_find(buf, rn, "\r\n\r\n", 4);
-        if (hd != NULL && (size_t)(hd + 4 - buf) < DL_BUF) {
-            hoff = (size_t)(hd + 4 - buf);
-            break;
-        }
-        if (rn == DL_BUF) {
-            snprintf(errbuf, errcap, "malformed response from %s", hostp);
-            goto fail_conn;
-        }
-    }
-
-    // NUL AFTER the terminating CRLFCRLF: zeroing its first CR (what the
-    // buffered path does) hides the last header line from header_get.
-    char head_end_saved = buf[hoff];
-    buf[hoff] = '\0';
-    int status_ = -1;
-    // Hand-rolled: sscanf drags in ~12 KB/arch of scanf machinery.
-    if (strncmp(buf, "HTTP/1.", 7) == 0 && buf[7] >= '0'
-            && buf[7] <= '9' && buf[8] == ' ') {
-        const char *p = buf + 9;
-        int v = 0, k = 0;
-        while (k < 3 && p[k] >= '0' && p[k] <= '9') {
-            v = v * 10 + (p[k] - '0');
-            k++;
-        }
-        if (k == 3 && (p[k] == ' ' || p[k] == '\r' || p[k] == '\0'))
-            status_ = v;
-    }
-    if (status_ < 0) {
-        snprintf(errbuf, errcap, "malformed status line");
+    size_t have = 0;
+    resp_head h;
+    int kind = HTTP_ERR_OTHER;
+    if (!resp_head_read(c, hostp, buf, HTTP_BUF, &have, &h, &kind,
+                        errbuf, errcap)) {
+        *errkind = kind;
+        free(h.location);
         goto fail_conn;
     }
-
-    const char *vs, *ve;
-    bool chunked = false;
-    if (header_get(buf, "transfer-encoding", &vs, &ve))
-        for (const char *p = vs; p + 6 < ve; p++)
-            if (strncasecmp(p, "chunked", 7) == 0) chunked = true;
-    if (header_get(buf, "location", &vs, &ve))
-        snprintf(location, loccap, "%.*s", (int)(ve - vs), vs);
-    long long clen = -1;
-    if (!chunked && header_get(buf, "content-length", &vs, &ve)) {
-        char num[24];
-        size_t l = (size_t)(ve - vs);
-        if (l < sizeof(num)) {
-            memcpy(num, vs, l);
-            num[l] = '\0';
-            clen = atoll(num);
-        }
+    if (h.location != NULL) {
+        snprintf(location, loccap, "%s", h.location);
+        free(h.location);
     }
-
-    if (status_ != 200) {               // nothing written; caller decides
-        *status = status_;
+    if (h.status != 200) {              // nothing written; caller decides
+        *status = h.status;
         tls_close(c);
         free(buf);
         return true;
     }
-    buf[hoff] = head_end_saved;         // body bytes live again
-
-    long long total = chunked ? -1 : clen;
     // a lying-enormous declared length refuses before the destination
     // is opened, let alone truncated by the "wb" below
-    if (max_bytes > 0 && clen > max_bytes) {
+    if (max_bytes > 0 && h.clen > max_bytes) {
         snprintf(errbuf, errcap, "declared body of %lld bytes exceeds the "
-            "%lld MiB cap", clen, max_bytes >> 20);
+            "%lld MiB cap", h.clen, max_bytes >> 20);
         goto fail_conn;
     }
     FILE *f = fopen(dest_path, "wb");
@@ -173,127 +135,32 @@ static bool http_download_once(const char *url, const char *hdr_line,
                  strerror(errno));
         goto fail_conn;
     }
-    long long written = 0;
+    long long total = !h.chunked && h.clen >= 0 ? h.clen : -1;
+    struct dl_io x = { .c = c, .f = f, .total = total, .cb = cb, .ud = ud };
     if (cb != NULL) cb(0, total, ud);
 
-    bool done = false, werr = false, terr = false, toobig = false;
-    int ferr = 0;                       // errno of a write failure
-    size_t have = rn - hoff;            // unconsumed body bytes
-    if (have > 0) memmove(buf, buf + hoff, have);
-    #define DL_DROP(k) do {                                             \
-        memmove(buf, buf + (k), have - (size_t)(k));                    \
-        have -= (size_t)(k);                                            \
-    } while (0)
-
-    if (!chunked) {
-        for (;;) {
-            if (clen >= 0 && written >= clen) { done = true; break; }
-            size_t take = have;
-            if (clen >= 0 && (long long)take > clen - written)
-                take = (size_t)(clen - written);
-            if (max_bytes > 0 && written + (long long)take > max_bytes) {
-                toobig = true;          // undeclared padding: stop reading
-                break;
-            }
-            if (take > 0) {
-                if (fwrite(buf, 1, take, f) != take) {
-                    werr = true;
-                    ferr = errno;
-                    break;
-                }
-                written += (long long)take;
-                DL_DROP(take);
-                if (cb != NULL) cb((size_t)written, total, ud);
-            }
-            // clen met with bytes still buffered: stop at the declared
-            // length, like the buffered path truncating at clen
-            if (clen >= 0 && written >= clen) { done = true; break; }
-            int r = tls_read(c, buf + have, DL_BUF - have);
-            if (r > 0) { have += (size_t)r; continue; }
-            if (r == -2) *errkind = HTTP_ERR_TIMEOUT;
-            if (r != 0 || (clen >= 0 && written < clen)) {
-                terr = true;            // stall, error or truncation
-                break;
-            }
-            done = true;                // clean EOF at the end
-            break;
-        }
-    } else {
-        int st = 0;                     // 0 size-line, 1 data, 2 CRLF
-        long long want = 0;
-        for (;;) {
-            bool progressed = false;
-            if (st == 0) {
-                const char *nl = mem_find(buf, have, "\r\n", 2);
-                if (nl != NULL) {
-                    char sz[24] = "";
-                    size_t l = (size_t)(nl - buf);
-                    if (l >= sizeof(sz)) { terr = true; break; }
-                    memcpy(sz, buf, l);
-                    sz[strcspn(sz, ";")] = '\0';
-                    char *endp = NULL;
-                    want = strtoll(sz, &endp, 16);
-                    if (endp == sz || want < 0) { terr = true; break; }
-                    DL_DROP(l + 2);
-                    if (want == 0) { done = true; break; }
-                    st = 1;
-                    progressed = true;
-                } else if (have == DL_BUF) { terr = true; break; }
-            } else if (st == 1) {
-                size_t take = (long long)have < want ? have : (size_t)want;
-                if (max_bytes > 0 && written + (long long)take > max_bytes) {
-                    toobig = true;
-                    break;
-                }
-                if (take > 0) {
-                    if (fwrite(buf, 1, take, f) != take) {
-                        werr = true;
-                        ferr = errno;
-                        break;
-                    }
-                    written += (long long)take;
-                    want -= (long long)take;
-                    DL_DROP(take);
-                    if (cb != NULL) cb((size_t)written, -1, ud);
-                    progressed = true;
-                }
-                if (want == 0) st = 2;
-            } else if (have >= 2) {     // trailing CRLF of a chunk
-                DL_DROP(2);
-                st = 0;
-                progressed = true;
-            }
-            if (progressed) continue;
-            if (have == DL_BUF) {       // cannot consume, cannot append
-                terr = true;
-                break;
-            }
-            int r = tls_read(c, buf + have, DL_BUF - have);
-            if (r > 0) { have += (size_t)r; continue; }
-            if (r == -2) *errkind = HTTP_ERR_TIMEOUT;
-            terr = true;                // stalled, errored or truncated
-            break;
-        }
-    }
-    #undef DL_DROP
-
-    if (fclose(f) != 0 && !werr && !terr) {
-        werr = true;                    // flush/ENOSPC surfacing at close
-        ferr = errno;
+    resp_io io = { dl_read, dl_sink, &x };
+    long long written = 0;
+    resp_stop st = resp_read_body(&io, buf, &have, HTTP_BUF, &h,
+                                  max_bytes, &written);
+    if (fclose(f) != 0 && st == RESP_DONE && x.werr == 0) {
+        x.werr = errno;               // flush/ENOSPC surfacing at close
+        st = RESP_SINKERR;
     }
     tls_close(c);
     free(buf);
-    if (done && !werr && !terr && !toobig) {
-        *status = status_;
+    if (st == RESP_DONE) {
+        *status = h.status;
         return true;
     }
-    if (werr) {
+    if (st == RESP_SINKERR) {
         snprintf(errbuf, errcap, "failed writing %s: %s", dest_path,
-                 strerror(ferr));
-    } else if (toobig) {
+                 strerror(x.werr));
+    } else if (st == RESP_TOOBIG) {
         snprintf(errbuf, errcap, "body exceeds the %lld MiB download cap "
             "(read %lld of it)", max_bytes >> 20, written);
     } else {
+        if (st == RESP_TIMEOUT) *errkind = HTTP_ERR_TIMEOUT;
         char tot[32];
         if (total > 0) snprintf(tot, sizeof tot, "%lld", total);
         else snprintf(tot, sizeof tot, "?");
@@ -301,7 +168,7 @@ static bool http_download_once(const char *url, const char *hdr_line,
                  "download from %s failed after %lld of %s bytes",
                  hostp, written, tot);
     }
-    remove(dest_path);                  // nothing partial may survive a failure
+    remove(dest_path);                // nothing partial may survive a failure
     return false;
 
 fail_conn:
@@ -320,8 +187,12 @@ bool http_download(const char *url, const char *name, const char *value,
     if (errkind != NULL) *errkind = HTTP_ERR_OTHER;
     char hdr[1300];
     if (value != NULL) snprintf(hdr, sizeof(hdr), "%s: %s\r\n", name, value);
-    char cur[4096];
-    snprintf(cur, sizeof(cur), "%s", url);
+    char *cur = strdup(url);
+    if (cur == NULL) {
+        snprintf(errbuf, errcap, "out of memory");
+        return false;
+    }
+    bool ok = false;
     for (int hop = 0; hop <= 20; hop++) {
         int st = 0, kind = HTTP_ERR_OTHER;
         char loc[4096] = "";
@@ -329,32 +200,19 @@ bool http_download(const char *url, const char *name, const char *value,
                                 max_bytes, cb, ud, dest_path, &st, &kind,
                                 loc, sizeof(loc), errbuf, errcap)) {
             if (errkind != NULL) *errkind = kind;
-            return false;
+            break;
         }
         if (status != NULL) *status = st;
         bool redir = st == 301 || st == 302 || st == 303
             || st == 307 || st == 308;
-        if (!redir || loc[0] == '\0' || hop == 20) return st == 200;
+        if (!redir || loc[0] == '\0' || hop == 20) { ok = st == 200; break; }
 
-        char *next = NULL;
-        if (strncasecmp(loc, "https://", 8) == 0)
-            next = strdup(loc);
-        else if (loc[0] == '/') {
-            char host[256], p0[8];
-            int port;
-            if (split_url(cur, host, sizeof(host), &port, p0, sizeof(p0),
-                          errbuf, errcap)) {
-                char auth[280];
-                if (port == 443) snprintf(auth, sizeof(auth), "%s", host);
-                else snprintf(auth, sizeof(auth), "%s:%d", host, port);
-                next = malloc(8 + strlen(auth) + strlen(loc) + 1);
-                if (next != NULL) sprintf(next, "https://%s%s", auth, loc);
-            }
-        }
-        if (next == NULL) return st == 200; // unresolvable: report as-is
+        char *next = url_join(cur, loc);
+        if (next == NULL) { ok = st == 200; break; }  // unresolvable: report
         if (value != NULL && !same_origin(cur, next)) value = NULL;
-        snprintf(cur, sizeof(cur), "%s", next);
-        free(next);
+        free(cur);
+        cur = next;
     }
-    return false;
+    free(cur);
+    return ok;
 }

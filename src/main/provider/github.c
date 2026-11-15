@@ -1,8 +1,8 @@
 /* The GitHub adapter — the job of the original GithubClient:
-   "interacting with the Github API … search for repositories, get the
-   latest release assets". */
+   "interacting with the Github API … get the latest release assets". */
 
 #include "provider.h"
+#include "provider/internal.h"
 #include "http.h"
 #include "json.h"
 #include "path.h"
@@ -29,8 +29,10 @@ bool provider_github_search(const provider_entry *e, const char *query,
     return ok;
 }
 
-// GitHub releases: /releases/latest (stable), /releases?per_page=20 for
-// beta (first non-draft; prereleases allowed), /releases/tags for --version.
+// GitHub releases: /releases/latest for stable (the server-side latest
+// is published and non-prerelease), the shared paginated listing for
+// beta, /releases/tags for --version — which must name a published
+// release, so drafts are rejected like every other provider.
 bool provider_github_release(const provider_entry *e, const char *path,
                              const char *tag, bool beta, int timeout_ms,
                              prov_release *out)
@@ -40,10 +42,20 @@ bool provider_github_release(const provider_entry *e, const char *path,
     char *enc = tag != NULL ? http_url_encode(tag) : NULL;
     char *url = tag != NULL
         ? path_fmt("%s/repos/%s/releases/tags/%s", e->api, path, enc)
-        : beta ? path_fmt("%s/repos/%s/releases?per_page=20", e->api, path)
+        : beta ? path_fmt("%s/repos/%s/releases?per_page=%d",
+                          e->api, path, PROV_PAGE_SIZE)
                : path_fmt("%s/repos/%s/releases/latest", e->api, path);
     free(enc);
     if (url == NULL) { free(ctx); return false; }
+
+    if (tag == NULL && beta) {
+        bool ok = prov_release_pages(e, url, ctx != NULL ? ctx : path,
+                                     true, timeout_ms, out,
+                                     prov_parse_gh_flags);
+        free(url);
+        free(ctx);
+        return ok;
+    }
 
     char *body = NULL;
     prov_reason reason = PROV_OK;
@@ -57,40 +69,16 @@ bool provider_github_release(const provider_entry *e, const char *path,
         return false;
     }
 
-    if (!beta || tag != NULL) {
-        bool draft = false, pre = false;
-        ok = prov_release_from_json(body, out, &draft, &pre);
-        free(body);
-        if (!ok) goto invalid;
-        out->reason = PROV_OK;
-        return true;
-    }
-
-    jspan *sp = NULL;
-    int n = json_array_spans(body, &sp);
-    ok = false;
-    for (int k = 0; k < n; k++) {
-        char *el = strndup(sp[k].s, (size_t)(sp[k].e - sp[k].s));
-        bool draft = false, pre = false;
-        bool parsed = el != NULL
-            && prov_release_from_json(el, out, &draft, &pre);
-        free(el);
-        if (!parsed) continue;
-        if (draft) {
-            prov_release_free(out);
-            memset(out, 0, sizeof(*out));
-            continue;
-        }
-        ok = true;
-        break;
-    }
-    free(sp);
+    bool draft = false, pre = false;
+    ok = prov_release_from_json(body, out, &draft, &pre);
     free(body);
-    if (!ok) {
+    if (!ok) goto invalid;
+    if (tag != NULL && draft) {
         prov_release_free(out);
         memset(out, 0, sizeof(*out));
-        out->reason = PROV_NOT_FOUND;
-        snprintf(out->message, sizeof(out->message), "no published release");
+        out->reason = PROV_OTHER;
+        snprintf(out->message, sizeof(out->message),
+            "Release %s is a draft", tag);
         return false;
     }
     out->reason = PROV_OK;

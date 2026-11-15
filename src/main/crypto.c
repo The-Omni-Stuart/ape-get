@@ -19,6 +19,13 @@
 #include <time.h>
 #include <unistd.h>
 
+static long long mono_us(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
 struct tls_conn {
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config cfg;
@@ -26,6 +33,8 @@ struct tls_conn {
     mbedtls_x509_crt ca;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context drbg;
+    int timeout_ms;         // fresh budget for each post-handshake op
+    long long deadline_us;  // what the bio callbacks must stay inside
 };
 
 // Compact mbedtls_strerror: the vendored table costs ~14 KB/arch and this
@@ -74,10 +83,14 @@ static void fail(tls_conn *c, char *errbuf, size_t errcap,
     tls_close(c);
 }
 
-// Non-blocking connect with a wall deadline, then back to blocking.
+// Non-blocking connect under one absolute deadline: DNS stays blocking
+// (portable name resolution has no interruptible API here) but the whole
+// address sequence shares what is left of `ms`, never one budget per
+// address.
 static int tcp_connect_timeout(const char *host, const char *port, int ms,
                                tls_err *kind)
 {
+    long long deadline = mono_us() + 1000LL * ms;
     struct addrinfo hints = { .ai_family = AF_UNSPEC,
                               .ai_socktype = SOCK_STREAM }, *res = NULL;
     int ga = getaddrinfo(host, port, &hints, &res);
@@ -90,6 +103,8 @@ static int tcp_connect_timeout(const char *host, const char *port, int ms,
     if (ga != 0) { *kind = TLS_DNS; return -1; }
     int fd = -1;
     for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
+        long long left = (deadline - mono_us()) / 1000;
+        if (left <= 0) { errno = ETIMEDOUT; break; }
         // Socket flags use SOCK_*, not the platform-dependent fcntl O_*.
         fd = socket(ai->ai_family, ai->ai_socktype | SOCK_NONBLOCK, 0);
         if (fd < 0) continue;
@@ -97,7 +112,7 @@ static int tcp_connect_timeout(const char *host, const char *port, int ms,
         if (rc == 0) { errno = 0; }
         else if (errno == EINPROGRESS) {
             struct pollfd pfd = { .fd = fd, .events = POLLOUT };
-            rc = poll(&pfd, 1, ms);
+            rc = poll(&pfd, 1, (int)left);
             if (rc == 1) {
                 int err = 0;
                 socklen_t len = sizeof(err);
@@ -143,6 +158,41 @@ static int add_der_bundle(mbedtls_x509_crt *ca,
         p += hdr + len; n -= hdr + len;
     }
     return ok;
+}
+
+// Deadline-aware bio: each call polls for up to what the conn's current
+// deadline allows and returns MBEDTLS_ERR_SSL_TIMEOUT once it is spent,
+// so handshake, writes and close-notify are all bounded (sub-second
+// timeouts included; SO_RCVTIMEO would truncate those to zero).
+static int bio_recv(void *p, unsigned char *buf, size_t n)
+{
+    tls_conn *c = p;
+    long long left = (c->deadline_us - mono_us()) / 1000;
+    if (left <= 0) return MBEDTLS_ERR_SSL_TIMEOUT;
+    struct pollfd pfd = { .fd = c->net.fd, .events = POLLIN };
+    int r = poll(&pfd, 1, (int)left);
+    if (r == 0) return MBEDTLS_ERR_SSL_TIMEOUT;
+    if (r < 0) return errno == EINTR ? 0 : MBEDTLS_ERR_NET_RECV_FAILED;
+    ssize_t g = recv(c->net.fd, buf, n, 0);
+    if (g > 0) return (int)g;
+    if (g == 0 || errno == EINTR || errno == EAGAIN
+        || errno == EWOULDBLOCK) return 0;
+    return MBEDTLS_ERR_NET_RECV_FAILED;
+}
+
+static int bio_send(void *p, const unsigned char *buf, size_t n)
+{
+    tls_conn *c = p;
+    long long left = (c->deadline_us - mono_us()) / 1000;
+    if (left <= 0) return MBEDTLS_ERR_SSL_TIMEOUT;
+    struct pollfd pfd = { .fd = c->net.fd, .events = POLLOUT };
+    int r = poll(&pfd, 1, (int)left);
+    if (r == 0) return MBEDTLS_ERR_SSL_TIMEOUT;
+    if (r < 0) return errno == EINTR ? 0 : MBEDTLS_ERR_NET_SEND_FAILED;
+    ssize_t w = send(c->net.fd, buf, n, 0);
+    if (w > 0) return (int)w;
+    if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return 0;
+    return MBEDTLS_ERR_NET_SEND_FAILED;
 }
 
 tls_conn *tls_connect_fd(int fd, const char *host, const char *ca_file,
@@ -207,17 +257,15 @@ tls_conn *tls_connect_fd(int fd, const char *host, const char *ca_file,
     if (rc) { fail(c, errbuf, errcap, "ssl setup failed", rc); return NULL; }
     rc = mbedtls_ssl_set_hostname(&c->ssl, host);
     if (rc) { fail(c, errbuf, errcap, "sni failed", rc); return NULL; }
-    mbedtls_ssl_set_bio(&c->ssl, &c->net, mbedtls_net_send, mbedtls_net_recv,
-                        NULL);
+    mbedtls_ssl_set_bio(&c->ssl, c, bio_send, bio_recv, NULL);
 
-    // Stall bound for handshake and reads alike: WANT_READ only happens
-    // when SO_RCVTIMEO fires on the blocking socket.
-    struct timeval tv = { .tv_sec = timeout_ms / 1000, .tv_usec = 0 };
-    setsockopt(c->net.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    while ((rc = mbedtls_ssl_handshake(&c->ssl)) == MBEDTLS_ERR_SSL_WANT_WRITE)
-        ;
-    if (rc == MBEDTLS_ERR_SSL_WANT_READ) {
+    c->timeout_ms = timeout_ms;
+    c->deadline_us = mono_us() + 1000LL * timeout_ms;
+    do {
+        rc = mbedtls_ssl_handshake(&c->ssl);
+    } while (rc == MBEDTLS_ERR_SSL_WANT_READ
+             || rc == MBEDTLS_ERR_SSL_WANT_WRITE);
+    if (rc == MBEDTLS_ERR_SSL_TIMEOUT) {
         *kind = TLS_TIMEOUT;
         fail(c, errbuf, errcap, "tls handshake timed out", 0);
         return NULL;
@@ -262,14 +310,20 @@ tls_conn *tls_connect(const char *host, int port, const char *ca_file,
                       int timeout_ms, tls_err *kind,
                       char *errbuf, size_t errcap)
 {
+    // One deadline end to end: connect already spent part of the budget
+    // (DNS included), so the handshake only gets what is left of it.
+    long long start = mono_us();
     int fd = tls_tcp_connect(host, port, timeout_ms, kind, errbuf, errcap);
     if (fd < 0) return NULL;
+    long long left = timeout_ms * 1000LL - (mono_us() - start);
     return tls_connect_fd(fd, host, ca_file, ca_mem, ca_mem_len,
-                          timeout_ms, kind, errbuf, errcap);
+                          left > 0 ? (int)(left / 1000) : 0,
+                          kind, errbuf, errcap);
 }
 
 int tls_write_all(tls_conn *c, const void *buf, size_t n)
 {
+    c->deadline_us = mono_us() + 1000LL * c->timeout_ms;
     const unsigned char *p = buf;
     size_t left = n;
     while (left > 0) {
@@ -284,10 +338,12 @@ int tls_write_all(tls_conn *c, const void *buf, size_t n)
 
 int tls_read(tls_conn *c, void *buf, size_t n)
 {
+    c->deadline_us = mono_us() + 1000LL * c->timeout_ms;
     for (;;) {
         int rc = mbedtls_ssl_read(&c->ssl, buf, n);
         if (rc == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
-        if (rc == MBEDTLS_ERR_SSL_WANT_READ) return -2;   // stalled
+        if (rc == MBEDTLS_ERR_SSL_WANT_READ
+            || rc == MBEDTLS_ERR_SSL_TIMEOUT) return -2;   // stalled
         if (rc == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY || rc == 0) return 0;
         if (rc < 0) return -1;
         return rc;
@@ -298,6 +354,7 @@ void tls_close(tls_conn *c)
 {
     if (c == NULL) return;
     if (c->net.fd != -1) {
+        c->deadline_us = mono_us() + 1000LL * c->timeout_ms;
         mbedtls_ssl_close_notify(&c->ssl);
         mbedtls_net_free(&c->net);
     }

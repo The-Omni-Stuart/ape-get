@@ -1,5 +1,6 @@
-// The buffered GET path: one request per connection, the response
-// drained whole, and the redirect loop that drops the header cross-origin.
+// The buffered GET path: one request per connection, the response read
+// whole through the shared framing machine, and the redirect loop that
+// drops the header cross-origin.
 
 #include "http.h"
 #include "http/internal.h"
@@ -12,27 +13,39 @@
 
 #define MAX_RESP (32UL << 20)
 
-bool split_url(const char *url, char *host, size_t hostcap, int *port,
-                      char *path, size_t pathcap, char *errbuf, size_t errcap)
+struct buf_io {
+    tls_conn *c;
+    char *p;                    // growable body accumulator
+    size_t len, cap, max;
+    long long total;            // declared total for the progress sink
+    http_prog cb;
+    void *ud;
+};
+
+static int buf_read(void *v, char *b, size_t n)
 {
-    if (strncasecmp(url, "https://", 8) != 0) {
-        snprintf(errbuf, errcap, "https required for %s", url);
-        return false;
+    struct buf_io *x = v;
+    return tls_read(x->c, b, n);
+}
+
+static bool buf_sink(void *v, const char *p, size_t n)
+{
+    struct buf_io *x = v;
+    if (x->len + n > x->max) return false;
+    if (x->len + n + 1 > x->cap) {
+        size_t need = x->len + n + 1;
+        size_t want = x->cap * 2;
+        if (want < need) want = need;
+        if (want > x->max + 1) want = x->max + 1;
+        char *nr = realloc(x->p, want);
+        if (nr == NULL) return false;   // current contents stay owned
+        x->p = nr;
+        x->cap = want;
     }
-    const char *p = url + 8, *slash = strchr(p, '/');
-    const char *hostend = slash != NULL ? slash : p + strlen(p);
-    const char *colon = memchr(p, ':', (size_t)(hostend - p));
-    *port = 443;
-    size_t hlen = colon != NULL ? (size_t)(colon - p) : (size_t)(hostend - p);
-    if (hlen == 0 || hlen >= hostcap) {
-        snprintf(errbuf, errcap, "invalid URL host");
-        return false;
-    }
-    memcpy(host, p, hlen);
-    host[hlen] = '\0';
-    if (colon != NULL) *port = atoi(colon + 1);
-    if (slash == NULL) snprintf(path, pathcap, "/");
-    else snprintf(path, pathcap, "%s", slash);
+    memcpy(x->p + x->len, p, n);
+    x->len += n;
+    x->p[x->len] = '\0';
+    if (x->cb != NULL) x->cb(x->len, x->total, x->ud);
     return true;
 }
 
@@ -62,9 +75,9 @@ static bool http_get_once(const char *url, const char *hdr_line,
     }
 
     char hostp[300];
-    if (port == 443) snprintf(hostp, sizeof(hostp), "%s", host);
-    else snprintf(hostp, sizeof(hostp), "%s:%d", host, port);
-    char *req = malloc(4096 + (hdr_line != NULL ? strlen(hdr_line) : 0));
+    bool ok = url_authority(host, port, hostp, sizeof hostp);
+    char *req = ok
+        ? malloc(4096 + (hdr_line != NULL ? strlen(hdr_line) : 0)) : NULL;
     if (req == NULL) {
         snprintf(errbuf, errcap, "request failed");
         tls_close(c);
@@ -79,7 +92,7 @@ static bool http_get_once(const char *url, const char *hdr_line,
         "%s"
         "\r\n",
         path, hostp, hdr_line != NULL ? hdr_line : "");
-    bool ok = n > 0 && tls_write_all(c, req, (size_t)n) == 0;
+    ok = n > 0 && tls_write_all(c, req, (size_t)n) == 0;
     free(req);
     if (!ok) {
         snprintf(errbuf, errcap, "request failed");
@@ -87,142 +100,67 @@ static bool http_get_once(const char *url, const char *hdr_line,
         return false;
     }
 
-    // Drain the whole response: server closes because we sent Connection: close.
-    size_t cap = 1 << 15, rn = 0;
-    size_t hoff = 0;
-    long long prog_total = -1;
-    char *raw = malloc(cap);
-    ok = raw != NULL;
-    while (ok) {
-        if (rn + 4096 > cap) {
-            if (cap >= MAX_RESP) { ok = false; break; }
-            char *nr = realloc(raw, cap * 2);
-            if (nr == NULL) { ok = false; break; }
-            raw = nr;
-            cap *= 2;
-        }
-        int r = tls_read(c, raw + rn, cap - rn);
-        if (r == -2) { out->errkind = HTTP_ERR_TIMEOUT; ok = false; break; }
-        if (r < 0) { ok = false; break; }
-        if (r == 0) break;
-        rn += (size_t)r;
-        if (cb != NULL) {
-            if (hoff == 0) {
-                const char *hd = mem_find(raw, rn, "\r\n\r\n", 4);
-                if (hd != NULL) {
-                    hoff = (size_t)(hd + 4 - raw);
-                    if (mem_find_ci(raw, hoff, "hunked") == NULL) {
-                        long long cl = -1;
-                        if (hdr_ll(raw, hoff, "Content-Length", &cl))
-                            prog_total = cl;
-                    }
-                }
-            }
-            if (hoff != 0) cb(rn > hoff ? rn - hoff : 0, prog_total, ud);
-        }
-    }
-    if (!ok || rn < 12 || strncmp(raw, "HTTP/", 5) != 0) {
-        free(raw);
+    char *buf = malloc(HTTP_BUF);
+    if (buf == NULL) {
         snprintf(errbuf, errcap, "connection to %s failed", hostp);
         tls_close(c);
         return false;
     }
-
-    raw[rn] = '\0';
-    char *head_end = strstr(raw, "\r\n\r\n");
-    if (head_end == NULL) {
-        free(raw);
-        snprintf(errbuf, errcap, "malformed response from %s", hostp);
+    size_t have = 0;
+    resp_head h;
+    int kind = HTTP_ERR_OTHER;
+    if (!resp_head_read(c, hostp, buf, HTTP_BUF, &have, &h, &kind,
+                        errbuf, errcap)) {
+        out->errkind = kind;
+        free(buf);
         tls_close(c);
         return false;
     }
-    // NUL inside the final CRLF pair (body starts at +4): zeroing head_end
-    // itself erases the last header line's terminator from header_get.
-    head_end[3] = '\0';
-    // Hand-rolled: sscanf drags in ~12 KB/arch of scanf machinery.
-    int status = -1;
-    if (strncmp(raw, "HTTP/1.", 7) == 0 && raw[7] >= '0'
-            && raw[7] <= '9' && raw[8] == ' ') {
-        const char *p = raw + 9;
-        int v = 0, n = 0;
-        while (n < 3 && p[n] >= '0' && p[n] <= '9') {
-            v = v * 10 + (p[n] - '0');
-            n++;
-        }
-        if (n == 3 && (p[n] == ' ' || p[n] == '\r' || p[n] == '\0'))
-            status = v;
-    }
-    if (status < 0) {
-        free(raw);
-        snprintf(errbuf, errcap, "malformed status line");
-        tls_close(c);
-        return false;
-    }
-    out->status = status;
+    out->status = h.status;
+    out->location = h.location;
 
-    const char *vs, *ve;
-    bool chunked = false;
-    long long clen = -1;
-    if (header_get(raw, "transfer-encoding", &vs, &ve))
-        for (const char *p = vs; p + 6 < ve; p++)
-            if (strncasecmp(p, "chunked", 7) == 0) chunked = true;
-    if (header_get(raw, "location", &vs, &ve))
-        out->location = strndup(vs, (size_t)(ve - vs));
-    if (!chunked && header_get(raw, "content-length", &vs, &ve)) {
-        char num[24];
-        size_t l = (size_t)(ve - vs);
-        if (l < sizeof(num)) {
-            memcpy(num, vs, l);
-            num[l] = '\0';
-            clen = atoll(num);
-        }
+    struct buf_io x = { .c = c, .cb = cb, .ud = ud, .max = MAX_RESP,
+        .total = !h.chunked && h.clen >= 0 ? h.clen : -1 };
+    if (h.clen > (long long)MAX_RESP - 1) {
+        snprintf(errbuf, errcap, "response exceeds the %zu MiB cap",
+            MAX_RESP >> 20);
+        goto fail_body;
     }
-
-    const char *body = head_end + 4;
-    size_t avail = rn - (size_t)(body - raw);
-    size_t take = chunked ? rn - (size_t)(body - raw)   // upper bound
-        : clen >= 0 && (unsigned long long)clen < avail ? (size_t)clen
-        : avail;
-    char *out_body = malloc(take + 1);
-    if (out_body == NULL) {
-        free(raw);
+    x.cap = h.clen >= 0 ? (size_t)h.clen + 1 : 4096;
+    x.p = malloc(x.cap);
+    if (x.p == NULL) {
         snprintf(errbuf, errcap, "out of memory");
-        tls_close(c);
-        return false;
+        goto fail_body;
     }
-    if (chunked) {
-        size_t bn = 0;
-        if (!chunked_copy(body, raw + rn, &out_body, &bn)) {
-            free(out_body);
-            free(raw);
-            snprintf(errbuf, errcap, "malformed chunked body");
-            tls_close(c);
-            return false;
-        }
-        out_body[bn] = '\0';
-        out->body = out_body;
-        out->len = bn;
-    } else {
-        memcpy(out_body, body, take);
-        out_body[take] = '\0';
-        out->body = out_body;
-        out->len = take;
-    }
-    tls_close(c);
-    return true;
-}
+    x.p[0] = '\0';
 
-// True when both absolute https URLs share host[:port]. An unparseable b
-// counts as foreign, so headers get dropped.
-bool same_origin(const char *a, const char *b)
-{
-    char ha[256], hb[256], pa[8], pb[8], e[64];
-    int porta = 443, portb = 443;
-    if (!split_url(a, ha, sizeof(ha), &porta, pa, sizeof(pa), e, sizeof(e)))
-        return false;
-    if (!split_url(b, hb, sizeof(hb), &portb, pb, sizeof(pb), e, sizeof(e)))
-        return false;
-    return porta == portb && strcasecmp(ha, hb) == 0;
+    resp_io io = { buf_read, buf_sink, &x };
+    long long written = 0;
+    resp_stop st = resp_read_body(&io, buf, &have, HTTP_BUF, &h,
+                                  MAX_RESP, &written);
+    free(buf);
+    if (st == RESP_DONE) {
+        out->body = x.p;
+        out->len = x.len;
+        tls_close(c);
+        return true;
+    }
+    free(x.p);
+    free(out->location);
+    out->location = NULL;
+    snprintf(errbuf, errcap,
+        st == RESP_MALFORMED ? "malformed response from %s"
+                             : "connection to %s failed", hostp);
+    out->errkind = st == RESP_TIMEOUT ? HTTP_ERR_TIMEOUT : HTTP_ERR_OTHER;
+    tls_close(c);
+    return false;
+
+fail_body:
+    free(h.location);
+    out->location = NULL;
+    free(buf);
+    tls_close(c);
+    return false;
 }
 
 // Redirect policy: GET-only, up to 20; the caller's header drops on host
@@ -240,41 +178,32 @@ bool http_get_hdr_prog(const char *url, const char *name, const char *value,
 {
     char hdr[1300];
     if (value != NULL) snprintf(hdr, sizeof(hdr), "%s: %s\r\n", name, value);
-    char cur[4096];
-    snprintf(cur, sizeof(cur), "%s", url);
+    char *cur = strdup(url);
+    if (cur == NULL) {
+        snprintf(errbuf, errcap, "out of memory");
+        return false;
+    }
     for (int hop = 0; hop <= 20; hop++) {
         if (!http_get_once(cur, value != NULL ? hdr : NULL, timeout_ms,
-                           cb, ud, out, errbuf, errcap))
+                           cb, ud, out, errbuf, errcap)) {
+            free(cur);
             return false;
+        }
         bool redir = out->status == 301 || out->status == 302
             || out->status == 303 || out->status == 307 || out->status == 308;
-        if (!redir || out->location == NULL || hop == 20) return true;
+        if (!redir || out->location == NULL || hop == 20) break;
 
-        char *next = NULL;
-        if (strncasecmp(out->location, "https://", 8) == 0)
-            next = strdup(out->location);
-        else if (out->location[0] == '/') {
-            char host[256], p0[8];
-            int port;
-            if (split_url(cur, host, sizeof(host), &port, p0, sizeof(p0),
-                          errbuf, errcap)) {
-                char auth[280];
-                if (port == 443) snprintf(auth, sizeof(auth), "%s", host);
-                else snprintf(auth, sizeof(auth), "%s:%d", host, port);
-                next = malloc(8 + strlen(auth) + strlen(out->location) + 1);
-                if (next != NULL)
-                    sprintf(next, "https://%s%s", auth, out->location);
-            }
-        }
+        char *next = url_join(cur, out->location);
         free(out->location);
         out->location = NULL;
-        if (next == NULL) return true;    // unresolvable Location: report as-is
+        if (next == NULL) break;        // unresolvable Location: report as-is
         if (value != NULL && !same_origin(cur, next)) value = NULL;
-        snprintf(cur, sizeof(cur), "%s", next);
-        free(next);
+        free(cur);
+        cur = next;
         free(out->body);
         out->body = NULL;
         out->len = 0;
     }
+    free(cur);
     return true;
 }

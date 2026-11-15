@@ -1,4 +1,5 @@
 #include "provider.h"
+#include "provider/internal.h"
 #include "http.h"
 #include "json.h"
 #include "path.h"
@@ -24,8 +25,9 @@ bool provider_gitea_search(const provider_entry *e, const char *query,
     return ok;
 }
 
-// Gitea releases accept only owner/repo paths; the draft rejection for
-// --version surfaces through the fetcher verbatim.
+// Gitea releases accept only owner/repo paths. --version must name a
+// published release (draft rejected); the list route pages through the
+// shared publication policy until a short page or the page budget.
 bool provider_gitea_release(const provider_entry *e, const char *path,
                             const char *tag, bool beta, int timeout_ms,
                             prov_release *out)
@@ -45,14 +47,23 @@ bool provider_gitea_release(const provider_entry *e, const char *path,
     char *enc = tag != NULL ? http_url_encode(tag) : NULL;
     char *url = tag != NULL
         ? path_fmt("%s/repos/%s/releases/tags/%s", e->api, path, enc)
-        : path_fmt("%s/repos/%s/releases?limit=20", e->api, path);
+        : path_fmt("%s/repos/%s/releases?limit=%d", e->api, path,
+                   PROV_PAGE_SIZE);
     free(enc);
     if (url == NULL) { free(ctx); return false; }
 
+    if (tag == NULL) {
+        bool ok = prov_release_pages(e, url, ctx != NULL ? ctx : path,
+                                     beta, timeout_ms, out,
+                                     prov_parse_gh_flags);
+        free(url);
+        free(ctx);
+        return ok;
+    }
+
     char *body = NULL;
     prov_reason reason = PROV_OK;
-    bool ok = prov_api_json(e, url, timeout_ms,
-        tag != NULL ? "resource not found" : "resource not found",
+    bool ok = prov_api_json(e, url, timeout_ms, "resource not found",
         ctx != NULL ? ctx : path, &body, &reason,
         out->message, sizeof(out->message));
     free(url);
@@ -62,49 +73,16 @@ bool provider_gitea_release(const provider_entry *e, const char *path,
         return false;
     }
 
-    if (tag != NULL) {
-        bool draft = false, pre = false;
-        ok = prov_release_from_json(body, out, &draft, &pre);
-        free(body);
-        if (!ok) goto invalid;
-        if (draft) {
-            prov_release_free(out);
-            memset(out, 0, sizeof(*out));
-            out->reason = PROV_OTHER;
-            snprintf(out->message, sizeof(out->message),
-                "Release %s is a draft", tag);
-            return false;
-        }
-        out->reason = PROV_OK;
-        return true;
-    }
-
-    // list: first non-draft, stable channel also skips prereleases
-    jspan *sp = NULL;
-    int n = json_array_spans(body, &sp);
-    ok = false;
-    for (int k = 0; k < n; k++) {
-        char *el = strndup(sp[k].s, (size_t)(sp[k].e - sp[k].s));
-        bool draft = false, pre = false;
-        bool parsed = el != NULL
-            && prov_release_from_json(el, out, &draft, &pre);
-        free(el);
-        if (!parsed) continue;
-        if (draft || (!beta && pre)) {
-            prov_release_free(out);
-            memset(out, 0, sizeof(*out));
-            continue;
-        }
-        ok = true;
-        break;
-    }
-    free(sp);
+    bool draft = false, pre = false;
+    ok = prov_release_from_json(body, out, &draft, &pre);
     free(body);
-    if (!ok) {
+    if (!ok) goto invalid;
+    if (draft) {
         prov_release_free(out);
         memset(out, 0, sizeof(*out));
-        out->reason = PROV_NOT_FOUND;
-        snprintf(out->message, sizeof(out->message), "no published release");
+        out->reason = PROV_OTHER;
+        snprintf(out->message, sizeof(out->message),
+            "Release %s is a draft", tag);
         return false;
     }
     out->reason = PROV_OK;

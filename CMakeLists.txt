@@ -248,6 +248,38 @@ apeget_test_entry(test_routing_tmp ROUTING_TMP_TEST_EXE)
 add_test(NAME routing_tmp_check COMMAND "${ROUTING_TMP_TEST_EXE}")
 set_tests_properties(routing_tmp_check PROPERTIES TIMEOUT 30)
 
+# URL/authority/framing/proxy wire probes (N03, N05, N06, N12)
+add_executable(test_http_wire ${CMAKE_SOURCE_DIR}/src/test/ci/test_http_wire.c)
+target_link_libraries(test_http_wire PRIVATE
+  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+target_link_options(test_http_wire PRIVATE
+  -Wl,--wrap=tls_connect -Wl,--wrap=tls_tcp_connect
+  -Wl,--wrap=tls_write_all -Wl,--wrap=tls_read -Wl,--wrap=tls_close)
+apeget_test_entry(test_http_wire HTTP_WIRE_TEST_EXE)
+add_test(NAME http_wire_check COMMAND "${HTTP_WIRE_TEST_EXE}")
+set_tests_properties(http_wire_check PROPERTIES TIMEOUT 30)
+
+# one deadline across resolve+connect+handshake (N04)
+add_executable(test_tls_deadline ${CMAKE_SOURCE_DIR}/src/test/ci/test_tls_deadline.c)
+target_link_libraries(test_tls_deadline PRIVATE
+  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+target_link_options(test_tls_deadline PRIVATE
+  -Wl,--wrap=getaddrinfo -Wl,--wrap=connect -Wl,--wrap=poll)
+apeget_test_entry(test_tls_deadline TLS_DEADLINE_TEST_EXE)
+add_test(NAME tls_deadline_check
+  COMMAND "${TLS_DEADLINE_TEST_EXE}"
+    "${CMAKE_SOURCE_DIR}/src/test/ci/tls-dates/ca.pem")
+set_tests_properties(tls_deadline_check PROPERTIES TIMEOUT 30)
+
+# release-listing pagination and publication policy (N13)
+add_executable(test_release_pages ${CMAKE_SOURCE_DIR}/src/test/ci/test_release_pages.c)
+target_link_libraries(test_release_pages PRIVATE
+  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+target_link_options(test_release_pages PRIVATE -Wl,--wrap=http_get_hdr)
+apeget_test_entry(test_release_pages RELEASE_PAGES_TEST_EXE)
+add_test(NAME release_pages_check COMMAND "${RELEASE_PAGES_TEST_EXE}")
+set_tests_properties(release_pages_check PROPERTIES TIMEOUT 30)
+
 add_executable(test_proc_run ${CMAKE_SOURCE_DIR}/src/test/ci/test_proc_run.c)
 target_link_libraries(test_proc_run PRIVATE m_proc)
 apeget_test_entry(test_proc_run PROC_RUN_TEST_EXE)

@@ -5,6 +5,7 @@
 #include "provider/internal.h"
 #include "http.h"
 #include "json.h"
+#include "path.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -278,4 +279,80 @@ bool prov_release_from_json(const char *text, prov_release *r,
     }
     jobject_free(&o);
     return true;
+}
+
+bool prov_parse_gh_flags(const char *el, prov_release *r, bool *draft,
+                         bool *upcoming, bool *pre)
+{
+    *upcoming = false;                    // no scheduled releases on GH
+    return prov_release_from_json(el, r, draft, pre);
+}
+
+// One publication policy for every provider's release listing: a draft
+// or a scheduled (GitLab "upcoming") release is never installable; a
+// prerelease is eligible only when the beta channel was asked for.
+bool prov_release_published(bool draft, bool upcoming, bool pre, bool beta)
+{
+    return !draft && !upcoming && (beta || !pre);
+}
+
+bool prov_release_pages(const provider_entry *e, const char *url_base,
+                        const char *ctx, bool beta, int timeout_ms,
+                        prov_release *out,
+                        bool (*parse)(const char *el, prov_release *r,
+                                      bool *draft, bool *upcoming,
+                                      bool *pre))
+{
+    bool exhausted = false;
+    for (int page = 1; page <= PROV_PAGE_BUDGET; page++) {
+        char *url = path_fmt("%s&page=%d", url_base, page);
+        char *body = NULL;
+        prov_reason reason = PROV_OK;
+        bool ok = url != NULL && prov_api_json(e, url, timeout_ms,
+            "resource not found", ctx, &body, &reason,
+            out->message, sizeof(out->message));
+        free(url);
+        if (!ok) {
+            // servers disagree on out-of-range pages: a 404 past page 1
+            // just ends the listing like a short page would
+            if (page > 1 && reason == PROV_NOT_FOUND) break;
+            out->reason = reason == PROV_OK ? PROV_OTHER : reason;
+            return false;
+        }
+        jspan *sp = NULL;
+        int n = body != NULL ? json_array_spans(body, &sp) : -1;
+        bool found = false;
+        for (int k = 0; k < n && !found; k++) {
+            char *el = strndup(sp[k].s, (size_t)(sp[k].e - sp[k].s));
+            bool draft = false, upcoming = false, pre = false;
+            bool parsed = el != NULL
+                && parse(el, out, &draft, &upcoming, &pre);
+            free(el);
+            if (!parsed) continue;
+            if (!prov_release_published(draft, upcoming, pre, beta)) {
+                prov_release_free(out);
+                memset(out, 0, sizeof(*out));
+                continue;
+            }
+            found = true;
+        }
+        free(sp);
+        free(body);
+        if (found) {
+            out->reason = PROV_OK;
+            return true;
+        }
+        if (n < PROV_PAGE_SIZE) break;    // short page: listing fully scanned
+        if (page == PROV_PAGE_BUDGET) exhausted = true;
+    }
+    prov_release_free(out);
+    memset(out, 0, sizeof(*out));
+    out->reason = PROV_NOT_FOUND;
+    if (exhausted)
+        snprintf(out->message, sizeof(out->message),
+            "no published release in the first %d releases",
+            PROV_PAGE_SIZE * PROV_PAGE_BUDGET);
+    else
+        snprintf(out->message, sizeof(out->message), "no published release");
+    return false;
 }

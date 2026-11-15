@@ -1,4 +1,5 @@
 #include "provider.h"
+#include "provider/internal.h"
 #include "http.h"
 #include "json.h"
 #include "path.h"
@@ -101,11 +102,21 @@ static bool gitlab_release_from_json(const char *text, prov_release *r,
     return true;
 }
 
+bool prov_parse_gitlab_release(const char *el, prov_release *r, bool *draft,
+                               bool *upcoming, bool *pre)
+{
+    *draft = false;                       // no draft flag in this API shape
+    *pre = false;                         // no prerelease channel either
+    return gitlab_release_from_json(el, r, upcoming);
+}
+
+// GitLab releases carry no channel distinction: --version must name a
+// published release (upcoming rejected); the list route pages through
+// the shared publication policy until a short page or the page budget.
 bool provider_gitlab_release(const provider_entry *e, const char *path,
                              const char *tag, bool beta, int timeout_ms,
                              prov_release *out)
 {
-    (void)beta; // GitLab releases have no channel distinction
     char *enc = http_url_encode(path);
     char *tenc = tag != NULL
         ? http_url_encode(tag) : NULL;
@@ -114,11 +125,22 @@ bool provider_gitlab_release(const provider_entry *e, const char *path,
     char *url = enc != NULL && (tag == NULL || tenc != NULL)
         ? (tag != NULL
             ? path_fmt("%s/projects/%s/releases/%s", e->api, enc, tenc)
-            : path_fmt("%s/projects/%s/releases?per_page=20", e->api, enc))
+            : path_fmt("%s/projects/%s/releases?per_page=%d",
+                       e->api, enc, PROV_PAGE_SIZE))
         : NULL;
     free(enc);
     free(tenc);
     if (url == NULL) { free(ctx); return false; }
+
+    if (tag == NULL) {
+        (void)beta;
+        bool ok = prov_release_pages(e, url, ctx != NULL ? ctx : path,
+                                     false, timeout_ms, out,
+                                     prov_parse_gitlab_release);
+        free(url);
+        free(ctx);
+        return ok;
+    }
 
     char *body = NULL;
     prov_reason reason = PROV_OK;
@@ -133,46 +155,15 @@ bool provider_gitlab_release(const provider_entry *e, const char *path,
     }
 
     bool upcoming = false;
-    if (tag != NULL) {
-        ok = body != NULL && gitlab_release_from_json(body, out, &upcoming);
-        free(body);
-        if (!ok) goto invalid;
-        if (upcoming) {
-            prov_release_free(out);
-            memset(out, 0, sizeof(*out));
-            out->reason = PROV_OTHER;
-            snprintf(out->message, sizeof(out->message),
-                "Release %s is not published yet", tag);
-            return false;
-        }
-        out->reason = PROV_OK;
-        return true;
-    }
-
-    jspan *sp = NULL;
-    int n = body != NULL ? json_array_spans(body, &sp) : -1;
-    ok = false;
-    for (int k = 0; k < n; k++) {
-        char *el = strndup(sp[k].s, (size_t)(sp[k].e - sp[k].s));
-        bool parsed = el != NULL
-            && gitlab_release_from_json(el, out, &upcoming);
-        free(el);
-        if (!parsed) continue;
-        if (upcoming) {
-            prov_release_free(out);
-            memset(out, 0, sizeof(*out));
-            continue;
-        }
-        ok = true;
-        break;
-    }
-    free(sp);
+    ok = body != NULL && gitlab_release_from_json(body, out, &upcoming);
     free(body);
-    if (!ok) {
+    if (!ok) goto invalid;
+    if (upcoming) {
         prov_release_free(out);
         memset(out, 0, sizeof(*out));
-        out->reason = PROV_NOT_FOUND;
-        snprintf(out->message, sizeof(out->message), "no published release");
+        out->reason = PROV_OTHER;
+        snprintf(out->message, sizeof(out->message),
+            "Release %s is not published yet", tag);
         return false;
     }
     out->reason = PROV_OK;

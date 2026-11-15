@@ -42,6 +42,46 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/stream/aborted":
             self._serve_aborted(ABORT_TOTAL, ABORT_SENT)
             return
+        if path == "/redir/to-asset":
+            self.send_response(302)
+            self.send_header("Location",
+                             "/redir/authenticated/assets/tool.AppImage")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path.startswith("/redir/authenticated/"):
+            if self.headers.get("Authorization") is None:
+                self._serve(json.dumps({"message": "Unauthorized"}).encode(),
+                            401, "application/json")
+                return
+            rest = path[len("/redir/authenticated/"):]
+            cand = (FIXTURES / rest).resolve()
+            if str(cand).startswith(str(FIXTURES)) and cand.is_file():
+                self._serve(cand.read_bytes(), 200,
+                            "application/octet-stream")
+            else:
+                self._serve(json.dumps({"message": "Not Found"}).encode(),
+                            404, "application/json")
+            return
+        if path.startswith("/trunc/") and path.endswith("/releases"):
+            # valid JSON body under a Content-Length that never arrives:
+            # strict framing must call the truncation out (install group
+            # truncated-release)
+            body = json.dumps([{"id": 9, "tag_name": "1.0.0",
+                                "draft": False, "prerelease": False,
+                                "assets": [{
+                                    "name": "tool-1.0.0.AppImage",
+                                    "browser_download_url":
+                                        "https://127.0.0.1:18081/assets/"
+                                        "tool-1.0.0.AppImage"}]}]).encode()
+            self.protocol_version = "HTTP/1.1"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body) + 1000))
+            self.end_headers()
+            self.wfile.write(body)
+            self.close_connection = True
+            return
         body, code = None, 404
         base = FIXTURES / path.lstrip("/")
         # raw assets: an exact fixture file (e.g. a fake .AppImage) is

@@ -4,6 +4,7 @@
 #include "provider.h"
 #include "provider/internal.h"
 #include "http.h"
+#include "http/internal.h"
 #include "json.h"
 
 #include <stdio.h>
@@ -139,32 +140,21 @@ void provider_search_unsupported(prov_search *out)
              "repository search is not supported");
 }
 
-// Normalised authority for same-origin token scoping: lowercase host plus
-// a non-443 port, so a bearer never rides to a foreign host or port.
+// Normalised authority for same-origin token scoping, built by the one
+// shared URL parser: lowercase host plus a non-443 port, so a bearer
+// never rides to a foreign host or port and an explicit :443 stays the
+// same origin as the bare host.
 static bool url_host(const char *u, char *out, size_t cap)
 {
-    const char *p = u != NULL ? strstr(u, "://") : NULL;
-    if (p == NULL) return false;
-    p += 3;
-    size_t k = 0;
-    while (p[k] != '\0' && p[k] != '/' && p[k] != ':' && p[k] != '?'
-        && k + 1 < cap) {
-        out[k] = (char)(p[k] >= 'A' && p[k] <= 'Z' ? p[k] + 32 : p[k]);
-        k++;
-    }
-    if (p[k] != '\0' && k + 1 >= cap) return false;
-    out[k] = '\0';
-    if (k == 0) return false;
-    if (p[k] == ':') {                    // non-443 port joins the key
-        const char *q = p + k + 1;
-        if (*q < '0' || *q > '9') return false;
-        int port = 0;
-        while (*q >= '0' && *q <= '9') port = port * 10 + (*q++ - '0');
-        if ((*q != '\0' && *q != '/' && *q != '?') || port == 443) return false;
-        int n = snprintf(out + k, cap - k, ":%d", port);
-        if (n < 0 || (size_t)n >= cap - k) return false;
-    }
-    return true;
+    char host[256], e[64];
+    int port;
+    if (!split_url(u, host, sizeof(host), &port, NULL, 0, e, sizeof(e)))
+        return false;
+    for (char *p = host; *p != '\0'; p++)
+        if (*p >= 'A' && *p <= 'Z') *p = (char)(*p + 32);
+    int n = port == 443 ? snprintf(out, cap, "%s", host)
+                        : snprintf(out, cap, "%s:%d", host, port);
+    return n > 0 && (size_t)n < cap;
 }
 
 // Token header per type: gitea and github send Authorization with a prefix,

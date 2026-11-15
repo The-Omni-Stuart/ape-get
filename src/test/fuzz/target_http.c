@@ -3,7 +3,8 @@
 
 #include "http.c"
 #include "http/internal.h"
-#include "http/parse.c"
+#include "http/url.c"
+#include "http/framing.c"
 #include "http/request.c"
 
 #include "fuzz_util.h"
@@ -67,21 +68,24 @@ static void one(const char *s, void *ud)
     int port = 0;
     (void)split_url(s, host, sizeof host, &port, path, sizeof path,
                     err, sizeof err);
-    const char *vs, *ve;
-    (void)header_get(s, "content-length", &vs, &ve);
-    (void)header_get(s, "transfer-encoding", &vs, &ve);
-    long long v;
-    (void)hdr_ll(s, strlen(s), "content-length", &v);
-    free(http_url_encode(s));
+    char auth[300];
+    (void)url_authority(host, port, auth, sizeof auth);
+    char *base = "https://api.example.test/a/b/c?q=1";
+    free(url_join(base, s));
+    (void)same_origin(base, s);
 
-    // chunked_copy alone: its output can never exceed the input span
+    // header-block parser alone: must stay crash-free on any bytes
     size_t n = strlen(s);
-    char *body = malloc(n + 1);
-    if (body != NULL) {
-        size_t bn = 0;
-        if (chunked_copy(s, s + n, &body, &bn)) body[bn] = '\0';
-        free(body);
+    char *block = malloc(n + 4);
+    if (block != NULL) {
+        memcpy(block, s, n);
+        memcpy(block + n, "\r\n\r\n", 4);
+        resp_head h;
+        if (resp_parse_head(block, n + 4, &h, err, sizeof err))
+            free(h.location);
+        free(block);
     }
+    free(http_url_encode(s));
 }
 
 void fuzz_target(const unsigned char *data, size_t size)
