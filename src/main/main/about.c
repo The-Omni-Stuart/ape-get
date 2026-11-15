@@ -1,4 +1,5 @@
 #include "main.h"
+#include "platform.h"
 #include "ui.h"
 
 #include <stdio.h>
@@ -11,26 +12,6 @@
 #ifndef APEGET_VERSION
 #define APEGET_VERSION "0.0.0-dev"
 #endif
-
-#include <sys/utsname.h>
-
-// Cosmopolitan binaries outlive their compile-time OS assumption: ask the
-// kernel actually running (uname is implemented even under the APE loader)
-static void platform_line(char *buf, size_t cap)
-{
-    const char *arch =
-#if defined(__x86_64__)
-        "x86_64"
-#elif defined(__aarch64__)
-        "aarch64"
-#else
-        "unknown-arch"
-#endif
-        ;
-    struct utsname u;
-    if (uname(&u) == 0) snprintf(buf, cap, "%s %s", u.sysname, arch);
-    else snprintf(buf, cap, "%s", arch);
-}
 
 static const char *const ART[] = {
     "                                                                █████   ",
@@ -112,7 +93,7 @@ int run_about(void)
         "The Actually Portable Package Manager ~ Ver. %s"
         " ~ (c) The-Omni-Stuart", APEGET_VERSION);
     char plat[256];
-    platform_line(plat, sizeof plat);
+    platform_describe(plat, sizeof plat);
     put_s(f, UI_DIM, "  running on %s (APE)", plat);
     fputs("\n", f);
     put_s(f, UI_NONE,
