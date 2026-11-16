@@ -1,5 +1,5 @@
 --- .local/bin/ape-get (absent) ---
 --- .profile (absent) ---
 --- .zshrc (absent) ---
---- portable/ape-get.com (0644) ---
+--- portable/ape-get.com (0755) ---
 fake portable ape-get executable
