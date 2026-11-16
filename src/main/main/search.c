@@ -170,8 +170,8 @@ static int search_all(const cmd_opts *o, state_ctx *st, const char *query)
                     char *en = ui_esc(results[k].items[h].full_name != NULL
                         ? results[k].items[h].full_name : "null");
                     char *ed = ui_esc(results[k].items[h].description != NULL
-                        ? results[k].items[h].description : "");
-                    printf("%s%s: %s\n", list[k].name,
+                        ? results[k].items[h].description : "null");
+                    printf("%s:%s: %s\n", list[k].name,
                         en != NULL ? en : "", ed != NULL ? ed : "");
                     free(en);
                     free(ed);

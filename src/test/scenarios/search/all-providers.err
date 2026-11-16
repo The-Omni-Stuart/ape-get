@@ -1,0 +1,5 @@
+Searching 5 provider(s)...
+Warning: codeberg: certificate authority not trusted
+Warning: github: certificate authority not trusted
+Warning: gitlab: certificate authority not trusted
+Use provider:owner/repo to install one of them.
