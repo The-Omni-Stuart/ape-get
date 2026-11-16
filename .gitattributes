@@ -1,0 +1,27 @@
+# Shell scripts are read by bash, which counts a carriage return as part of
+# the word: `set -u\r` is an invalid option, not a spelling of `set -u`. On a
+# Windows checkout core.autocrlf would otherwise hand bash CRLF files and the
+# checks that run them - completions_check, the fuzz builds, package.sh - fail
+# for the reason alone. eol=lf pins them on the way out and keeps a Windows
+# commit from storing CRLF in them.
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.zsh   text eol=lf
+
+# The scenario tree is compared byte for byte: a fixture, a golden or a mock
+# asset that picks up a carriage return on checkout makes the case fail with a
+# diff in which every line looks identical. On a Windows checkout eight of them
+# did exactly that - compat/install, compat/update, compat/config-gate,
+# install/checksum-ok, install/checksum-mismatch, sig/basic-ape,
+# sig/verified-required, txn/crash-before-manifest - and pass with the same
+# binary once the tree is LF. Nothing here holds a carriage return in the
+# index, so this changes no stored byte: it only says what a checkout must
+# hand over.
+src/test/scenarios/** text eol=lf
+
+# Carriage returns here are the input under test: the HTTP parser is being
+# asked to survive CRLF line endings and malformed ones. Normalising them to
+# LF would quietly delete the case every one of these seeds makes.
+src/test/fuzz/corpus/http/** -text
+src/test/fuzz/corpus/checksums/** -text
+src/test/fuzz/corpus/json/** -text
