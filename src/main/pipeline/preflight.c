@@ -31,22 +31,32 @@ static bool is_xz_twin(const char *entry, const char *plain)
 
 // I3/I4: a delta is eligible only when updating, its source version is
 // the installed version, and that file's hash still matches the manifest
-// record. The check opens the installed file once and hashes through
-// that fd; the fd itself is returned so a selected delta keeps using
-// exactly these bytes at apply time (no reopen, no swap race).
-static int delta_gate(const pipe_ctx *pc, const char *from)
+// record. The evidence (open + whole-file hash) is computed at most once
+// per run and every candidate gets its own fd over those same verified
+// bytes (P09); the selected delta keeps using exactly these bytes at
+// apply time (no reopen, no swap race).
+static int delta_gate(pipe_ctx *pc, const char *from)
 {
     if (!pc->updating || pc->prev == NULL || pc->prev->version == NULL
         || blank(pc->prev->path) || pc->prev->sha256 == NULL)
         return -1;
     if (!ver_eq(from, pc->prev->version)) return -1;
-    int fd = open(pc->prev->path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return -1;
-    char sha[65] = "";
-    if (!crypto_sha256_fd(fd, sha) || strcmp(sha, pc->prev->sha256) != 0) {
-        close(fd);
-        return -1;
+    if (!pc->gate_done) {
+        pc->gate_done = true;
+        int fd = open(pc->prev->path, O_RDONLY | O_CLOEXEC);
+        char sha[65] = "";
+        if (fd < 0 || !crypto_sha256_fd(fd, sha)
+            || strcmp(sha, pc->prev->sha256) != 0
+            || lseek(fd, 0, SEEK_SET) != 0) {
+            if (fd >= 0) close(fd);
+            pc->gate_fd = -1;
+        } else {
+            pc->gate_fd = fd; // owned by the run; closed in pipe_ctx_free
+        }
     }
+    if (pc->gate_fd < 0) return -1;
+    int fd = fcntl(pc->gate_fd, F_DUPFD_CLOEXEC, 0);
+    if (fd < 0) return -1;
     if (lseek(fd, 0, SEEK_SET) != 0) { close(fd); return -1; }
     return fd;
 }
@@ -54,7 +64,7 @@ static int delta_gate(const pipe_ctx *pc, const char *from)
 // Variant rank for grouping (spec §5.3): eligible delta > twin > raw.
 // Ineligible deltas return -1: they leave the pool at selection time and
 // never spend radio (I3).
-static int variant_rank(const pipe_ctx *pc, const char *name,
+static int variant_rank(pipe_ctx *pc, const char *name,
                         const char *base)
 {
     char from[128];
@@ -154,7 +164,7 @@ static int pool_group(pipe_ctx *pc, prov_asset *pool, int n)
     int out = 0;
     for (int i = 0; i < n; i++)
         if (!drop[i]) pool[out++] = pool[i];
-    free(keys); free(lines); free(drop);
+    free(keys); free(lines); free(rank); free(drop);
     return out == 0 ? n : out;
 }
 

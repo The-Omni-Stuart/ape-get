@@ -96,6 +96,7 @@ static void pipe_ctx_free(pipe_ctx *pc)
     free(pc->backups);
     free(pc->prune_paths);
     if (pc->delta_fd >= 0) close(pc->delta_fd);
+    if (pc->gate_fd >= 0) close(pc->gate_fd);
     if (pc->j_on && !pc->j_committed) {
         // crash-window equivalent: undo the transaction, removing the
         // journal a committed finish would have deleted
@@ -146,6 +147,7 @@ int run_pipeline_at(const cmd_opts *o, state_ctx *st,
     pipe_ctx c;
     memset(&c, 0, sizeof(c));
     c.delta_fd = -1;
+    c.gate_fd = -1;
     c.o = o;
     c.st = st;
     c.ref = ref;

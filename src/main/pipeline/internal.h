@@ -66,6 +66,8 @@ typedef struct {
     char base[512];   // decoded asset base name (transport envelope stripped)
     char sha_final[65];   // hash of the bytes being installed (manifest, journal)
     int delta_fd;     // delta source: installed file opened once, hashed (I4)
+    int gate_fd;      // verified installed-source fd, hashed at most once per run (P09)
+    bool gate_done;   // gate_fd decided (fd or -1); the evidence is run-invariant
     bool delta_pass;  // selected asset is an eligible delta; its decode may re-select once
     bool delta_retry; // phase_decode asks for the single re-selection (I3)
     bool delta_fell_back;

@@ -302,11 +302,16 @@ def main():
     a = ap.parse_args()
     cmd = [a.bin]
 
-    cases = [(d, f.stem) for d in sorted(p for p in SCEN.iterdir() if p.is_dir())
-             for f in sorted(d.glob("*.env"))]
+    all_cases = [(d, f.stem) for d in sorted(p for p in SCEN.iterdir() if p.is_dir())
+                 for f in sorted(d.glob("*.env"))]
+    cases = all_cases
     if a.select:
-        cases = [c for c in cases if any(
+        cases = [c for c in all_cases if any(
             s == c[0].name or s == f"{c[0].name}/{c[1]}" for s in a.select)]
+    if not cases:
+        # an empty selection is a typo'd group, never a passing suite
+        sys.exit(f"error: no cases matched {a.select or 'the suite'} "
+                 f"(groups: {' '.join(sorted({c[0].name for c in all_cases}))})")
 
     for case_dir, name in cases:
         if run_case(case_dir, name, cmd, a.update):

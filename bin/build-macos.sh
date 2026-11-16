@@ -8,15 +8,28 @@ for tool in cmake python3 curl unzip shasum xz; do
 done
 xcode-select -p >/dev/null
 export COSMO_DIR="${COSMO_DIR:-$PWD/build/deps/cosmopolitan}"
-if [ ! -x "$COSMO_DIR/bin/cosmocc" ]; then
+sha=$(awk '/^sha256:/{print $2}' toolchain/PIN)
+if [ ! -x "$COSMO_DIR/bin/cosmocc" ] ||
+   [ "$(cat "$COSMO_DIR/.apeget-pin" 2>/dev/null)" != "$sha" ]; then
+  # an unpacked tree is only trustworthy while its stamp matches the PIN;
+  # a changed PIN or a partial directory forces a fresh unpack
   url=$(awk '/^url:/{print $2}' toolchain/PIN)
-  sha=$(awk '/^sha256:/{print $2}' toolchain/PIN)
   archive="$PWD/build/deps/cosmocc.zip"
   mkdir -p build/deps
   curl -fL --retry 3 "$url" -o "$archive"
   printf '%s  %s\n' "$sha" "$archive" | shasum -a 256 -c -
-  mkdir -p "$COSMO_DIR"
-  unzip -q "$archive" -d "$COSMO_DIR"
+  fresh="$COSMO_DIR.fresh"
+  rm -rf "$fresh"
+  mkdir -p "$fresh"
+  unzip -q "$archive" -d "$fresh"
+  printf '%s\n' "$sha" > "$fresh/.apeget-pin"
+  if [ -d "$COSMO_DIR" ]; then
+    mv "$COSMO_DIR" "$COSMO_DIR.stale"
+    mv "$fresh" "$COSMO_DIR"
+    rm -rf "$COSMO_DIR.stale"
+  else
+    mv "$fresh" "$COSMO_DIR"
+  fi
 fi
 for arch in x86_64 aarch64; do
   cmake -S . -B "build/$arch" \
@@ -25,9 +38,10 @@ for arch in x86_64 aarch64; do
   cmake --build "build/$arch" --parallel "$(sysctl -n hw.ncpu)"
 done
 bash bin/package.sh build/x86_64 build/aarch64 build
-artifacts=(build/ape-get*.com)
-for twin in build/ape-get*.com.xz; do
-  [ ! -f "$twin" ] || artifacts+=("$twin")
+artifacts=()
+for f in build/ape-get.com build/ape-get-x86_64.com build/ape-get-aarch64.com; do
+  artifacts+=("$f")
+  if [ -f "$f.xz" ]; then artifacts+=("$f.xz"); fi
 done
 shasum -a 256 "${artifacts[@]}" > build/SHA256SUMS.txt
 cat > build/ape-get <<'LAUNCHER'

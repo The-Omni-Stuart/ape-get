@@ -77,12 +77,12 @@ Example repositories:
 
 ### Prerequisites
 
-- CMake 3.20+
+- CMake 3.21+
 - The pinned cosmocc toolchain (URL and SHA-256 in `toolchain/PIN`)
 
 ### Building on macOS
 
-Install Apple's Command Line Tools, CMake 3.20+, Python 3, and `xz`, then run:
+Install Apple's Command Line Tools, CMake 3.21+, Python 3, and `xz`, then run:
 
 ```bash
 bash bin/build-macos.sh

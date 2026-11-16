@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21) # 3.21: the C17 dialect below
 project(ape_get C)
 
 # One static library per module, one `ape-get` executable, sizes gated per
@@ -115,7 +115,9 @@ target_link_libraries(m_http PUBLIC m_crypto)
 target_link_options(ape-get PRIVATE -Wl,--no-undefined)
 # deps.mk order is topological for headers, but static archives may reference
 # each other both ways; the link group resolves the closure in any order.
-target_link_libraries(ape-get PRIVATE LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+# Raw -Wl, strings (not the LINKER: prefix) because that prefix in
+# target_link_libraries needs CMake 4.0, far above the declared minimum.
+target_link_libraries(ape-get PRIVATE -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 
 # Packaging: per-arch ELF -> apelink with bundled loaders; bin/package.sh
 # drives the three artefacts, CI gates the sizes (1.5 MB fat / 1 MB single).
@@ -167,14 +169,14 @@ apeget_test_entry(test_preflight_names PREFLIGHT_NAMES_TEST_EXE)
 add_test(NAME preflight_names_check COMMAND "${PREFLIGHT_NAMES_TEST_EXE}")
 add_executable(test_journal_load ${CMAKE_SOURCE_DIR}/src/test/ci/test_journal_load.c)
 target_link_libraries(test_journal_load PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 apeget_test_entry(test_journal_load JOURNAL_LOAD_TEST_EXE)
 add_test(NAME journal_load_check
   COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_journal_load.py
     --driver "${JOURNAL_LOAD_TEST_EXE}" --bin "${APEGET_TEST_EXE}")
 add_executable(test_manifest_identity ${CMAKE_SOURCE_DIR}/src/test/ci/test_manifest_identity.c)
 target_link_libraries(test_manifest_identity PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 apeget_test_entry(test_manifest_identity MANIFEST_IDENTITY_TEST_EXE)
 add_test(NAME manifest_identity_check
   COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_manifest_identity.py
@@ -190,7 +192,7 @@ add_test(NAME query_purity_check
     --bin "${APEGET_TEST_EXE}")
 add_executable(test_tls_dates ${CMAKE_SOURCE_DIR}/src/test/ci/test_tls_dates.c)
 target_link_libraries(test_tls_dates PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 apeget_test_entry(test_tls_dates TLS_DATES_TEST_EXE)
 add_test(NAME tls_dates_check
   COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_tls_dates.py
@@ -202,7 +204,7 @@ if(APEGET_SELF)
   add_test(NAME self_executable_path COMMAND "${SELF_PATH_TEST_EXE}")
   add_executable(test_self_refresh ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_refresh.c)
   target_link_libraries(test_self_refresh PRIVATE
-    LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+    -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
   apeget_test_entry(test_self_refresh SELF_REFRESH_TEST_EXE)
   add_test(NAME self_refresh_check
     COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_refresh.py
@@ -234,7 +236,7 @@ add_test(NAME json_oom_check COMMAND "${JSON_OOM_TEST_EXE}")
 # declared-size cap must refuse before touching the destination (N11)
 add_executable(test_download_cap ${CMAKE_SOURCE_DIR}/src/test/ci/test_download_cap.c)
 target_link_libraries(test_download_cap PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 target_link_options(test_download_cap PRIVATE
   -Wl,--wrap=open_conn -Wl,--wrap=tls_read
   -Wl,--wrap=tls_write_all -Wl,--wrap=tls_close)
@@ -245,7 +247,7 @@ set_tests_properties(download_cap_check PROPERTIES TIMEOUT 30)
 # side-file temp files must not outlive a failed fetch (N10)
 add_executable(test_routing_tmp ${CMAKE_SOURCE_DIR}/src/test/ci/test_routing_tmp.c)
 target_link_libraries(test_routing_tmp PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 target_link_options(test_routing_tmp PRIVATE -Wl,--wrap=http_get_hdr_prog)
 apeget_test_entry(test_routing_tmp ROUTING_TMP_TEST_EXE)
 add_test(NAME routing_tmp_check COMMAND "${ROUTING_TMP_TEST_EXE}")
@@ -254,7 +256,7 @@ set_tests_properties(routing_tmp_check PROPERTIES TIMEOUT 30)
 # URL/authority/framing/proxy wire probes (N03, N05, N06, N12)
 add_executable(test_http_wire ${CMAKE_SOURCE_DIR}/src/test/ci/test_http_wire.c)
 target_link_libraries(test_http_wire PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 target_link_options(test_http_wire PRIVATE
   -Wl,--wrap=tls_connect -Wl,--wrap=tls_tcp_connect
   -Wl,--wrap=tls_write_all -Wl,--wrap=tls_read -Wl,--wrap=tls_close)
@@ -265,7 +267,7 @@ set_tests_properties(http_wire_check PROPERTIES TIMEOUT 30)
 # one deadline across resolve+connect+handshake (N04)
 add_executable(test_tls_deadline ${CMAKE_SOURCE_DIR}/src/test/ci/test_tls_deadline.c)
 target_link_libraries(test_tls_deadline PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 target_link_options(test_tls_deadline PRIVATE
   -Wl,--wrap=getaddrinfo -Wl,--wrap=connect -Wl,--wrap=poll)
 apeget_test_entry(test_tls_deadline TLS_DEADLINE_TEST_EXE)
@@ -277,7 +279,7 @@ set_tests_properties(tls_deadline_check PROPERTIES TIMEOUT 30)
 # release-listing pagination and publication policy (N13)
 add_executable(test_release_pages ${CMAKE_SOURCE_DIR}/src/test/ci/test_release_pages.c)
 target_link_libraries(test_release_pages PRIVATE
-  LINKER:--start-group ${APESRC_LIBS} LINKER:--end-group)
+  -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
 target_link_options(test_release_pages PRIVATE -Wl,--wrap=http_get_hdr)
 apeget_test_entry(test_release_pages RELEASE_PAGES_TEST_EXE)
 add_test(NAME release_pages_check COMMAND "${RELEASE_PAGES_TEST_EXE}")
@@ -306,6 +308,8 @@ set_tests_properties(source_probe_missing PROPERTIES
 add_test(NAME deps_graph_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/check_deps_graph.py
                  ${CMAKE_SOURCE_DIR}/src/main/deps.mk)
+add_test(NAME deps_graph_selftest
+         COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_deps_graph.py)
 add_test(NAME free_order_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/check_free_order.py
                  ${CMAKE_SOURCE_DIR}/src/main)

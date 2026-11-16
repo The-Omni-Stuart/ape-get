@@ -20,6 +20,11 @@ strip_deadweight() { # <arch> <in> <out>
     --remove-section=.zip "$2" "$3"
 }
 TMPD=$(mktemp -d); trap 'rm -rf "$TMPD"' EXIT
+# Closed staging dir: packaging runs into an empty tree, and only the exact
+# expected names are published, so stale files from earlier runs can never
+# join the gates, hashes or uploads below.
+STAGE="$TMPD/stage"; mkdir -p "$STAGE"
+ARTIFACTS=(ape-get.com ape-get-x86_64.com ape-get-aarch64.com)
 strip_deadweight x86_64 "$X86_TREE/ape-get" "$TMPD/x86"
 strip_deadweight aarch64 "$AA_TREE/ape-get" "$TMPD/arm"
 
@@ -28,24 +33,26 @@ strip_deadweight aarch64 "$AA_TREE/ape-get" "$TMPD/arm"
 apelink -s -V -1 \
         -l "$COSMO_DIR/bin/ape-x86_64.elf" \
         -l "$COSMO_DIR/bin/ape-aarch64.elf" -M "$COSMO_DIR/bin/ape-m1.c" \
-        -o "$OUT/ape-get.com" "$TMPD/x86" "$TMPD/arm"
+        -o "$STAGE/ape-get.com" "$TMPD/x86" "$TMPD/arm"
 apelink -s -V -1 -l "$COSMO_DIR/bin/ape-x86_64.elf" \
-        -o "$OUT/ape-get-x86_64.com" "$TMPD/x86"
+        -o "$STAGE/ape-get-x86_64.com" "$TMPD/x86"
 apelink -s -V -1 -l "$COSMO_DIR/bin/ape-aarch64.elf" -M "$COSMO_DIR/bin/ape-m1.c" \
-        -o "$OUT/ape-get-aarch64.com" "$TMPD/arm"
+        -o "$STAGE/ape-get-aarch64.com" "$TMPD/arm"
 
 # Magic gate: packaged APEs start with MZqFpD=' or jartsr='.
-for f in "$OUT"/ape-get*.com; do
-  head -c 8 "$f" | grep -q "MZqFpD='" || {
-    echo "FATAL: $f lacks APE magic (first 8 bytes: $(head -c 8 "$f" | od -c | head -1))" >&2
+for f in "${ARTIFACTS[@]}"; do
+  p="$STAGE/$f"
+  [ -f "$p" ] || { echo "FATAL: expected artefact $f was not produced" >&2; exit 1; }
+  head -c 8 "$p" | grep -q "MZqFpD='" || {
+    echo "FATAL: $f lacks APE magic (first 8 bytes: $(head -c 8 "$p" | od -c | head -1))" >&2
     exit 1; }
 done
 
 # Size gates: 1,638 KiB fat / 1 MB per single-arch.
-fat=$(file_size "$OUT/ape-get.com")
+fat=$(file_size "$STAGE/ape-get.com")
 [ "$fat" -le 1677312 ] || { echo "FATAL: fat APE $fat > fat gate" >&2; exit 1; }
 for a in x86_64 aarch64; do
-  s=$(file_size "$OUT/ape-get-$a.com")
+  s=$(file_size "$STAGE/ape-get-$a.com")
   [ "$s" -le 1048576 ] || { echo "FATAL: $a APE $s > 1 MB gate" >&2; exit 1; }
   echo "ape-get-$a.com: $s"
 done
@@ -54,13 +61,22 @@ echo "ape-get.com: $fat"
 # Transport twins: the exact xz shape the client accepts (dict 8 MiB is
 # its cap). Published only when meaningfully smaller (< 95% of raw) —
 # the manifest, not the client, decides what ships.
-for f in "$OUT"/ape-get*.com; do
-  xz --lzma2=preset=9e,dict=8MiB --check=sha256 -c "$f" > "$f.xz"
-  raw=$(file_size "$f"); enc=$(file_size "$f.xz")
+for f in "${ARTIFACTS[@]}"; do
+  p="$STAGE/$f"
+  xz --lzma2=preset=9e,dict=8MiB --check=sha256 -c "$p" > "$p.xz"
+  raw=$(file_size "$p"); enc=$(file_size "$p.xz")
   if [ $((enc * 100)) -ge $((raw * 95)) ]; then
-    rm -f "$f.xz"
+    rm -f "$p.xz"
     echo "twin skipped (no win): $f.xz $enc/$raw"
   else
     echo "twin: $f.xz $enc ($((enc * 100 / raw))% of raw)"
   fi
+done
+
+# Publish the closed set atomically-per-name: previous generations of
+# these exact names are replaced, twins that lost are not resurrected.
+for f in "${ARTIFACTS[@]}"; do
+  rm -f "$OUT/$f" "$OUT/$f.xz"
+  mv "$STAGE/$f" "$OUT/$f"
+  if [ -f "$STAGE/$f.xz" ]; then mv "$STAGE/$f.xz" "$OUT/$f.xz"; fi
 done

@@ -115,17 +115,52 @@ jobs:
       # from linux by the bundled drivers. package.sh re-checks magic, the
       # 1,638 KiB fat / 1 MB single size gates and the transport twins
       # (publish only < 95%), failing the job on drift.
-      - name: Build per-arch ELFs
+      - name: Resolve release version
+        id: relver
+        if: startsWith(github.ref_name, 'v')
         run: |
+          set -euo pipefail
+          # one normalised version for the whole release: the same string
+          # the "Name artefacts" step derives filenames from
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build per-arch ELFs
+        env:
+          RELVER: ${{ steps.relver.outputs.version }}
+        run: |
+          set -euo pipefail
+          # on a tag the version baked into BOTH arch binaries equals the
+          # release filename's; branch builds keep the CMake default the
+          # scenario goldens pin (dev identity stays honest: the packaged
+          # binary is never what a tag publishes without the assert below)
+          vargs=()
+          if [ -n "${RELVER:-}" ]; then vargs+=(-DAPEGET_VERSION="$RELVER"); fi
           for a in x86_64 aarch64; do
             cmake -S . -B "build/$a" \
               -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/toolchain/cosmo.cmake" \
-              -DCOSMO_DIR="$COSMO_DIR" -DAPEGET_ARCH="$a"
+              -DCOSMO_DIR="$COSMO_DIR" -DAPEGET_ARCH="$a" "${vargs[@]}"
             cmake --build "build/$a" -j"$(nproc)"
           done
 
       - name: Package + gates
         run: bash bin/package.sh build/x86_64 build/aarch64 dist
+
+      # A tag whose built binary reports a different version must not
+      # publish: the about line is the compiled self identity (and the
+      # self manifest's version), the filenames came from the same tag.
+      - name: Assert packaged version matches the tag
+        if: startsWith(github.ref_name, 'v')
+        run: |
+          set -euo pipefail
+          ver=${GITHUB_REF_NAME#v}
+          for f in dist/ape-get.com dist/ape-get-x86_64.com dist/ape-get-aarch64.com; do
+            out=$(APEGET_NO_SELF=1 "$f" about)
+            grep -qF "~ Ver. $ver ~" <<<"$out" || {
+              echo "FATAL: $f does not report version $ver" >&2
+              grep -o "Ver\. [^ ]*" <<<"$out" >&2 || echo "  (no version line)" >&2
+              exit 1; }
+            echo "version ok: $f reports $ver"
+          done
 
       - name: Upload APE artefacts
         uses: actions/upload-artifact@v4

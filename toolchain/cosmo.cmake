@@ -1,6 +1,9 @@
 # cosmocc toolchain file. COSMO_DIR overrides the install path.
 set(COSMO_DIR "$ENV{COSMO_DIR}" CACHE PATH "Cosmopolitan 4.0.2 install prefix")
 set(APEGET_ARCH "x86_64" CACHE STRING "x86_64 | aarch64 (ELF target for apelink)")
+if(NOT APEGET_ARCH MATCHES "^(x86_64|aarch64)$")
+  message(FATAL_ERROR "APEGET_ARCH must be x86_64 or aarch64, got '${APEGET_ARCH}'")
+endif()
 list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES COSMO_DIR APEGET_ARCH)
 if(NOT COSMO_DIR)
   set(COSMO_DIR "$ENV{HOME}/.local/lib/cosmopolitan")
@@ -23,6 +26,9 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 if(CMAKE_HOST_APPLE)
   set(CMAKE_AR "${COSMO_DIR}/bin/${APEGET_ARCH}-linux-cosmo-ar" CACHE FILEPATH "Cosmo archiver" FORCE)
   set(CMAKE_RANLIB "${COSMO_DIR}/bin/${APEGET_ARCH}-linux-cosmo-ranlib" CACHE FILEPATH "Cosmo archive indexer" FORCE)
+  # the APE ar/ranlib are polyglot executables CMake's link script cannot
+  # execve directly; /bin/sh runs their APE shell header (same reason
+  # package.sh shell-launches apelink)
   set(CMAKE_C_ARCHIVE_CREATE "/bin/sh <CMAKE_AR> qc <TARGET> <LINK_FLAGS> <OBJECTS>")
   set(CMAKE_C_ARCHIVE_APPEND "/bin/sh <CMAKE_AR> q <TARGET> <LINK_FLAGS> <OBJECTS>")
   set(CMAKE_C_ARCHIVE_FINISH "/bin/sh <CMAKE_RANLIB> <TARGET>")
@@ -35,9 +41,20 @@ else()
   set(CMAKE_C_ARCHIVE_APPEND "<CMAKE_AR> q <TARGET> <LINK_FLAGS> <OBJECTS>")
   set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> <TARGET>")
 endif()
+# cmake_link_script splits these archive templates on whitespace and execs
+# them without a shell, so a space in a tool path splits its token and
+# embedded quotes are exec'd literally: fail at configure, not mid-build.
+if(CMAKE_AR MATCHES " " OR CMAKE_RANLIB MATCHES " ")
+  message(FATAL_ERROR "CMAKE_AR/CMAKE_RANLIB paths must not contain spaces "
+    "(archive templates are whitespace-split): CMAKE_AR='${CMAKE_AR}'")
+endif()
 
 # -mtiny explicit so the cache can't disagree with the env; -Os always.
 # gc-sections keeps the fat APE inside the size gates (uncalled mbed TLS code).
-set(CMAKE_C_FLAGS_INIT "-Os -mtiny -std=c17 -Wall -Wextra -Werror -ffunction-sections -fdata-sections")
+# -fno-*-unwind-tables: cosmo's linker folds .eh_frame into the APE's .data
+# (it appears nowhere as its own section); dropping the tables saves 98,304
+# compressed bytes on the fat APE. Nothing in the product unwinds through
+# them (no C exceptions); symbolication stays offline on the pre-package ELF.
+set(CMAKE_C_FLAGS_INIT "-Os -mtiny -std=c17 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-Os -mtiny -Wl,--gc-sections")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

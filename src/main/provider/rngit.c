@@ -248,6 +248,7 @@ bool provider_rngit_download(const provider_entry *e, const char *url,
                 ok = true;
                 while ((r = fread(buf, 1, sizeof buf, in)) > 0)
                     if (fwrite(buf, 1, r, f) != r) { ok = false; break; }
+                if (ferror(in)) ok = false; // a short read from error is not EOF
                 fclose(in);
                 if (fclose(f) != 0) ok = false;
                 if (!ok) { remove(tmp); snprintf(msg, cap, "cannot write %s", tmp); }
