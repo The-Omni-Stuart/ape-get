@@ -50,11 +50,14 @@ _apg_flags() {
     doctor)
         echo --diagnose --heal
         ;;
+    setup)
+        echo --prefix --no-path --dry-run --setup
+        ;;
     esac
     echo --help --json --quiet -y --yes --colour --no-progress --experimental-compat
 }
-_apg_commands="search install uninstall update list info providers rollback doctor adopt about lock unlock completions help"
-_apg_value_flags=" --colour --provider --version --asset --kind --name --icon --channel --type --api --token-env --url "
+_apg_commands="search install uninstall update list info providers rollback doctor adopt about lock unlock completions setup help"
+_apg_value_flags=" --colour --provider --version --asset --kind --name --icon --channel --type --api --token-env --url --prefix "
 _apg_verbs="list show add update remove recover"
 _apg_ref_cmds=" uninstall update info rollback adopt lock unlock "
 _ape_get() {

@@ -15,6 +15,7 @@ Commands:
   unlock [name] - let a locked release update again
   about - about ape-get: version, licence, source
   completions <bash|zsh> - print a shell completion script
+  setup - install ape-get and put it on PATH
   help - display this help message
 
 Global options:

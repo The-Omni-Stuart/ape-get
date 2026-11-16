@@ -1,0 +1,5 @@
+--- opt/ape-get/ape-get (0755) ---
+fake portable ape-get executable
+--- .local/bin/ape-get (absent) ---
+--- .profile (0644) ---
+export PATH="<HOME>/opt/ape-get:$PATH"  # ape-get

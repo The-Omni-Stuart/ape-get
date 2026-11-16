@@ -2,13 +2,127 @@
 #include "path.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
 #include <sys/utsname.h>
+#include <unistd.h>
 
-char *platform_install_root_default(void)
+const char *platform_command_name(platform_os os)
 {
+    return os == OS_WINDOWS ? "ape-get.com" : "ape-get";
+}
+
+// PATH entries are separated by ';' on Windows and ':' elsewhere, and only
+// the comparison the OS uses is right: case-insensitive on Windows.
+static bool self_dir_on_path(const char *dir)
+{
+    const char *env = getenv("PATH");
+    if (env == NULL) return false;
+    bool win = platform_current() == OS_WINDOWS;
+    char sep = win ? ';' : ':';
+    size_t dl = strlen(dir);
+    while (dl > 0 && (dir[dl - 1] == '/' || dir[dl - 1] == '\\')) dl--;
+    for (const char *p = env; ; ) {
+        const char *e = strchr(p, sep);
+        size_t len = e != NULL ? (size_t)(e - p) : strlen(p);
+        while (len > 0 && (p[len - 1] == '/' || p[len - 1] == '\\')) len--;
+        if (len == dl && (win ? !strncasecmp(p, dir, len)
+                              : !strncmp(p, dir, len))) return true;
+        if (e == NULL) break;
+        p = e + 1;
+    }
+    return false;
+}
+
+// Two ways this file can be an installed one rather than a download: the
+// directory it was run from is already on PATH, wherever that turned out to
+// be, or it is the very file the platform's default root points at. Both are
+// a scan and a stat, so the check stays cheap enough to run on every command.
+bool platform_self_is_installed(void)
+{
+    char *self = platform_self_exe();
+    if (self == NULL) return true;      // cannot tell: stay quiet
+
+    size_t cut = 0;
+    for (size_t i = 0; self[i] != '\0'; i++)
+        if (self[i] == '/' || self[i] == '\\') cut = i;
+    if (cut > 0) {
+        char saved = self[cut];
+        self[cut] = '\0';
+        bool on = self_dir_on_path(self);
+        self[cut] = saved;
+        if (on) { free(self); return true; }
+    }
+
+    bool same = false;
+    char *dir = platform_install_root_default();
+    if (dir != NULL) {
+        char *want = path_join(dir, platform_command_name(platform_current()));
+        struct stat a, b;
+        same = want != NULL && stat(want, &a) == 0 && stat(self, &b) == 0
+            && a.st_dev == b.st_dev && a.st_ino == b.st_ino;
+        free(want);
+        free(dir);
+    }
+    free(self);
+    return same;
+}
+
+char *platform_self_exe(void)
+{
+    const char *hook = getenv("APEGET_SELF_EXE");
+    if (hook != NULL && *hook != '\0') return strdup(hook);
+    // the loader-emulated link names our own file on all three systems
+    char buf[8192];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+    if (n <= 0) return NULL;
+    buf[n] = '\0';
+    return strdup(buf);
+}
+
+// The three names the polyglot's libc reports for the kernel it is running
+// under: "Windows" under the APE loader, "Darwin" on XNU, "Linux" on Linux.
+platform_os platform_current(void)
+{
+    struct utsname u;
+    if (uname(&u) != 0) return OS_UNKNOWN;
+    if (!strcmp(u.sysname, "Linux")) return OS_LINUX;
+    if (!strcmp(u.sysname, "Darwin")) return OS_MACOS;
+    if (!strcmp(u.sysname, "Windows")) return OS_WINDOWS;
+    return OS_UNKNOWN;
+}
+
+char *platform_install_root_default_for(platform_os os)
+{
+    if (os == OS_WINDOWS) {
+        // %LOCALAPPDATA% is per-user and needs no elevation; the path is
+        // spelled with backslashes because that is what a PATH entry shows
+        const char *l = getenv("LOCALAPPDATA");
+        if (l == NULL || *l == '\0') return NULL;
+        size_t n = strlen(l);
+        while (n > 0 && (l[n - 1] == '\\' || l[n - 1] == '/')) n--;
+        if (n == 0) return NULL;
+        return path_fmt("%.*s\\Programs\\ape-get", (int)n, l);
+    }
     char *h = path_home();
     if (h == NULL) return NULL;
     char *r = path_join(h, ".local/bin");
+    free(h);
+    return r;
+}
+
+char *platform_install_root_default(void)
+{
+    return platform_install_root_default_for(platform_current());
+}
+
+char *platform_path_target(platform_os os)
+{
+    if (os == OS_WINDOWS) return strdup("the user environment");
+    char *h = path_home();
+    if (h == NULL) return NULL;
+    char *r = path_join(h, os == OS_MACOS ? ".zshrc" : ".profile");
     free(h);
     return r;
 }

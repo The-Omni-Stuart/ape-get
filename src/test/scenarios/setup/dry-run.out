@@ -1,0 +1,6 @@
+Dry run: would install ape-get.
+  Platform: Linux x86_64
+  Directory: <INSTALL_ROOT>
+  Command: <INSTALL_ROOT>/ape-get
+  PATH: add <INSTALL_ROOT> to <HOME>/.profile
+No changes were made.

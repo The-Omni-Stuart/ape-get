@@ -37,6 +37,7 @@ static const char *const HELP_COMMANDS[] = {
     "  unlock [name] - let a locked release update again",
     "  about - about ape-get: version, licence, source",
     "  completions <bash|zsh> - print a shell completion script",
+    "  setup - install ape-get and put it on PATH",
     "  help - display this help message",
     NULL
 };
@@ -125,6 +126,14 @@ static const char *const OPTS_ROLLBACK[] = {
     NULL
 };
 
+static const char *const OPTS_SETUP[] = {
+    "  --prefix <path> - install into a custom directory",
+    "  --no-path - skip PATH registration",
+    "  --dry-run - show what would happen without changing anything",
+    "  --setup - the same command written as a flag",
+    NULL
+};
+
 static const char *const OPTS_DOCTOR[] = {
     "  --diagnose - report only (the default)",
     "  --heal - report, then apply fixes with confirmations",
@@ -149,6 +158,7 @@ static const cmd_help CMDS[] = {
     {"unlock",    "<provider:owner/repo> [options]", OPTS_NONE, CMD_UNLOCK,
         1, 1},
     {"completions", "<bash|zsh>", OPTS_NONE, CMD_COMPLETIONS, 1, 1},
+    {"setup",     "[options]", OPTS_SETUP, CMD_SETUP, 0, 0},
     {"help",      "[command]", OPTS_NONE, CMD_HELP, 0, 1},
 };
 
@@ -227,6 +237,10 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
         else if (!strcmp(a, "--name")) VALV(out->name, "--name");
         else if (!strcmp(a, "--icon")) VALV(out->icon, "--icon");
         else if (!strcmp(a, "--no-command")) out->no_command = 1;
+        else if (!strcmp(a, "--no-path")) out->no_path = 1;
+        else if (!strcmp(a, "--prefix")) VALV(out->prefix, "--prefix");
+        // the download's own entry point: ape-get --setup is ape-get setup
+        else if (!strcmp(a, "--setup")) out->setup = 1;
         else if (!strcmp(a, "--assimilate")) out->assimilate = 1;
         else if (!strcmp(a, "--desktop")) out->desktop = 1;
         else if (!strcmp(a, "--no-desktop")) out->no_desktop = 1;
@@ -269,7 +283,7 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
         return;
     }
 
-    if (n == 0) { out->id = CMD_HELP; return; }
+    if (n == 0) { out->id = out->setup ? CMD_SETUP : CMD_HELP; return; }
     const char *c = pos[0];
     for (size_t k = 0; k < sizeof(CMDS) / sizeof(CMDS[0]); k++)
         if (!strcmp(c, CMDS[k].name)) {
@@ -306,6 +320,7 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
             }
             return;
         }
+    if (out->setup) { out->id = CMD_SETUP; return; }
     out->id = CMD_USAGE;
     out->usage_error = 1;
     out->usage_msg = NULL;      // caller prints "Error: Unknown command: X"

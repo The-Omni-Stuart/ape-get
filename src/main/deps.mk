@@ -22,8 +22,9 @@ keys:crypto,fs,json,path
 provider:repo,json,http,path,proc
 state:json,repo,platform,txn,fs,path,clock,crypto
 select:platform,path,repo
+setup:cmd,fs,path,prompt,platform,ui
 verify:crypto,keys,fs,proc,path
 probe:provider,repo,clock,http
 doctor:state,platform,fs,proc,path,txn,compat,prompt
 pipeline:json,repo,cmd,ui,path,semver,redact,clock,crypto,fs,proc,output,prompt,platform,compat,http,txn,keys,provider,state,select,verify,probe,doctor
-main:json,repo,cmd,ui,path,semver,redact,clock,crypto,fs,proc,output,prompt,platform,compat,http,txn,keys,provider,state,select,verify,probe,doctor,pipeline
+main:json,repo,cmd,ui,path,semver,redact,clock,crypto,fs,proc,output,prompt,platform,compat,http,txn,keys,provider,state,select,verify,probe,doctor,pipeline,setup

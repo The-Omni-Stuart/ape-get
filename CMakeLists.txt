@@ -284,12 +284,15 @@ set_tests_properties(source_probe_missing PROPERTIES
   PASS_REGULAR_EXPRESSION "No repository with a published release matching 'owner/tool'")
 
 add_executable(test_platform ${CMAKE_SOURCE_DIR}/src/test/ci/test_platform.c)
-target_link_libraries(test_platform PRIVATE m_platform m_path)
+target_link_libraries(test_platform PRIVATE m_platform m_proc m_fs m_path)
 target_link_options(test_platform PRIVATE -Wl,--wrap=uname)
 apeget_test_entry(test_platform PLATFORM_TEST_EXE)
 add_test(NAME platform_description COMMAND "${PLATFORM_TEST_EXE}")
 add_test(NAME platform_description_without_kernel
          COMMAND "${PLATFORM_TEST_EXE}" no-kernel)
+add_test(NAME platform_os_detection COMMAND "${PLATFORM_TEST_EXE}" os-detection)
+add_test(NAME platform_install_root COMMAND "${PLATFORM_TEST_EXE}" install-root)
+add_test(NAME platform_path_windows COMMAND "${PLATFORM_TEST_EXE}" windows-path)
 
 add_test(NAME deps_graph_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/check_deps_graph.py
@@ -312,6 +315,12 @@ add_test(NAME completions_check
            -P ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions.cmake)
 add_test(NAME completions_pty_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions_pty.py
+                 ${APEGET_TEST_EXE})
+add_test(NAME portable_notice_pty_check
+         COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_portable_notice_pty.py
+                 ${APEGET_TEST_EXE})
+add_test(NAME setup_pty_check
+         COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_setup_pty.py
                  ${APEGET_TEST_EXE})
 
 # delta round-trip: vendored xdelta3 encoder (test-only build; never

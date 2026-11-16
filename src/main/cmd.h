@@ -8,7 +8,7 @@ typedef enum cmd_id {
     CMD_SEARCH, CMD_INSTALL, CMD_UNINSTALL, CMD_UPDATE, CMD_LIST,
     CMD_INFO, CMD_PROVIDERS, CMD_ROLLBACK, CMD_DOCTOR, CMD_ADOPT,
     CMD_HELP, CMD_USAGE,
-    CMD_LOCK, CMD_UNLOCK, CMD_ABOUT, CMD_COMPLETIONS
+    CMD_LOCK, CMD_UNLOCK, CMD_ABOUT, CMD_COMPLETIONS, CMD_SETUP
 } cmd_id;
 
 typedef struct cmd_opts {
@@ -16,8 +16,9 @@ typedef struct cmd_opts {
     int dry_run, json, quiet, all, outdated, no_command, assimilate;
     int desktop, no_desktop, terminal, reinstall, lock, diagnose, heal;
     int experimental_compat, no_progress, help;
+    int setup, no_path;
     const char *channel, *provider, *asset, *version, *kind, *name, *icon;
-    const char *colour;
+    const char *colour, *prefix;
     char **args;   // positional args after flag stripping; NUL-terminated
     int nargs;
     cmd_id id;

@@ -13,6 +13,7 @@
 #include "pipeline.h"
 #include "provider.h"
 #include "repo.h"
+#include "setup.h"
 #include "state.h"
 #include "txn.h"
 #include "ui.h"
@@ -122,6 +123,8 @@ int main(int argc, char **argv)
                     : "Colour disabled (--colour never).");
     }
 
+    setup_portable_notice(&o);   // a quiet nudge, and only at a terminal
+
     if (o.help) // C-only flag: --help / <command> --help
         return run_help(o.nargs >= 1 ? o.args[0] : NULL);
 
@@ -157,6 +160,8 @@ int main(int argc, char **argv)
         return run_about();
     case CMD_COMPLETIONS:
         return run_completions(&o);
+    case CMD_SETUP:
+        return setup_run(&o);
     case CMD_DOCTOR:
         return doctor_run(&o);
     case CMD_SEARCH: {

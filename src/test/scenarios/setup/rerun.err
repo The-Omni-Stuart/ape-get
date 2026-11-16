@@ -1,0 +1,7 @@
+Platform: Linux x86_64
+Install directory: <INSTALL_ROOT>
+Command: <INSTALL_ROOT>/ape-get
+PATH: add <INSTALL_ROOT> to <HOME>/.profile
+Installed <INSTALL_ROOT>/ape-get.
+Added <INSTALL_ROOT> to PATH in <HOME>/.profile.
+Open a new terminal, then run 'ape-get'.

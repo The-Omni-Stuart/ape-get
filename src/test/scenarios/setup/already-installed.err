@@ -1,0 +1,6 @@
+Platform: Linux x86_64
+Install directory: <INSTALL_ROOT>
+Command: <INSTALL_ROOT>/ape-get
+PATH: already registered in <HOME>/.profile
+<INSTALL_ROOT>/ape-get is already installed.
+<INSTALL_ROOT> is already registered in PATH.

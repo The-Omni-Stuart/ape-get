@@ -19,6 +19,7 @@ _ape_get()
         'unlock:unlock a release'
         'about:about ape-get'
         'completions:print a shell completion script'
+        'setup:install ape-get and put it on PATH'
         'help:help for a command'
     )
 

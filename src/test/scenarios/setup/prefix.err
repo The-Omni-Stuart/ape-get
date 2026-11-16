@@ -1,0 +1,7 @@
+Platform: Linux x86_64
+Install directory: <HOME>/opt/ape-get
+Command: <HOME>/opt/ape-get/ape-get
+PATH: add <HOME>/opt/ape-get to <HOME>/.profile
+Installed <HOME>/opt/ape-get/ape-get.
+Added <HOME>/opt/ape-get to PATH in <HOME>/.profile.
+Open a new terminal, then run 'ape-get'.

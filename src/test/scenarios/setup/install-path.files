@@ -1,0 +1,5 @@
+--- .local/bin/ape-get (0755) ---
+fake portable ape-get executable
+--- .profile (0644) ---
+export PATH="<INSTALL_ROOT>:$PATH"  # ape-get
+--- .zshrc (absent) ---

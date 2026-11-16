@@ -1,0 +1,5 @@
+Platform: Linux x86_64
+Install directory: <INSTALL_ROOT>
+Command: <INSTALL_ROOT>/ape-get
+PATH: left alone (--no-path)
+Installed <INSTALL_ROOT>/ape-get.
