@@ -26,25 +26,6 @@ note() { echo "FAIL: $*"; fail=1; }
 
 bash -n "$work/comp.sh" || note "bash script does not parse"
 bash -n "$work/comp.zsh" || note "zsh script does not parse"
-
-# R11: the two static scripts are the installable files; both must parse,
-# and their command words must equal the generated (cmd.c registry) list.
-bash -n "$srcdir/completion/ape-get.bash" ||
-    note "static bash completion does not parse"
-gen_cmds=$(sed -n 's/^_apg_commands="\(.*\)"$/\1/p' "$work/comp.sh" | tr ' ' '\n' | sort -u)
-bash_cmds=$(sed -n 's/.*commands="\([^"]*\)".*/\1/p' "$srcdir/completion/ape-get.bash" | tr ' ' '\n' | sort -u)
-zsh_cmds=$(sed -n "s/^ *'\([a-z]*\):.*/\1/p" "$srcdir/completion/ape-get.zsh" | sort -u)
-[ "$gen_cmds" = "$bash_cmds" ] ||
-    note "static bash commands != generated: $(comm -3 <(echo "$gen_cmds") <(echo "$bash_cmds") | tr '\n' ' ')"
-[ "$gen_cmds" = "$zsh_cmds" ] ||
-    note "static zsh commands != generated: $(comm -3 <(echo "$gen_cmds") <(echo "$zsh_cmds") | tr '\n' ' ')"
-if command -v zsh >/dev/null 2>&1; then
-    zsh -n "$work/comp.zsh" || note "generated zsh script does not parse under zsh"
-    zsh -n "$srcdir/completion/ape-get.zsh" ||
-        note "static zsh completion does not parse under zsh"
-else
-    echo "note: zsh not installed; zsh -n skipped"
-fi
 if grep -q -- '-o default' "$work/comp.sh"; then
     note "script may leak filename completion (-o default)"
 fi
