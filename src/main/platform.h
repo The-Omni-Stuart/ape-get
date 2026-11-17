@@ -48,6 +48,15 @@ char *platform_self_exe(void);
 // when the user has said which system it is installing for.
 char *platform_install_root_default_for(platform_os os);
 
+// The directory `dir` in the form the system being installed for names a
+// directory. On Windows a drive path arrives as "/C/Users" from the runtime or
+// "C:/Users" from a keyboard and both are answered as "C:\\Users", because that
+// is the form a Path entry shows and the form setup accepts as absolute; a
+// directory without a drive in front is left exactly as it was named. The
+// unixes spell a path the way it was given, so it comes back unchanged. NULL
+// when there is nothing to name.
+char *platform_install_dir_for(platform_os os, const char *dir);
+
 // The same for the system actually running.
 char *platform_install_root_default(void);
 

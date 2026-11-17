@@ -1,5 +1,6 @@
 #include "platform.h"
 #include "path.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,6 +94,38 @@ platform_os platform_current(void)
     return OS_UNKNOWN;
 }
 
+// Two spellings of one directory reach setup on Windows: "/C/Users", which is
+// how the runtime reports a drive path held in an environment variable, and
+// "C:/Users", which is what a person types or pastes. Both name a drive, so
+// both are answered the way Windows itself shows them, and the leading "/" of
+// the first is the drive rather than a root: leaving it in place names a
+// directory called C under the root of whatever drive the command runs on.
+char *platform_install_dir_for(platform_os os, const char *dir)
+{
+    if (dir == NULL || *dir == '\0') return NULL;
+    if (os != OS_WINDOWS) return strdup(dir);
+
+    size_t letter;                   // where the drive letter sits in dir
+    if (dir[0] == '/' && isalpha((unsigned char)dir[1]) && dir[2] == '/')
+        letter = 1;
+    else if (isalpha((unsigned char)dir[0]) && dir[1] == ':'
+        && (dir[2] == '/' || dir[2] == '\\'))
+        letter = 0;
+    else
+        return strdup(dir);          // nothing names a drive: nothing to repair
+
+    size_t n = strlen(dir);
+    while (n > 2 && (dir[n - 1] == '/' || dir[n - 1] == '\\')) n--;
+    char *out = malloc(n + 1);
+    if (out == NULL) return NULL;
+    out[0] = dir[letter];
+    out[1] = ':';
+    for (size_t r = 2; r < n; r++)
+        out[r] = dir[r] == '/' ? '\\' : dir[r];
+    out[n] = '\0';
+    return out;
+}
+
 char *platform_install_root_default_for(platform_os os)
 {
     if (os == OS_WINDOWS) {
@@ -100,10 +133,11 @@ char *platform_install_root_default_for(platform_os os)
         // spelled with backslashes because that is what a PATH entry shows
         const char *l = getenv("LOCALAPPDATA");
         if (l == NULL || *l == '\0') return NULL;
-        size_t n = strlen(l);
-        while (n > 0 && (l[n - 1] == '\\' || l[n - 1] == '/')) n--;
-        if (n == 0) return NULL;
-        return path_fmt("%.*s\\Programs\\ape-get", (int)n, l);
+        char *root = platform_install_dir_for(OS_WINDOWS, l);
+        if (root == NULL) return NULL;
+        char *r = path_fmt("%s\\Programs\\ape-get", root);
+        free(root);
+        return r;
     }
     char *h = path_home();
     if (h == NULL) return NULL;

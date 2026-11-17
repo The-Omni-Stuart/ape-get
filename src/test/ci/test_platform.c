@@ -89,6 +89,24 @@ static void expect_root(const char *sysname, const char *want,
     free(got);
 }
 
+// The directory a person named, in the form the system being installed for
+// names directories. Every expected string is the Windows spelling written out
+// by hand, and the unix answers are the given path back again: they are what
+// pins that the repair happens only where a leading "/C" is a drive at all.
+static void expect_dir(platform_os os, const char *given, const char *want,
+    const char *label)
+{
+    char *got = platform_install_dir_for(os, given);
+    bool ok = want == NULL ? got == NULL
+        : got != NULL && strcmp(got, want) == 0;
+    if (!ok) {
+        fprintf(stderr, "%s: expected %s, got %s\n", label,
+            want != NULL ? want : "NULL", got != NULL ? got : "NULL");
+        failures++;
+    }
+    free(got);
+}
+
 // --- PATH registration on Windows -------------------------------------
 // The Windows branch talks to reg.exe and nothing else, so reg.exe is the
 // thing replaced here: a shell shim on PATH answers queries from a file and
@@ -310,11 +328,40 @@ int main(int argc, char **argv)
         expect_root("Windows",
             "C:\\Users\\tester\\AppData\\Local\\Programs\\ape-get",
             "Windows default, trailing separator");
+        // The Windows runtime hands a drive path over as /C/Users/..., which
+        // is neither the form a Path entry takes nor the form setup accepts as
+        // absolute, so a default built on it is refused by setup itself.
+        setenv("LOCALAPPDATA", "/C/Users/tester/AppData/Local", 1);
+        expect_root("Windows",
+            "C:\\Users\\tester\\AppData\\Local\\Programs\\ape-get",
+            "Windows default, drive reported as /C/");
         unsetenv("LOCALAPPDATA");
         expect_root("Windows", NULL, "Windows without LOCALAPPDATA");
         unsetenv("HOME");
         expect_root("Linux", NULL, "Linux without HOME");
-        if (failures == 0) puts("6 install-root cases passed");
+        if (failures == 0) puts("7 install-root cases passed");
+        return failures != 0;
+    }
+
+    if (argc > 1 && !strcmp(argv[1], "install-dir")) {
+        expect_dir(OS_WINDOWS, "/C/Users/tester/AppData/Local",
+            "C:\\Users\\tester\\AppData\\Local", "Windows, drive reported as /C/");
+        expect_dir(OS_WINDOWS, "/c/Users/tester", "c:\\Users\\tester",
+            "Windows, lower-case drive keeps its spelling");
+        expect_dir(OS_WINDOWS, "C:/Users/tester", "C:\\Users\\tester",
+            "Windows, forward slashes");
+        expect_dir(OS_WINDOWS, "C:\\Users\\tester\\", "C:\\Users\\tester",
+            "Windows, trailing separator");
+        expect_dir(OS_WINDOWS, "C:\\Users\\tester", "C:\\Users\\tester",
+            "Windows, spelled already");
+        expect_dir(OS_WINDOWS, "~/tester", "~/tester",
+            "Windows, no drive to repair");
+        expect_dir(OS_WINDOWS, NULL, NULL, "Windows, nothing named");
+        expect_dir(OS_LINUX, "/C/Users/tester", "/C/Users/tester",
+            "Linux, where /C is a directory like any other");
+        expect_dir(OS_MACOS, "C:/Users/tester", "C:/Users/tester",
+            "macOS, a Windows path is an ordinary name");
+        if (failures == 0) puts("9 install-dir cases passed");
         return failures != 0;
     }
 

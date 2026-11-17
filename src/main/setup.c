@@ -52,7 +52,11 @@ static void ask_layout(const cmd_opts *o, char **dir, bool *want_path)
 {
     if (!isatty(fileno(stdin)) || o->assume_yes || o->dry_run) return;
     if (o->prefix == NULL) {
-        ui_msg(stderr, UI_NONE, "Installation directory [%s]:", *dir);
+        // Enter is the answer most people want here, so the question says so
+        // rather than leaving a bracketed path to be interpreted.
+        ui_msg(stderr, UI_NONE, "Installation directory [default: %s]", *dir);
+        ui_msg(stderr, UI_NONE, "  Press Enter to install there, or type"
+            " another directory:");
         char *asked = read_answer();
         char *moved = asked != NULL && *asked != '\0' ? strdup(asked) : NULL;
         if (moved != NULL) {
@@ -281,6 +285,16 @@ int setup_run(const cmd_opts *o)
     }
     bool want_path = !o->no_path;
     ask_layout(o, &dir, &want_path);
+
+    // Whoever named the directory, whether they answered the prompt with
+    // Enter or typed a path of their own, gets it spelled the way the system
+    // being installed for spells it: that is the name the plan shows, the
+    // directory the file lands in, and the entry PATH will carry.
+    char *spelled = platform_install_dir_for(os, dir);
+    if (spelled != NULL) {
+        free(dir);
+        dir = spelled;
+    }
 
     // Only an absolute directory can be installed to: a relative one would be
     // found against whatever directory the command happened to run from, and a

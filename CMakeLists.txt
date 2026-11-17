@@ -292,6 +292,7 @@ add_test(NAME platform_description_without_kernel
          COMMAND "${PLATFORM_TEST_EXE}" no-kernel)
 add_test(NAME platform_os_detection COMMAND "${PLATFORM_TEST_EXE}" os-detection)
 add_test(NAME platform_install_root COMMAND "${PLATFORM_TEST_EXE}" install-root)
+add_test(NAME platform_install_dir COMMAND "${PLATFORM_TEST_EXE}" install-dir)
 add_test(NAME platform_path_windows COMMAND "${PLATFORM_TEST_EXE}" windows-path)
 
 add_test(NAME deps_graph_check

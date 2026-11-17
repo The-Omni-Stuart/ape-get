@@ -90,6 +90,16 @@ def main():
                   "Add it to PATH"):
         check(f"asked {asked!r}", asked in out, f"absent from:\n{out}")
 
+    # The directory question spells out what Enter does: a bracketed path on
+    # its own leaves a person guessing whether Enter installs there, asks
+    # again, or declines.
+    default_dir = os.path.join(home, ".local", "bin")
+    check("directory question shows the directory Enter takes",
+        f"[default: {default_dir}]" in out, f"absent from:\n{out}")
+    check("directory question says Enter and an alternative",
+        "Press Enter" in out and "or type" in out,
+        f"the question does not say what Enter does:\n{out}")
+
     # A directory named at the question, rather than the one suggested.
     home = fresh_home(root, "custom")
     chosen = os.path.join(home, "opt", "apg")
@@ -186,6 +196,24 @@ def main():
         "claimed to have added a Windows directory to PATH")
     check("menu windows exit", code != 0,
         "reported success with the PATH step unfinished")
+
+    # A directory given in the "/C:" shape the runtime reports a Windows drive
+    # path as: setup installs where Windows says that directory is, rather than
+    # refusing the path its own prompt had just offered, and it does not create
+    # a directory called C at the root of the disk it happens to run on.
+    home = fresh_home(root, "menu-windows-slash")
+    out, code = run(exe, ["setup", "--prefix", "/C/apg-slash"], home, plain,
+        "n\n3\n\ny\n")
+    native = os.path.join(home, "C:\\apg-slash")
+    check("menu windows slash names the drive in the plan",
+        "Install directory: C:\\apg-slash" in out,
+        f"the plan does not say where Windows calls the directory:\n{out}")
+    check("menu windows slash installed where Windows names it",
+        mode_of(os.path.join(native, "ape-get.com")) == 0o755,
+        f"no ape-get.com under {native}:\n{out}")
+    check("menu windows slash made no directory called C",
+        not os.path.exists("/C/apg-slash"),
+        "a directory named C was made at the root instead")
 
     # 1 is the system it already had: the menu is a detour, not a restart, and
     # the install goes ahead as if the question had never been asked.
