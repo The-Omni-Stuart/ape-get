@@ -172,10 +172,70 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  # Every gate above drives a Linux ELF, so none of them has ever run on the
+  # system people actually install ape-get on. Both Windows defects this job
+  # exists for - the default install directory the command then refused as
+  # relative, and a setup that could not name its own file and so installed
+  # nothing - passed every check in the repo, because the scenario suite and
+  # ctest only ever ask a Linux build. Here the artefact a person would
+  # download is run on the system it ships for, and the last step is the one
+  # step no unit test can stand in for: reg.exe editing a real user Path, on a
+  # machine whose registry nobody will ever see again.
+  windows_smoke:
+    name: Windows smoke
+    needs: [package]
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download artefacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ape-get-ape
+          path: dist
+
+      # --yes answers the questions setup only asks a terminal, and --prefix
+      # keeps the run out of the AppData the runner image happens to hold. The
+      # byte comparison is the point of the job: what setup installs has to be
+      # the file that ran it, worked out by itself, and a file of the right
+      # length would satisfy a size check - which is exactly the check that let
+      # the real failure through.
+      - name: setup installs the file it is running as
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $target = Join-Path $env:RUNNER_TEMP 'apg-setup'
+          $out = (& dist\ape-get.com setup --prefix $target --yes --no-path 2>&1) -join "`n"
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 0) { throw "setup exited $code" }
+          $installed = Join-Path $target 'ape-get.com'
+          if ((Get-FileHash $installed).Hash -ne (Get-FileHash dist\ape-get.com).Hash) {
+            throw 'the installed file is not the one that ran setup'
+          }
+          $out2 = (& $installed about 2>&1) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw "'about' exited $LASTEXITCODE" }
+          if ($out2 -notmatch 'ape-get') { throw "'about' said nothing about ape-get" }
+
+      # The second run is the PATH step, which the first run was told to skip:
+      # a re-run over the same directory says so, registers through reg.exe,
+      # and the value it wrote is then read back out of the registry itself.
+      - name: setup registers the directory in the user Path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $target = Join-Path $env:RUNNER_TEMP 'apg-setup'
+          $out = (& dist\ape-get.com setup --prefix $target --yes 2>&1) -join "`n"
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 0) { throw "setup with PATH exited $code" }
+          if ($out -notmatch 'Added .* to PATH') { throw "PATH was not claimed: no Added line" }
+          $stored = (reg query HKCU\Environment /v Path) -join "`n"
+          if ($stored -notlike "*$target*") { throw "$target is not in the stored Path:`n$stored" }
+
   release:
     name: GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-test, package]
+    needs: [build-test, package, windows_smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
