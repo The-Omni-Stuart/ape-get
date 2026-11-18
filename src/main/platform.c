@@ -1,6 +1,8 @@
 #include "platform.h"
 #include "path.h"
+#include "platform/internal.h"
 #include <ctype.h>
+#include <libc/str/utf16.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,11 +72,62 @@ bool platform_self_is_installed(void)
     return same;
 }
 
+// The UTF-16 the NT kernel answers in, written out as the UTF-8 every other
+// path in this program is held in. No length is refused here: the kernel has
+// already refused to answer with a name that did not fit.
+static char *utf8_of_utf16(const char16_t *wide)
+{
+    size_t units = 0;
+    while (wide[units] != 0) units++;
+    char *out = malloc(units * 3 + 1);
+    if (out == NULL) return NULL;
+    size_t w = 0;
+    for (size_t r = 0; wide[r] != 0; r++) {
+        unsigned u = wide[r];
+        // Two code units name one character beyond the Basic Multilingual
+        // Plane, and the pair has to be joined before it can be written.
+        if (IsHighSurrogate(u) && IsLowSurrogate(wide[r + 1])) {
+            u = MergeUtf16(u, wide[r + 1]);
+            r++;
+        }
+        // Three bytes is the most one code unit ever costs: the joined pair is
+        // two units and writes four.
+        if (u < 0x80) {
+            out[w++] = (char)u;
+        } else if (u < 0x800) {
+            out[w++] = (char)(0xc0 | (u >> 6));
+            out[w++] = (char)(0x80 | (u & 0x3f));
+        } else if (u < 0x10000) {
+            out[w++] = (char)(0xe0 | (u >> 12));
+            out[w++] = (char)(0x80 | ((u >> 6) & 0x3f));
+            out[w++] = (char)(0x80 | (u & 0x3f));
+        } else {
+            out[w++] = (char)(0xf0 | (u >> 18));
+            out[w++] = (char)(0x80 | ((u >> 12) & 0x3f));
+            out[w++] = (char)(0x80 | ((u >> 6) & 0x3f));
+            out[w++] = (char)(0x80 | (u & 0x3f));
+        }
+    }
+    out[w] = '\0';
+    return out;
+}
+
 char *platform_self_exe(void)
 {
     const char *hook = getenv("APEGET_SELF_EXE");
     if (hook != NULL && *hook != '\0') return strdup(hook);
-    // the loader-emulated link names our own file on all three systems
+    if (platform_current() == OS_WINDOWS) {
+        char16_t wide[2048];
+        uint32_t n = platform_win_module_name(wide,
+            sizeof wide / sizeof wide[0]);
+        // Zero is a kernel with nothing to say, and the buffer's own size back
+        // is the kernel admitting it wrote only the start of the name: half a
+        // path names a different file than the one being installed.
+        if (n == 0 || n >= sizeof wide / sizeof wide[0]) return NULL;
+        return utf8_of_utf16(wide);
+    }
+    // the loader-emulated link names our own file on the unixes; Windows has
+    // no such link and is asked a different way above
     char buf[8192];
     ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
     if (n <= 0) return NULL;

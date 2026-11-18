@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <uchar.h>
 #include <unistd.h>
 
 // The expected strings are worked examples, not a re-run of the code: this
@@ -105,6 +106,64 @@ static void expect_dir(platform_os os, const char *given, const char *want,
         failures++;
     }
     free(got);
+}
+
+// Which file this process is running from is the file setup installs, so the
+// one system call behind it is worth standing in for: the kernel's answer about
+// the system is already faked through uname above, and on Windows the name
+// comes from the NT kernel in UTF-16 rather than from a link. Both fakes answer
+// only while the case has set them, and the readlink one hands the call back to
+// the host otherwise. The expected paths are Windows paths written out by hand:
+// the code under test has to do the UTF-16 to UTF-8 work to match them.
+static const char16_t *win_answer;      // NULL: the kernel gives no answer
+static const char *link_answer;         // NULL: the host's own link answers
+static bool link_missing;               // true: there is no link to read
+
+// The NT kernel's reply exactly as the kernel gives it: the name written and
+// its length, the whole buffer quoted back when the name did not fit, and zero
+// when it has nothing to say. Passing that back unfinished, rather than
+// trimming the name down, is the platform module's decision - so the kernel it
+// is deciding about has to be answered with here.
+uint32_t __wrap_platform_win_module_name(char16_t *wide, uint32_t cap)
+{
+    if (win_answer == NULL) return 0;
+    uint32_t n = 0;
+    while (win_answer[n] != 0) n++;
+    if (n >= cap) {
+        for (uint32_t i = 0; i + 1 < cap; i++) wide[i] = win_answer[i];
+        wide[cap - 1] = 0;
+        return cap;
+    }
+    for (uint32_t i = 0; i <= n; i++) wide[i] = win_answer[i];
+    return n;
+}
+
+ssize_t __real_readlink(const char *, char *, size_t);
+
+ssize_t __wrap_readlink(const char *path, char *buf, size_t size)
+{
+    if (link_missing) return -1;
+    if (link_answer == NULL) return __real_readlink(path, buf, size);
+    size_t n = strlen(link_answer);
+    if (n > size - 1) n = size - 1;
+    memcpy(buf, link_answer, n);
+    return (ssize_t)n;
+}
+
+static void expect_self(const char *label, const char *want)
+{
+    char *got = platform_self_exe();
+    bool ok = want == NULL ? got == NULL
+        : got != NULL && strcmp(got, want) == 0;
+    if (!ok) {
+        fprintf(stderr, "%s: expected %s, got %s\n", label,
+            want != NULL ? want : "NULL", got != NULL ? got : "NULL");
+        failures++;
+    }
+    free(got);
+    win_answer = NULL;
+    link_answer = NULL;
+    link_missing = false;
 }
 
 // --- PATH registration on Windows -------------------------------------
@@ -362,6 +421,55 @@ int main(int argc, char **argv)
         expect_dir(OS_MACOS, "C:/Users/tester", "C:/Users/tester",
             "macOS, a Windows path is an ordinary name");
         if (failures == 0) puts("9 install-dir cases passed");
+        return failures != 0;
+    }
+
+    if (argc > 1 && !strcmp(argv[1], "self-exe")) {
+        static char16_t too_long[4096];
+        unsetenv("APEGET_SELF_EXE");
+        kernel_answers = true;
+        kernel_sysname = "Windows";
+        win_answer = u"C:\\Users\\tester\\Downloads\\ape-get.com";
+        expect_self("Windows module name",
+            "C:\\Users\\tester\\Downloads\\ape-get.com");
+        // The kernel writes what fits and quotes the buffer size back. Half a
+        // name is a different file than the one setup is installing, so it is
+        // reported as no answer rather than installed from.
+        for (size_t i = 0; i < 4095; i++) too_long[i] = 'x';
+        too_long[4095] = '\0';
+        win_answer = too_long;
+        expect_self("Windows module name longer than the buffer", NULL);
+        win_answer = NULL;
+        expect_self("Windows kernel with nothing to say", NULL);
+        // A character outside the Basic Multilingual Plane is named by a pair
+        // of code units, U+1F600 here as D83D DE00. Read one at a time the two
+        // are not characters at all, so the answer has to be joined before it
+        // is written out: the UTF-8 of U+1F600 is F0 9F 98 80.
+        static const char16_t moar[] = {
+            'C', ':', '\\', 'U', 's', 'e', 'r', 's', '\\',
+            0xD83D, 0xDE00, '\\', 'a', 'p', 'e', '-', 'g', 'e', 't', 0
+        };
+        win_answer = moar;
+        expect_self("Windows module name beyond the basic plane",
+            "C:\\Users\\\xF0\x9F\x98\x80\\ape-get");
+        // The link is still the answer where the link exists, and its absence
+        // is still no answer: the Windows question above is asked instead of
+        // that one, not in place of it anywhere else.
+        kernel_sysname = "Linux";
+        link_answer = "/home/tester/Downloads/ape-get";
+        expect_self("Linux link", "/home/tester/Downloads/ape-get");
+        link_missing = true;
+        expect_self("Linux link not there", NULL);
+        // A name given over the process's own wins on any system: that is how
+        // the scenario suite runs without spending a megabyte per case.
+        setenv("APEGET_SELF_EXE", "/tmp/fixture/ape-get", 1);
+        link_answer = "/home/tester/Downloads/ape-get";
+        expect_self("the named file wins over the link", "/tmp/fixture/ape-get");
+        kernel_sysname = "Windows";
+        win_answer = u"C:\\Users\\tester\\ape-get.com";
+        expect_self("the named file wins over the kernel", "/tmp/fixture/ape-get");
+        unsetenv("APEGET_SELF_EXE");
+        if (failures == 0) puts("8 self-exe cases passed");
         return failures != 0;
     }
 

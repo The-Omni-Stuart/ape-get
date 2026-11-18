@@ -77,10 +77,13 @@ def main():
     check("defaults accepted exit", code == 0, f"exit {code}\n{out}")
     check("defaults accepted installed", mode_of(target) == 0o755,
         f"mode {mode_of(target)}")
+    # Byte for byte, not merely the same length: the file setup installs is the
+    # one it is running as, worked out by itself with nothing handed to it, and
+    # any file of the right size would pass a length check alone.
     if os.path.exists(target):
-        check("defaults accepted bytes copied",
-            os.path.getsize(target) == os.path.getsize(exe),
-            "installed size differs from the executable")
+        check("defaults accepted the file that was run",
+            open(target, "rb").read() == open(exe, "rb").read(),
+            "what landed in ~/.local/bin is not the file that ran setup")
     profile = os.path.join(home, ".profile")
     want = PATH_LINE.format(dir=os.path.join(home, ".local", "bin"))
     check("defaults accepted PATH written",
