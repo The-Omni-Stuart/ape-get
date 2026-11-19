@@ -195,8 +195,7 @@ static void read_manifest(const char *file, mlist *l)
     free(text);
 }
 
-// readdir order is fine (results get sorted); manifests under a
-// "backups" path part are skipped
+// manifests under a "backups" path part are skipped
 static bool has_backups_part(const char *path)
 {
     const char *p = path;
@@ -209,21 +208,64 @@ static bool has_backups_part(const char *path)
     return false;
 }
 
-// Depth cap matching the recovery sweeps: the real tree is provider/app
-// deep, so anything deeper is corruption or a loop, not state.
-#define SCAN_MAX_DEPTH 8
+// Names are collected and sorted before they are looked at. The list of
+// manifests this returns is sorted afterwards anyway, but the warnings printed
+// on the way through - a corrupt record quarantined, a foreign kind ignored -
+// are printed as they are found, and readdir answers in whatever order the
+// directory happens to be stored in, which differs between filesystems and
+// between runs on one. That made the same state tree report the same problems
+// in a different order, so the order people read is made the path order here
+// rather than left to the disk.
+static int cmp_names(const void *a, const void *b)
+{
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
 
-static void scan_dir(const char *dir, mlist *l, int depth)
+static char **list_dir(const char *dir, size_t *count, bool *failed)
 {
     DIR *d = opendir(dir);
-    if (d == NULL) { l->failed = true; return; }
+    if (d == NULL) { *failed = true; return NULL; }
+    size_t n = 0, cap = 0;
+    char **names = NULL;
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
         if (de->d_name[0] == '.'
             && (de->d_name[1] == '\0'
                 || (de->d_name[1] == '.' && de->d_name[2] == '\0')))
             continue;
-        char *child = path_join(dir, de->d_name);
+        if (n == cap) {
+            cap = cap ? cap * 2 : 16;
+            char **g = realloc(names, cap * sizeof *g);
+            if (g == NULL) break;
+            names = g;
+        }
+        if (n == cap) { *failed = true; break; }   // realloc refused to grow
+        names[n] = strdup(de->d_name);
+        if (names[n] == NULL) { *failed = true; break; }
+        n++;
+    }
+    closedir(d);
+    if (*failed) {
+        for (size_t i = 0; i < n; i++) free(names[i]);
+        free(names);
+        return NULL;
+    }
+    if (n > 1) qsort(names, n, sizeof *names, cmp_names);
+    *count = n;
+    return names;
+}
+
+// Depth cap matching the recovery sweeps: the real tree is provider/app
+// deep, so anything deeper is corruption or a loop, not state.
+#define SCAN_MAX_DEPTH 8
+
+static void scan_dir(const char *dir, mlist *l, int depth)
+{
+    size_t n = 0;
+    char **names = list_dir(dir, &n, &l->failed);
+    if (names == NULL) return;
+    for (size_t i = 0; i < n; i++) {
+        char *child = path_join(dir, names[i]);
         if (child == NULL) { l->failed = true; continue; }
         struct stat st;
         // lstat: never follow a symlinked directory, or a link pointing
@@ -232,13 +274,14 @@ static void scan_dir(const char *dir, mlist *l, int depth)
         if (S_ISDIR(st.st_mode)) {
             if (depth < SCAN_MAX_DEPTH) scan_dir(child, l, depth + 1);
         } else if (S_ISREG(st.st_mode)
-                   && strcmp(de->d_name, "grm_manifest.json") == 0
+                   && strcmp(names[i], "grm_manifest.json") == 0
                    && !has_backups_part(child)) {
             read_manifest(child, l);
         }
         free(child);
+        free(names[i]);
     }
-    closedir(d);
+    free(names);
 }
 
 static int cmp_entries(const void *a, const void *b)
