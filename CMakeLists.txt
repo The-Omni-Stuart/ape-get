@@ -286,7 +286,8 @@ set_tests_properties(source_probe_missing PROPERTIES
 add_executable(test_platform ${CMAKE_SOURCE_DIR}/src/test/ci/test_platform.c)
 target_link_libraries(test_platform PRIVATE m_platform m_proc m_fs m_path)
 target_link_options(test_platform PRIVATE -Wl,--wrap=uname
-  -Wl,--wrap=platform_win_module_name -Wl,--wrap=readlink)
+  -Wl,--wrap=platform_win_module_name -Wl,--wrap=readlink
+  -Wl,--wrap=platform_win_reg_read -Wl,--wrap=platform_win_reg_write)
 apeget_test_entry(test_platform PLATFORM_TEST_EXE)
 add_test(NAME platform_description COMMAND "${PLATFORM_TEST_EXE}")
 add_test(NAME platform_description_without_kernel

@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <sys/utsname.h>
 #include <uchar.h>
 #include <unistd.h>
@@ -167,176 +166,117 @@ static void expect_self(const char *label, const char *want)
 }
 
 // --- PATH registration on Windows -------------------------------------
-// The Windows branch talks to reg.exe and nothing else, so reg.exe is the
-// thing replaced here: a shell shim on PATH answers queries from a file and
-// records every argument of every write. The assertions spell out the command
-// line the registry should receive, so a duplicated entry, a clobbered
-// existing PATH or the wrong value type fails the check.
+// The Windows branch talks to the registry, which no Linux host has, so the
+// two calls that reach it are stood in for here, in the form the registry
+// speaks: UTF-16 code units. Reading the stored value back, working out
+// whether the directory is already in it, joining ours on the end and writing
+// the result are all the code under test, which is why the seam sits at the
+// registry rather than at the decision. The expected values are written out in
+// UTF-16 as well, so a conversion that mangles what it carries fails here.
 #define WIN_DIR "C:\\Users\\t\\AppData\\Local\\Programs\\ape-get"
-#define QUERY_LISTED "HKEY_CURRENT_USER\\Environment\n" \
-    "    Path    REG_EXPAND_SZ    C:\\Windows;" WIN_DIR "\\\n\n"
-#define QUERY_OTHER  "HKEY_CURRENT_USER\\Environment\n" \
-    "    Path    REG_EXPAND_SZ    C:\\Windows\n\n"
+#define WIN_DIR16 u"C:\\Users\\t\\AppData\\Local\\Programs\\ape-get"
 
-static const char *fake_dir;
+// A Path as people actually leave theirs: an expandable entry that has to come
+// back out with its percent signs intact, since the value type is what makes
+// them mean something.
+#define WIN_OTHER16 u"C:\\Windows;%USERPROFILE%\\bin"
 
-static void fake_at(char *buf, size_t cap, const char *name)
+static const char16_t *reg_stored;      // NULL: the registry holds no Path
+static bool reg_refuses;                // true: the registry says no
+static char16_t *reg_written;           // NULL: nothing has been written
+
+char16_t *__wrap_platform_win_reg_read(void)
 {
-    snprintf(buf, cap, "%s/%s", fake_dir, name);
+    if (reg_stored == NULL) return NULL;
+    size_t n = 0;
+    while (reg_stored[n] != 0) n++;
+    char16_t *copy = malloc((n + 1) * sizeof *copy);
+    if (copy == NULL) return NULL;
+    memcpy(copy, reg_stored, (n + 1) * sizeof *copy);
+    return copy;
 }
 
-static void file_write(const char *path, const char *text)
+bool __wrap_platform_win_reg_write(const char16_t *wide)
 {
-    FILE *f = fopen(path, "w");
-    if (f == NULL) {
-        fprintf(stderr, "cannot write %s\n", path);
-        exit(2);
-    }
-    fputs(text, f);
-    fclose(f);
+    if (reg_refuses) return false;
+    free(reg_written);
+    reg_written = NULL;
+    size_t n = 0;
+    while (wide[n] != 0) n++;
+    reg_written = malloc((n + 1) * sizeof *reg_written);
+    if (reg_written == NULL) return false;
+    memcpy(reg_written, wide, (n + 1) * sizeof *reg_written);
+    return true;
 }
 
-static void write_shim(const char *path)
+// What the registry holds, and whether it will accept a change. Called before
+// every case, so no case inherits another's registry.
+static void fake_registry(const char16_t *stored, bool refuses)
 {
-    FILE *f = fopen(path, "w");
-    if (f == NULL) exit(2);
-    fputs("#!/bin/sh\n"
-          "case \"$1\" in\n"
-          "query)\n"
-          "  [ -f \"$FAKE_REG_DIR/value\" ] || exit 1\n"
-          "  cat \"$FAKE_REG_DIR/value\"\n"
-          "  exit 0 ;;\n"
-          "add)\n"
-          "  if [ -f \"$FAKE_REG_DIR/fail\" ]; then exit 1; fi\n"
-          "  while [ $# -gt 0 ]; do\n"
-          "    printf '%s\\n' \"$1\" >> \"$FAKE_REG_DIR/addlog\"\n"
-          "    shift\n"
-          "  done\n"
-          "  exit 0 ;;\n"
-          "esac\n"
-          "exit 1\n", f);
-    fclose(f);
-    chmod(path, 0755);
+    reg_stored = stored;
+    reg_refuses = refuses;
+    free(reg_written);
+    reg_written = NULL;
 }
 
-// One case's state: what `reg query` answers (NULL: there is no Path value),
-// whether writes fail, and an empty log of writes made so far.
-static void fake_reg(const char *query_output, bool write_fails)
+static bool wide_same(const char16_t *a, const char16_t *b)
 {
-    char p[4096];
-    fake_at(p, sizeof p, "value");  remove(p);
-    fake_at(p, sizeof p, "fail");   remove(p);
-    fake_at(p, sizeof p, "addlog"); remove(p);
-    if (query_output != NULL) {
-        fake_at(p, sizeof p, "value");
-        file_write(p, query_output);
-    }
-    if (write_fails) {
-        fake_at(p, sizeof p, "fail");
-        file_write(p, "");
+    for (size_t i = 0; ; i++) {
+        if (a[i] != b[i]) return false;
+        if (a[i] == 0) return true;
     }
 }
 
-// The arguments of every `reg add` the code under test made, one per line.
-static int addlog_lines(char lines[][512], int cap)
+// Code units in hexadecimal: a terminal holding UTF-8 cannot show UTF-16, and
+// a mismatch this far into the registry is worth being able to read.
+static void print_wide(const char *tag, const char16_t *w)
 {
-    char p[4096];
-    fake_at(p, sizeof p, "addlog");
-    FILE *f = fopen(p, "r");
-    if (f == NULL) return 0;
-    int n = 0;
-    while (n < cap && fgets(lines[n], 512, f) != NULL) {
-        lines[n][strcspn(lines[n], "\n")] = '\0';
-        n++;
-    }
-    fclose(f);
-    return n;
+    fprintf(stderr, "    %s:", tag);
+    for (size_t i = 0; i < 96 && w[i] != 0; i++) fprintf(stderr, " %04x", w[i]);
+    fprintf(stderr, "\n");
 }
 
-static int writes_made(void)
+static void expect_written(const char16_t *want, const char *label)
 {
-    char lines[24][512];
-    return addlog_lines(lines, 24);
-}
-
-static void expect_written(const char *const *want, int n, const char *label)
-{
-    char lines[24][512];
-    int got = addlog_lines(lines, 24);
-    if (got != n) {
-        fprintf(stderr, "%s: reg add had %d arguments, expected %d\n",
-            label, got, n);
-        for (int i = 0; i < got; i++)
-            fprintf(stderr, "  %d: %s\n", i, lines[i]);
+    if (reg_written == NULL) {
+        fprintf(stderr, "%s: nothing was written\n", label);
         failures++;
-        return;
+    } else if (!wide_same(reg_written, want)) {
+        fprintf(stderr, "%s: wrote the wrong value\n", label);
+        print_wide("wanted", want);
+        print_wide("got   ", reg_written);
+        failures++;
     }
-    for (int i = 0; i < n; i++)
-        if (strcmp(lines[i], want[i]) != 0) {
-            fprintf(stderr, "%s: argument %d is \"%s\", expected \"%s\"\n",
-                label, i, lines[i], want[i]);
-            failures++;
-        }
-}
-
-// The scratch directory the fake registry is built in, taken down file by file
-// on the way out: asking a shell to do it would go through the interpreter
-// this binary embeds, whose rm does not take those flags.
-static char g_scratch[576];
-
-static void remove_scratch(void)
-{
-    static const char *const leaves[] = { "reg", "value", "fail", "addlog" };
-    char path[640];
-
-    if (g_scratch[0] == '\0')
-        return;
-    for (size_t i = 0; i < sizeof leaves / sizeof *leaves; i++) {
-        snprintf(path, sizeof path, "%s/%s", g_scratch, leaves[i]);
-        remove(path);
-    }
-    if (rmdir(g_scratch) != 0)
-        fprintf(stderr, "could not remove %s\n", g_scratch);
 }
 
 int main(int argc, char **argv)
 {
     if (argc > 1 && !strcmp(argv[1], "windows-path")) {
-        char dir[512];
-        const char *base = getenv("TMPDIR");
-        snprintf(dir, sizeof dir, "%s/apeget-reg-XXXXXX",
-            base != NULL && *base != '\0' ? base : "/tmp");
-        if (mkdtemp(dir) == NULL) return 2;
-        fake_dir = dir;
-        snprintf(g_scratch, sizeof g_scratch, "%s", fake_dir);
-        atexit(remove_scratch);
-        char p[4096], pathv[8192];
-        setenv("FAKE_REG_DIR", fake_dir, 1);
-        snprintf(pathv, sizeof pathv, "%s:%s", fake_dir, getenv("PATH"));
-        setenv("PATH", pathv, 1);
-        fake_at(p, sizeof p, "reg");
-        write_shim(p);
+        char err[256] = "";
 
-        // Already on the user's PATH, spelled with a trailing separator:
+        // The registry is asked only of a system that has one, so the case
+        // says it is on Windows as well as asking for the Windows branch: the
+        // two are different questions, and the last case below is about the
+        // difference.
+        kernel_answers = true;
+        kernel_sysname = "Windows";
+
+        // Already on the user's Path, spelled with a trailing separator:
         // nothing is written, because a second entry adds nothing.
-        fake_reg(QUERY_LISTED, false);
+        static const char16_t listed[] = u"C:\\Windows;" WIN_DIR16 u"\\";
+        fake_registry(listed, false);
         if (!platform_path_registered(OS_WINDOWS, WIN_DIR)) {
             fprintf(stderr, "listed directory not recognised\n");
             failures++;
         }
-        if (writes_made() != 0) {
+        if (reg_written != NULL) {
             fprintf(stderr, "a registered directory was written again\n");
             failures++;
         }
 
-        // Not on it yet: one write that keeps the user's own entry in front
-        // of ours and keeps the type, so %VAR% entries stay expandable.
-        static const char *const keep[] = {
-            "add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ",
-            "/d", "C:\\Windows;" WIN_DIR, "/f",
-        };
-        char err[256] = "";
-        fake_reg(QUERY_OTHER, false);
+        // Not on it yet: one write that keeps the user's own entries in front
+        // of ours, percent signs and all, so they go on expanding.
+        fake_registry(WIN_OTHER16, false);
         if (platform_path_registered(OS_WINDOWS, WIN_DIR)) {
             fprintf(stderr, "unlisted directory thought registered\n");
             failures++;
@@ -345,32 +285,100 @@ int main(int argc, char **argv)
             fprintf(stderr, "register failed: %s\n", err);
             failures++;
         } else {
-            expect_written(keep, 9, "existing PATH kept");
+            expect_written(WIN_OTHER16 u";" WIN_DIR16, "existing Path kept");
+        }
+
+        // A stored value ending in a separator has an empty entry on the end
+        // that is nobody's directory: joining ours to it must not leave two
+        // separators side by side, which is how a Path grows forever.
+        static const char16_t trailing[] = u"C:\\Windows;";
+        fake_registry(trailing, false);
+        if (!platform_path_register(OS_WINDOWS, WIN_DIR, err, sizeof err)) {
+            fprintf(stderr, "register over a trailing separator failed: %s\n",
+                err);
+            failures++;
+        } else {
+            expect_written(u"C:\\Windows;" WIN_DIR16, "empty entry not kept");
         }
 
         // No Path value at all: the directory alone, so nothing the machine
         // holds is copied into a value that belongs to the user.
-        static const char *const alone[] = {
-            "add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ",
-            "/d", WIN_DIR, "/f",
-        };
-        fake_reg(NULL, false);
+        fake_registry(NULL, false);
         if (!platform_path_register(OS_WINDOWS, WIN_DIR, err, sizeof err)) {
             fprintf(stderr, "register with no existing value failed: %s\n",
                 err);
             failures++;
         } else {
-            expect_written(alone, 9, "no existing value");
+            expect_written(WIN_DIR16, "no existing value");
+        }
+
+        // A directory named with a character beyond the Basic Multilingual
+        // Plane: four UTF-8 bytes coming in, and one character named by two
+        // code units going out. Split them wrong and the registry is left
+        // holding a name that is not the directory that was installed. The
+        // expected pair is written by the compiler rather than by hand.
+        static const char16_t want_moar[] =
+            u"C:\\Windows;C:\\Users\\t\\\U0001F600\\ape-get";
+        fake_registry(u"C:\\Windows", false);
+        if (!platform_path_register(OS_WINDOWS,
+            "C:\\Users\\t\\\xF0\x9F\x98\x80\\ape-get", err, sizeof err)) {
+            fprintf(stderr, "register for a wide name failed: %s\n", err);
+            failures++;
+        } else {
+            expect_written(want_moar, "name beyond the basic plane");
+        }
+
+        // The same journey for a character inside the plane, where one
+        // character costs two bytes and exactly one code unit: the common case
+        // for a name in almost any language but English.
+        static const char16_t want_acc[] =
+            u"C:\\Windows;C:\\caf\u00E9\\bin";
+        fake_registry(u"C:\\Windows", false);
+        if (!platform_path_register(OS_WINDOWS, "C:\\caf\xC3\xA9\\bin",
+            err, sizeof err)) {
+            fprintf(stderr, "register for a name outside ASCII failed: %s\n",
+                err);
+            failures++;
+        } else {
+            expect_written(want_acc, "name outside ASCII");
         }
 
         // A registry that says no must not be reported as a success.
-        fake_reg(QUERY_OTHER, true);
+        fake_registry(WIN_OTHER16, true);
         if (platform_path_register(OS_WINDOWS, WIN_DIR, err, sizeof err)) {
             fprintf(stderr, "a rejected write was reported as success\n");
             failures++;
         }
 
-        if (failures == 0) puts("4 PATH cases passed");
+        // A Windows install asked for on a system that has no registry at all,
+        // which is what setup's menu makes possible on any other system: the
+        // directory is laid out as Windows would have it, but the value is part
+        // of the machine running this. Nothing is written, and the reason says
+        // the registry is not there rather than that it refused - which is the
+        // answer this used to give, until the registry was reached without
+        // first asking whether the system had one to reach.
+        kernel_sysname = "Linux";
+        fake_registry(WIN_OTHER16, false);
+        err[0] = '\0';
+        if (platform_path_registered(OS_WINDOWS, WIN_DIR)) {
+            fprintf(stderr, "absent registry claimed a directory was in it\n");
+            failures++;
+        }
+        if (platform_path_register(OS_WINDOWS, WIN_DIR, err, sizeof err)) {
+            fprintf(stderr, "absent registry was written to\n");
+            failures++;
+        } else if (strstr(err, "refused") != NULL) {
+            fprintf(stderr, "the blame was put on a registry that refused: \"%s\"\n",
+                err);
+            failures++;
+        }
+        if (reg_written != NULL) {
+            fprintf(stderr, "the registry was written from a system without one\n");
+            failures++;
+        }
+
+        free(reg_written);
+        if (failures == 0) puts("8 PATH cases passed");
         return failures != 0;
     }
 

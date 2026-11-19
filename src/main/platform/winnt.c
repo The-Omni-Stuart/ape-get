@@ -2,8 +2,9 @@
 // the name of its own executable on a Windows system: the /proc/self/exe link
 // that answers on the unixes is not there, and the loader's com name is served
 // only to a process that came in through the loader rather than as a PE. One
-// call lives here, and this is the one file that includes anything NT, so the
-// wide characters stop with the kernel that speaks them.
+// call lives here, and its answer is turned back into text before it leaves the
+// platform module, so nothing outside has to know a surrogate pair from a
+// character.
 
 #include "platform/internal.h"
 

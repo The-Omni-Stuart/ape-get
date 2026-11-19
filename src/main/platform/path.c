@@ -6,7 +6,7 @@
 
 #include "fs.h"
 #include "path.h"
-#include "proc.h"
+#include "platform/internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,8 +17,6 @@
 // a file it did not create. One line, because that is the whole of what is
 // needed to put a directory in front of PATH.
 #define OUR_TAG "  # ape-get"
-
-#define REG_TIMEOUT_MS 10000
 
 static char *path_line(const char *dir)
 {
@@ -55,11 +53,11 @@ static char *strip_ours(const char *text)
 }
 
 // ---- Windows: the user's Path value in the registry --------------------
-// reg.exe is asked rather than the registry API: the answer is text, the tool
-// is on every install, and no import table grows. HKCU\Environment is the only
-// key written, so a machine-wide value cannot be clobbered, and the type stays
-// REG_EXPAND_SZ so %USERPROFILE%-style entries already there go on expanding.
-#define REG_KEY "HKCU\\Environment"
+// Read and written through the NT layer, in the two calls in winreg.c, rather
+// than by asking reg.exe: no child process can be started on Windows by this
+// program at all. What this file is responsible for is what happens to the
+// value once it is text - whether the directory is already in it, and where
+// ours goes when it is not.
 
 // Does one `;`-separated entry of the stored value name this directory?
 // Windows paths ignore case, and a trailing separator names the same place.
@@ -84,60 +82,46 @@ static bool value_lists(const char *value, const char *dir)
     return false;
 }
 
-// The current Path value, NULL when there is none.
+// The current Path value as text, NULL when the registry holds no such value.
 static char *reg_path_value(void)
 {
-    char *out = NULL;
-    const char *argv[] = { "reg", "query", REG_KEY, "/v", "Path", NULL };
-    if (proc_run(argv, REG_TIMEOUT_MS, &out) != 0 || out == NULL) {
-        free(out);
-        return NULL;
-    }
-    char *value = NULL;
-    for (const char *p = out; *p != '\0' && value == NULL; ) {
-        const char *e = strchr(p, '\n');
-        size_t len = e != NULL ? (size_t)(e - p) : strlen(p);
-        const char *f = p;
-        while (f < p + len && (*f == ' ' || *f == '\t')) f++;
-        const char *type = len >= 4 && !strncmp(f, "Path", 4)
-            ? strstr(f, "REG_") : NULL;
-        if (type != NULL && type < p + len) {
-            const char *v = type;
-            while (v < p + len && *v != ' ' && *v != '\t') v++;
-            while (v < p + len && (*v == ' ' || *v == '\t')) v++;
-            size_t vl = (size_t)(p + len - v);
-            while (vl > 0 && (v[vl - 1] == ' ' || v[vl - 1] == '\t'
-                || v[vl - 1] == '\r')) vl--;
-            value = strndup(v, vl);
-        }
-        p += len + (e != NULL ? 1 : 0);
-    }
-    free(out);
+    char16_t *wide = platform_win_reg_read();
+    if (wide == NULL) return NULL;
+    char *value = platform_utf8_of_utf16(wide);
+    free(wide);
     return value;
+}
+
+// The registry belongs to the machine running this rather than to the layout
+// setup has been asked to write, so on a system that is not Windows - which
+// setup reaches by being told - there is nothing here to read or write. The two
+// registry calls refuse without this question being put to them; it is asked
+// here so that the answer can say why.
+static bool reg_here(char *err, size_t cap)
+{
+    if (platform_current() == OS_WINDOWS) return true;
+    snprintf(err, cap, "this system has no Windows registry to write");
+    return false;
 }
 
 static bool reg_add(const char *dir, char *err, size_t cap)
 {
+    if (!reg_here(err, cap)) return false;
     char *current = reg_path_value();
     size_t cl = current != NULL ? strlen(current) : 0;
     while (cl > 0 && current[cl - 1] == ';') cl--;   // empty trailing entry
     char *value = cl > 0 ? path_fmt("%.*s;%s", (int)cl, current, dir)
                          : strdup(dir);
-    bool ok = value != NULL;
+    char16_t *wide = value != NULL ? platform_utf16_of_utf8(value) : NULL;
+    bool ok = wide != NULL && platform_win_reg_write(wide);
     if (!ok) {
-        snprintf(err, cap, "cannot build the new PATH value");
-    } else {
-        const char *argv[] = { "reg", "add", REG_KEY, "/v", "Path",
-            "/t", "REG_EXPAND_SZ", "/d", value, "/f", NULL };
-        char *out = NULL;
-        if (proc_run(argv, REG_TIMEOUT_MS, &out) != 0) {
-            snprintf(err, cap, "the registry refused the change");
-            ok = false;
-        }
-        free(out);
+        snprintf(err, cap, wide == NULL
+            ? "cannot build the new PATH value"
+            : "the registry refused the change");
     }
     free(current);
     free(value);
+    free(wide);
     return ok;
 }
 

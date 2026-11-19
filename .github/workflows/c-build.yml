@@ -179,8 +179,9 @@ jobs:
   # nothing - passed every check in the repo, because the scenario suite and
   # ctest only ever ask a Linux build. Here the artefact a person would
   # download is run on the system it ships for, and the last step is the one
-  # step no unit test can stand in for: reg.exe editing a real user Path, on a
-  # machine whose registry nobody will ever see again.
+  # no host can stand in for: a real HKCU\Environment\Path, written by the two
+  # calls that only exist on a Windows kernel, on a machine whose registry
+  # nobody will ever look at again.
   windows_smoke:
     name: Windows smoke
     needs: [package]
@@ -216,9 +217,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "'about' exited $LASTEXITCODE" }
           if ($out2 -notmatch 'ape-get') { throw "'about' said nothing about ape-get" }
 
-      # The second run is the PATH step, which the first run was told to skip:
-      # a re-run over the same directory says so, registers through reg.exe,
-      # and the value it wrote is then read back out of the registry itself.
+      # The second run is the PATH step, which the first run was told to skip.
+      # This is the only check in the repository that puts a value into a real
+      # registry: every other one reaches it through a stand-in, because no
+      # Linux host has an HKCU\Environment to write, and the two calls that
+      # touch it cannot even be reached from a Linux build. Reading the value
+      # back with reg.exe is deliberate - a different program from the one that
+      # wrote it, so the assertion is that Windows itself sees the entry rather
+      # than that ape-get agrees with itself. The type is asserted because a
+      # REG_SZ would leave a %USERPROFILE% entry already in the Path standing
+      # for its own percent signs. And the third run is the read side: setup
+      # has to find its own entry in a value this process did not write, and
+      # say so instead of putting the directory in a second time.
       - name: setup registers the directory in the user Path
         shell: pwsh
         run: |
@@ -231,6 +241,20 @@ jobs:
           if ($out -notmatch 'Added .* to PATH') { throw "PATH was not claimed: no Added line" }
           $stored = (reg query HKCU\Environment /v Path) -join "`n"
           if ($stored -notlike "*$target*") { throw "$target is not in the stored Path:`n$stored" }
+          if ($stored -notmatch 'REG_EXPAND_SZ') {
+            throw "the stored Path is no longer REG_EXPAND_SZ:`n$stored"
+          }
+          $again = (& dist\ape-get.com setup --prefix $target --yes 2>&1) -join "`n"
+          $again
+          if ($LASTEXITCODE -ne 0) {
+            throw "re-run over a registered directory exited $LASTEXITCODE"
+          }
+          if ($again -notmatch 'already registered') {
+            throw "the re-run did not find the entry:`n$again"
+          }
+          if ($again -match 'Added .* to PATH') {
+            throw "the re-run added the directory a second time"
+          }
 
   release:
     name: GitHub release

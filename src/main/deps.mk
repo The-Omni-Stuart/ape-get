@@ -14,7 +14,7 @@ fs:path
 proc:path
 output:ui,redact
 prompt:ui
-platform:fs,proc,path
+platform:fs,path
 compat:fs,proc,path
 http:crypto,fs,proc,redact,clock
 txn:fs,json,path,clock,crypto
