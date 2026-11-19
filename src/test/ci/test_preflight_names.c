@@ -63,7 +63,6 @@ static void check(const char *label, const char *name, const char *other,
                            .version = "v1", .asset = "tool.com", .kind = "ape"};
     pipe_ctx c = {.st = &st, .o = &o, .ref = "fixture:owner/tool",
                   .updating = updating, .prev = &prev, .rv = RES_FAILED};
-    strcpy(c.fprov, "fixture"); strcpy(c.fpath, "owner/tool");
     strcpy(c.prov, "fixture"); strcpy(c.path, "owner/tool");
     assets[0] = (prov_asset){.name = (char *)name,
                             .url = "https://fixture.invalid/v2/asset"};
