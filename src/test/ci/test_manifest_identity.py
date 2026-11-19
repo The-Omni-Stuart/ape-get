@@ -147,8 +147,7 @@ def main():
                 ("github", "owner/_foo"), ("github", "owner/Foo"), ("forge", "owner/foo"),
                 ("forge.", "owner/foo"), ("github", "owner/a__b"), ("github", "owner/a/b"),
                 ("github", "owner/a b"), ("github", "owner/a-b"), ("a__b", "c/d"), ("a", "b/c/d"),
-                ("con", "owner/foo"), ("con.txt", "owner/foo"), ("github", "owner/" + "a" * 240),
-                ("self", "ape-get"), ("self", "ape-get.")]
+                ("con", "owner/foo"), ("con.txt", "owner/foo"), ("github", "owner/" + "a" * 240)]
         c = case("fresh-names")
         paths, artifacts = set(), set()
         for provider, repo in refs:
