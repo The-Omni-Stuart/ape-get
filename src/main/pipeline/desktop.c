@@ -99,8 +99,7 @@ char *desktop_icon_copy(const char *requested, const char *app_dir)
     return to;
 }
 
-// generic desktop entry (AppImage kinds carry embedded metadata
-// instead), plus the C-only X-ApeGet-Managed key
+// generic desktop entry, plus the C-only X-ApeGet-Managed key
 void desktop_entry_write(const char *entry, const char *command,
     const char *launcher, const char *repo_path, const char *icon,
     bool terminal)
@@ -126,15 +125,24 @@ void desktop_entry_write(const char *entry, const char *command,
     chmod(entry, 0644);
 }
 
-// The entry to record: --no-desktop takes it out, --desktop puts it in
-// whatever the old state said. Inheriting an existing file requires our
-// managed marker — an ape-get write — so a foreign entry with the same
-// name is never claimed (P10).
-const char *desktop_recorded(const cmd_opts *o, const char *entry)
+// The entry to record: --no-desktop takes it out; --desktop and AppImage
+// installs (default_on) put it in; other kinds inherit only a file already
+// carrying our managed marker. An existing file without the marker is
+// foreign — never claimed, never overwritten, whatever was asked for (P10).
+const char *desktop_recorded(const cmd_opts *o, const char *entry,
+    bool default_on)
 {
     if (entry == NULL || o->no_desktop) return NULL;
-    if (o->desktop) return entry;
-    return desktop_entry_owned(entry) ? entry : NULL;
+    if (desktop_entry_owned(entry)) return entry;
+    if (!o->desktop && !default_on) return NULL;
+    if (path_exists(entry)) {
+        char *w = path_fmt("Desktop entry: not overwriting foreign file at %s",
+            entry);
+        ui_msg(stderr, UI_WARN, "%s", w != NULL ? w : "desktop entry");
+        free(w);
+        return NULL;
+    }
+    return entry;
 }
 
 // Files ape-get writes carry the X-ApeGet-Managed key; nothing without it

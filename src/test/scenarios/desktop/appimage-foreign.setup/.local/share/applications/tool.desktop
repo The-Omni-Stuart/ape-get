@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Foreign Tool
+Exec=/usr/bin/tool

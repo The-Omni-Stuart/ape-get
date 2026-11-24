@@ -66,7 +66,7 @@ static char *manifest_text(const pipe_ctx *pc, const char *now,
     const manifest_entry *prev = pc->prev;
     const char *prov = pc->prov, *path = pc->path, *target = pc->target;
     const char *app_dir = pc->app_dir, *command = pc->command;
-    const char *entry = desktop_recorded(pc->o, pc->entry);
+    const char *entry = pc->entry_rec;
     const char *launcher = pc->launcher;
     const char *backups = pc->backups;
     int kind = pc->kind;
@@ -319,6 +319,11 @@ int phase_install(pipe_ctx *pc)
         }
     }
     if (!inst_failed) pc->entry = desktop_entry_path(pc->st, pc->command);
+    // one desktop decision for the manifest, the retire below and the
+    // write after the commit point; a foreign file warns once here
+    if (!inst_failed)
+        pc->entry_rec = desktop_recorded(pc->o, pc->entry,
+            pc->kind == K_APPIMAGE);
     // retire resources the new generation will not own: a --no-command
     // update, or a changed command/install_root, would otherwise lose the
     // only reference to the old launcher/desktop when the manifest swaps,
@@ -330,7 +335,7 @@ int phase_install(pipe_ctx *pc)
                 || strcmp(pc->launcher, pc->prev->launcher) != 0);
         const char *desktop = NULL;
         if (pc->prev->desktop != NULL) {
-            const char *keep = desktop_recorded(pc->o, pc->entry);
+            const char *keep = pc->entry_rec;
             if ((keep == NULL || strcmp(keep, pc->prev->desktop) != 0)
                 && desktop_entry_owned(pc->prev->desktop))
                 desktop = pc->prev->desktop;
@@ -422,13 +427,16 @@ int phase_install(pipe_ctx *pc)
     }
     free(vdir);
     if (!inst_failed) {
-        // --no-desktop removes, --desktop writes, both before the
-        // Installed to line; the path itself was resolved earlier
+        // --no-desktop removes, the recorded entry writes, both before
+        // the Installed to line; the path itself was resolved earlier
         if (pc->o->no_desktop) {
             // only entries carrying our managed marker are ours to remove
             if (pc->entry != NULL && desktop_entry_owned(pc->entry))
                 unlink(pc->entry);
-        } else if (pc->o->desktop) {
+        } else if (pc->entry_rec != NULL
+            && (pc->o->desktop || !desktop_entry_owned(pc->entry))) {
+            // --desktop rewrites; an AppImage default or an inherited
+            // managed file is left alone once it exists
             char *ic = desktop_icon_copy(pc->o->icon, pc->app_dir);
             desktop_entry_write(pc->entry, pc->command, pc->launcher, pc->path, ic,
                 pc->o->terminal != 0);

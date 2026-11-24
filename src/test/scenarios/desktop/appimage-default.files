@@ -1,0 +1,10 @@
+--- .local/share/applications/tool.desktop (0644) ---
+[Desktop Entry]
+Type=Application
+Name=tool
+Exec="<INSTALL_ROOT>/tool"
+Terminal=false
+Categories=Utility;
+X-ApeGet-Managed=true
+--- .local/share/github-release-manager/applications/mock/~43fcc75ba40489ae5389e25f06fd8844921495570a30cf84ffc489c05c432a84/grm_manifest.json (0600) ---
+{"kind":"grm.manifest","schema_version":1,"provider":"mock","repo":"owner/tool","version":"1.0.0","release_id":52850,"asset":{"name":"tool-1.0.0.AppImage","url":"https://127.0.0.1:18081/assets/tool-1.0.0.AppImage","sha256":"43d52c89a1463a731a52a73024c0cb0bc64a2c7e7bb81d920bb006fb1abad7a5"},"install":{"kind":"appimage","path":"<STATE_ROOT>/applications/mock/~43fcc75ba40489ae5389e25f06fd8844921495570a30cf84ffc489c05c432a84/versions/1.0.0/tool-1.0.0.AppImage","root":"<STATE_ROOT>/applications/mock/~43fcc75ba40489ae5389e25f06fd8844921495570a30cf84ffc489c05c432a84","command":"tool","desktop_entry":"<HOME>/.local/share/applications/tool.desktop","uninstall":{"path":"<INSTALL_ROOT>/tool","args":[],"product_code":null}},"verification":{"status":"missing","method":"sha256","checksum_asset":null,"expected":null,"actual":null},"backups":[],"installed_at":"<INSTANT>","updated_at":"<INSTANT>","signature":{"status":"missing","mechanism":null,"signer":null,"identity":null,"notarized":null},"provider_type":"gitea","provider_api":"https://127.0.0.1:18081/api/v1"}

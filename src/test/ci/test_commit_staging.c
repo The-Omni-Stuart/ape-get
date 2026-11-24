@@ -68,8 +68,8 @@ char *compat_wrapper_stage(const char *l, const char *i, const char *w,
 { (void)l; (void)i; (void)w; (void)t; (void)e; abort(); }
 char *desktop_entry_path(const state_ctx *st, const char *command)
 { (void)st; assert(command == NULL); return NULL; }
-const char *desktop_recorded(const cmd_opts *o, const char *e)
-{ (void)o; assert(e == NULL); return NULL; }
+const char *desktop_recorded(const cmd_opts *o, const char *e, bool d)
+{ (void)o; (void)d; assert(e == NULL); return NULL; }
 bool desktop_entry_owned(const char *e) { (void)e; abort(); }
 char *desktop_icon_copy(const char *r, const char *a)
 { (void)r; (void)a; abort(); }

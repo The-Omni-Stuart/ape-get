@@ -57,6 +57,7 @@ typedef struct {
     char *wine_abs, *compat_tmp;
     vresult vr;
     char *tmp, *app_dir, *target, *entry, *native_name;
+    const char *entry_rec; // what desktop_recorded decided for entry, once
     char *mtmp;   // staged grm_manifest.json, renamed at the end
     sig_result sres;
     bool sres_used;
@@ -114,7 +115,8 @@ char *desktop_icon_copy(const char *requested, const char *app_dir);
 void desktop_entry_write(const char *entry, const char *command,
     const char *launcher, const char *repo_path, const char *icon,
     bool terminal);
-const char *desktop_recorded(const cmd_opts *o, const char *entry);
+const char *desktop_recorded(const cmd_opts *o, const char *entry,
+    bool default_on);
 bool desktop_entry_owned(const char *entry);
 
 // pipeline/journal.c: one phase transition of the install journal

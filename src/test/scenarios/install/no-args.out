@@ -7,8 +7,8 @@ Options:
   --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg
   --name <command> - command name for a portable package
   --no-command - install without creating a command
-  --desktop - create a desktop entry (Linux)
-  --no-desktop - remove an existing desktop entry
+  --desktop - create a desktop entry (Linux; default for AppImage)
+  --no-desktop - skip or remove the desktop entry
   --terminal - run the desktop entry in a terminal
   --icon <path> - icon for the desktop entry
   --assimilate - convert an APE with the cosmocc assimilate tool
