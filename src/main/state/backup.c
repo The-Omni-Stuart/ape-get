@@ -164,7 +164,7 @@ bool backup_create(const state_ctx *st, const manifest_entry *prev,
             }
             jobject_free(&bo);
             free(items[a]); free(keys[a]);
-            items[a] = NULL;
+            items[a] = NULL; keys[a] = NULL;
         }
     }
     jbuf arr = {0};
