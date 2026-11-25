@@ -297,7 +297,8 @@ int phase_preflight(pipe_ctx *pc)
     }
     if (pc->pool == NULL || pool_n == 0) {
         ui_msg(stderr, UI_ERROR,
-            "No compatible package found for this platform.");
+            "No compatible package found for %s on this platform.",
+            pc->ref);
         return PIPE_DONE;
     }
 
