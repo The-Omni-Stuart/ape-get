@@ -8,6 +8,7 @@
 #include "manifest.h"
 #include "path.h"
 #include "pipeline/checksums.h"
+#include "prompt.h"
 #include "provider.h"
 #include "state.h"
 #include "ui.h"
@@ -18,6 +19,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 int phase_checksum(pipe_ctx *pc)
 {
@@ -116,6 +118,227 @@ int phase_checksum(pipe_ctx *pc)
     return PIPE_GO;
 }
 
+// --- TOFU signing-key trust ---
+// gpg reported "public key not found": the user's ~/.gnupg was consulted
+// first (the default-keyring pass) and always wins; next comes ape-get's
+// own keyring, then a key asset published by the same TLS-authenticated
+// release. A present-but-unverifiable signature never reaches here.
+
+static bool unknown_key(const sig_result *r)
+{
+    return r->status == S_INVALID && r->detail != NULL
+        && strcmp(r->detail, "public key not found") == 0;
+}
+
+// Trust is pinned to the primary fingerprint: a signature made by a
+// signing subkey reports the subkey's fingerprint, which differs from
+// the primary's and changes on routine subkey rotation. Falls back to
+// the signing fingerprint when the keyring cannot name the primary.
+static char *primary_of(const char *home, const char *fpr)
+{
+    if (fpr == NULL) return NULL;
+    char *prim = NULL, *err = NULL;
+    if (sig_key_primary(home, fpr, &prim, &err)) return prim;
+    free(prim);
+    free(err);
+    return strdup(fpr);
+}
+
+// The first release asset that sniffs (not just names) as a PGP public key
+// block, staged in a temp file; the payload's own signature is excluded.
+static char *fetch_key_asset(pipe_ctx *pc, int sigk)
+{
+    for (int k = 0; k < pc->rel.n; k++) {
+        if (k == sigk) continue;
+        if (!ci_endswith(pc->rel.assets[k].name, ".asc")) continue;
+        char *kt = NULL;
+        char kmsg[700] = "";
+        if (!provider_download(pc->pe, pc->rel.assets[k].url,
+                pc->rel.assets[k].name, pc->timeout_ms, 65536, NULL,
+                NULL, NULL, &kt, kmsg, sizeof(kmsg))) {
+            free(kt);
+            continue;
+        }
+        size_t kn = 0;
+        char *kc = fs_read_file(kt, &kn);
+        bool key = kc != NULL
+            && strstr(kc, "-----BEGIN PGP PUBLIC KEY BLOCK-----") != NULL;
+        free(kc);
+        if (key) return kt;
+        remove(kt);
+        free(kt);
+    }
+    return NULL;
+}
+
+// A different key on an already-trusted repo is the dangerous event:
+// standard confirms (as the signer pin does, --allow-signer-change as the
+// ticket), hardened refuses unless the run explicitly carries that flag.
+static bool gate_signer_change(pipe_ctx *pc, const char *old_fpr,
+    const char *new_fpr, const char *new_uid)
+{
+    if (pc->st->signer_change == 1 && !pc->o->allow_signer_change) {
+        char *d = path_fmt("Unable to %s %s.", pc->op, pc->ref);
+        ui_msg(stderr, UI_ERROR, "%s", d != NULL ? d : "unable");
+        oplog_append(pc->st, pc->op, pc->ref, "-",
+            d != NULL ? d : "unable");
+        free(d);
+        d = path_fmt("Reason: the release now publishes signing key %s,"
+            " but %s is trusted; the policy refuses signer changes.",
+            new_fpr, old_fpr);
+        ui_msg(stderr, UI_DIM, "%s", d != NULL ? d : "reason");
+        free(d);
+        ui_msg(stderr, UI_ITALIC, "If you trust the new signer, rerun with"
+            " --allow-signer-change.");
+        return false;
+    }
+    char *newd = new_uid != NULL && *new_uid != '\0'
+        ? path_fmt("%s (%s)", new_uid, new_fpr) : strdup(new_fpr);
+    char *reason = path_fmt("the release now publishes signing key %s,"
+        " but %s is trusted", new_fpr, old_fpr);
+    char *q = path_fmt("Accept the new signing key for %s?\n"
+        "  trusted: %s\n  new:     %s\nOnly continue if you trust the new"
+        " signer.", pc->ref, old_fpr, newd != NULL ? newd : new_fpr);
+    char *w = path_fmt("Warning: trusted signing key replaced for %s: %s.",
+        pc->ref, new_fpr);
+    bool ok = resolve_pin(pc->o, pc->st, pc->op, pc->ref, pc->ref, reason,
+        "If you trust the new signer, rerun with --allow-signer-change to"
+        " accept it and update the trust.", q, w);
+    free(reason);
+    free(q);
+    free(w);
+    free(newd);
+    return ok;
+}
+
+// First contact is cheap to trust: interactive confirms the full
+// fingerprint (flatpak remote-add style); non-interactive (-y or no tty)
+// imports with a loud notice naming the revoke command.
+static bool gate_tofu(pipe_ctx *pc, const char *fpr, const char *uid,
+    const char *keyring)
+{
+    char ubuf[512];
+    ui_esc_into(ubuf, sizeof ubuf, uid != NULL ? uid : "unknown signer");
+    if (!pc->o->assume_yes && isatty(fileno(stdin))) {
+        char *q = path_fmt("Trust this signing key for %s?\n"
+            "  repo:  %s\n  key:   %s\n  fingerprint: %s\n"
+            "Only continue if you recognise this key.",
+            pc->ref, pc->ref, ubuf, fpr);
+        bool yes = confirm_action(pc->o, q != NULL ? q : "", false);
+        free(q);
+        if (!yes) {
+            ui_msg(stderr, UI_WARN, "Key trust declined.");
+            return false;
+        }
+        return true;
+    }
+    ui_msg(stderr, UI_WARN, "Trusting new signing key for %s"
+        " (trust on first use).", pc->ref);
+    ui_msg(stderr, UI_NONE, "  key:   %s", ubuf);
+    ui_msg(stderr, UI_NONE, "  fingerprint: %s", fpr);
+    ui_msg(stderr, UI_NONE, "  stored: %s", keyring);
+    ui_msg(stderr, UI_ITALIC, "  revoke: ape-get untrust %s", pc->ref);
+    return true;
+}
+
+// The unknown-key path for the staged signature in stmp; fills pc->sres
+// with the final verdict and sets pc->failed when the run must stop.
+static void verify_trust_path(pipe_ctx *pc, const char *stmp, int sigk)
+{
+    char *kr = state_keyring_dir(pc->st);
+    if (kr == NULL) return;
+    if (!fs_mkdir_p(kr)) { free(kr); return; } // gpg needs the home to exist
+    char *pub = path_join(kr, "pubring.kbx");
+    bool have_ring = pub != NULL && fs_is_regular(pub);
+    free(pub);
+    if (have_ring) {
+        sig_result r2;
+        sig_status st2 = sig_run_gpg_home(kr, stmp, pc->tmp, pc->base, &r2);
+        if (st2 == S_VERIFIED) {
+            sig_result_free(&pc->sres);
+            pc->sres = r2;
+            char *prim = primary_of(kr, pc->sres.identity);
+            char *rec = NULL, *ru = NULL;
+            trust_lookup(pc->st, pc->prov, pc->path, &rec, &ru);
+            if (rec == NULL) {
+                trust_record(pc->st, pc->prov, pc->path,
+                    prim != NULL ? prim : pc->sres.identity,
+                    pc->sres.signer);
+            } else if (prim != NULL && strcasecmp(rec, prim) != 0) {
+                if (gate_signer_change(pc, rec, prim, pc->sres.signer)) {
+                    trust_record(pc->st, pc->prov, pc->path, prim,
+                        pc->sres.signer);
+                    pc->signer_accepted = true;
+                } else {
+                    pc->failed = true;
+                }
+            }
+            free(rec);
+            free(ru);
+            free(prim);
+            free(kr);
+            return;
+        }
+        if (!unknown_key(&r2)) {
+            sig_result_free(&pc->sres);
+            pc->sres = r2; // a real failure against our keyring too
+            free(kr);
+            return;
+        }
+        sig_result_free(&r2);
+    }
+    char *kt = fetch_key_asset(pc, sigk);
+    if (kt == NULL) { free(kr); return; } // stays the unknown-key refusal
+    char *fpr = NULL, *uid = NULL, *kerr = NULL;
+    if (!sig_key_fingerprint(kr, kt, &fpr, &uid, &kerr)) {
+        char esafe[1024];
+        ui_esc_into(esafe, sizeof esafe,
+            kerr != NULL ? kerr : "key asset unusable");
+        ui_msg(stderr, UI_WARN, "Key asset unusable: %s", esafe);
+        free(kerr);
+        free(kt);
+        free(kr);
+        return;
+    }
+    char *rec = NULL, *ru = NULL;
+    trust_lookup(pc->st, pc->prov, pc->path, &rec, &ru);
+    bool rotation = rec != NULL && strcasecmp(rec, fpr) != 0;
+    bool proceed = true;
+    if (rotation) {
+        proceed = gate_signer_change(pc, rec, fpr, uid);
+        if (!proceed) pc->failed = true; // the gate already reported it
+    } else if (rec == NULL) {
+        proceed = gate_tofu(pc, fpr, uid, kr);
+        if (!proceed) pc->failed = true;
+    }
+    // same fingerprint recorded: silent (the keyring may have been wiped)
+    free(rec);
+    free(ru);
+    if (proceed) {
+        free(kerr);
+        kerr = NULL;
+        if (!sig_keyring_import(kr, kt, &kerr)) {
+            char esafe[1024];
+            ui_esc_into(esafe, sizeof esafe,
+                kerr != NULL ? kerr : "import failed");
+            ui_msg(stderr, UI_ERROR,
+                "Failed to import the signing key: %s", esafe);
+        } else {
+            if (rotation) pc->signer_accepted = true;
+            sig_result_free(&pc->sres);
+            sig_run_gpg_home(kr, stmp, pc->tmp, pc->base, &pc->sres);
+            // the asset's own fingerprint is its primary: record it
+            // whatever signing key the payload turned out to carry
+            trust_record(pc->st, pc->prov, pc->path, fpr, uid);
+        }
+    }
+    free(kerr);
+    free(fpr);
+    free(uid);
+    free(kt);
+    free(kr);
+}
+
 int phase_verify(pipe_ctx *pc)
 {
     bool strict = pc->o->strict != 0 || pc->st->strict_verification;
@@ -207,11 +430,14 @@ int phase_verify(pipe_ctx *pc)
                     "signature file exceeds the size cap");
             } else {
                 sig_run_gpg(stmp, pc->tmp, pc->base, &pc->sres);
+                if (unknown_key(&pc->sres))
+                    verify_trust_path(pc, stmp, sigk);
             }
             remove(stmp);
             free(stmp);
         }
     }
+    if (pc->failed) return PIPE_CLEANUP;
     char *sm = sig_message(&pc->sres);
     // required-signature is an independent policy: a previously verified
     // manifest relaxes the new signature check only when no verified
@@ -228,6 +454,21 @@ int phase_verify(pipe_ctx *pc)
         free(sm);
         pc->failed = true;
         return PIPE_CLEANUP;
+    }
+    // every verified signature pins the repo's fingerprint, whichever
+    // keyring it came from (the user's ~/.gnupg included); first record
+    // only — a recorded key is never silently replaced here
+    if (pc->sres.status == S_VERIFIED && pc->sres.identity != NULL) {
+        char *rec = NULL, *ru = NULL;
+        trust_lookup(pc->st, pc->prov, pc->path, &rec, &ru);
+        if (rec == NULL) {
+            char *prim = primary_of(NULL, pc->sres.identity);
+            trust_record(pc->st, pc->prov, pc->path,
+                prim != NULL ? prim : pc->sres.identity, pc->sres.signer);
+            free(prim);
+        }
+        free(rec);
+        free(ru);
     }
     if (pc->sres.status == S_VERIFIED) {
         if (!pc->o->quiet && !pc->o->json)
@@ -247,6 +488,9 @@ int phase_verify(pipe_ctx *pc)
         bool changed = pc->sres.identity == NULL
             || pc->prev->sig_identity == NULL
             || strcasecmp(pc->prev->sig_identity, pc->sres.identity) != 0;
+        // the trust path just confirmed this exact key swap; the pin
+        // conflict is the same event, never a second prompt
+        if (pc->signer_accepted) changed = false;
         const char *hint = unverified
             ? "If you trust this release, rerun with"
               " --allow-signer-change to clear the pinned signer."

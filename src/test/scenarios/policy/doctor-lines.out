@@ -1,0 +1,14 @@
+State root: <STATE_ROOT>
+Config: <STATE_ROOT>/grm_config.json
+Index: <STATE_ROOT>/grm_index.json
+Manifests: 0
+Free space: <FREE>
+Policy: hardened
+Trusted keys: 1 across 2 repo(s).
+
+Signature tool: gpg <TOOL_STATE>
+Compatibility tools: <WINE>
+Tor status: <TOR>
+Reticulum status: <RETICULUM>
+
+Diagnosis: no issues found.

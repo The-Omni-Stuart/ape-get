@@ -162,10 +162,22 @@ static void free_env(char **e)
 sig_status sig_run_gpg(const char *sig_file, const char *artifact,
     const char *asset_name, sig_result *out)
 {
+    return sig_run_gpg_home(NULL, sig_file, artifact, asset_name, out);
+}
+
+// home NULL uses gpg's default keyring (~/.gnupg); a home selects ape-get's
+// own trust keyring. Both passes share the sanitised environment, the
+// timeout and the status parsing.
+sig_status sig_run_gpg_home(const char *home, const char *sig_file,
+    const char *artifact, const char *asset_name, sig_result *out)
+{
     memset(out, 0, sizeof(*out));
     out->asset_name = strdup(asset_name != NULL ? asset_name : "");
-    const char *av[] = { "gpg", "--batch", "--status-fd=1", "--verify",
-        sig_file, artifact, NULL };
+    const char *av[] = { "gpg", "--batch", "--status-fd=1",
+        "--homedir", home, "--verify", sig_file, artifact, NULL };
+    const char *av_default[] = { "gpg", "--batch", "--status-fd=1",
+        "--verify", sig_file, artifact, NULL };
+    const char *const *argv = home != NULL ? av : av_default;
     char **env = sanitized_env();
     if (env == NULL) {
         // fail closed: without the allowlist gpg must not inherit the
@@ -175,7 +187,7 @@ sig_status sig_run_gpg(const char *sig_file, const char *artifact,
         return out->status;
     }
     char *o = NULL;
-    long rc = proc_run_env(av, env, gpg_timeout_ms(), &o);
+    long rc = proc_run_env(argv, env, gpg_timeout_ms(), &o);
     if (env != NULL) free_env(env);
     if (rc < 0 && rc != -2) {
         free(o);
@@ -211,6 +223,143 @@ sig_status sig_run_gpg(const char *sig_file, const char *artifact,
     out->identity = fp;
     free(o);
     return out->status;
+}
+
+// --- ape-get's own trust keyring (a gpg --homedir) ---
+
+// nth colon-separated field (0-based) of one line, as in --with-colons
+// output (the primary fingerprint and the uid name both sit at 9).
+static char *colon_nth(const char *line, size_t ll, int nth)
+{
+    int idx = 0;
+    size_t a = 0;
+    while (a <= ll) {
+        size_t b = a;
+        while (b < ll && line[b] != ':') b++;
+        if (idx == nth) return dupn(line + a, b - a);
+        a = b + 1;
+        idx++;
+    }
+    return NULL;
+}
+
+static char *colon_line_field(const char *out, const char *prefix, int nth)
+{
+    size_t pl = strlen(prefix);
+    const char *p = out;
+    while (p != NULL) {
+        const char *eol = strchr(p, '\n');
+        size_t ll = eol != NULL ? (size_t)(eol - p) : strlen(p);
+        if (ll >= pl && !memcmp(p, prefix, pl))
+            return colon_nth(p, ll, nth);
+        p = eol != NULL ? eol + 1 : NULL;
+    }
+    return NULL;
+}
+
+static long gpg_home_run(const char *const *argv, char **out)
+{
+    char **env = sanitized_env();
+    if (env == NULL) return -1;
+    long rc = proc_run_env(argv, env, gpg_timeout_ms(), out);
+    free_env(env);
+    return rc;
+}
+
+// Primary fingerprint and uid of the key inside key_file, read without
+// touching any keyring (show-only import). True when a fingerprint is
+// present; uid may be NULL when the key carries no user ID.
+bool sig_key_fingerprint(const char *home, const char *key_file,
+    char **fpr, char **uid, char **err)
+{
+    *fpr = NULL; *uid = NULL; *err = NULL;
+    const char *av[] = { "gpg", "--batch", "--homedir", home,
+        "--with-colons", "--import-options", "show-only", "--import",
+        key_file, NULL };
+    char *o = NULL;
+    long rc = gpg_home_run(av, &o);
+    if (rc < 0 && rc != -2) {
+        free(o);
+        *err = strdup("gpg is not installed");
+        return false;
+    }
+    if (rc == -2) {
+        free(o);
+        *err = strdup("gpg timed out");
+        return false;
+    }
+    if (o == NULL) o = strdup("");
+    *fpr = colon_line_field(o, "fpr:", 9);
+    *uid = colon_line_field(o, "uid:", 9);
+    bool ok = *fpr != NULL && **fpr != '\0';
+    if (!ok) {
+        free(*fpr); free(*uid);
+        *fpr = *uid = NULL;
+        *err = strdup("no PGP public key found in the key asset");
+    }
+    free(o);
+    return ok;
+}
+
+bool sig_keyring_import(const char *home, const char *key_file, char **err)
+{
+    *err = NULL;
+    const char *av[] = { "gpg", "--batch", "--homedir", home, "--import",
+        key_file, NULL };
+    char *o = NULL;
+    long rc = gpg_home_run(av, &o);
+    free(o);
+    if (rc == 0) return true;
+    *err = strdup(rc == -2 ? "gpg timed out"
+        : (rc < 0 && rc != -2) ? "gpg is not installed"
+        : "gpg rejected the key asset");
+    return false;
+}
+
+bool sig_keyring_delete(const char *home, const char *fpr, char **err)
+{
+    *err = NULL;
+    const char *av[] = { "gpg", "--batch", "--yes", "--homedir", home,
+        "--delete-keys", fpr, NULL };
+    char *o = NULL;
+    long rc = gpg_home_run(av, &o);
+    free(o);
+    if (rc == 0) return true;
+    *err = strdup(rc == -2 ? "gpg timed out"
+        : (rc < 0 && rc != -2) ? "gpg is not installed"
+        : "gpg could not remove the key");
+    return false;
+}
+
+// Primary fingerprint of the key holding signing_fpr in the home keyring
+// (a signing subkey's fpr differs from its primary's; trust pins the
+// primary so routine subkey rotation is not a signer change). home NULL
+// is gpg's default keyring. False when the key is not in that keyring.
+bool sig_key_primary(const char *home, const char *signing_fpr,
+    char **primary, char **err)
+{
+    *primary = NULL; *err = NULL;
+    const char *av[] = { "gpg", "--batch", "--homedir", home,
+        "--with-colons", "--list-keys", signing_fpr, NULL };
+    const char *av_default[] = { "gpg", "--batch", "--with-colons",
+        "--list-keys", signing_fpr, NULL };
+    char *o = NULL;
+    long rc = gpg_home_run(home != NULL ? av : av_default, &o);
+    if (rc != 0) {
+        free(o);
+        *err = strdup("signing key not in the keyring");
+        return false;
+    }
+    // the first fpr line belongs to the pub entry: the primary key
+    *primary = colon_line_field(o, "fpr:", 9);
+    free(o);
+    if (*primary == NULL || **primary == '\0') {
+        free(*primary);
+        *primary = NULL;
+        *err = strdup("no primary fingerprint found");
+        return false;
+    }
+    return true;
 }
 
 char *sig_message(const sig_result *r)

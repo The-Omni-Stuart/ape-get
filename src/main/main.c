@@ -200,6 +200,22 @@ int main(int argc, char **argv)
         if (rv == 0) pipeline_self_after(&o, &st);
         return rv;
     }
+    case CMD_UNTRUST: {
+        state_ctx st;
+        if (!state_open_net(&st)) return 2;
+        if (!lock_repair(&st)) return 1;
+        if (!recover_gate(&st, &o, "untrust")) return 1;
+        state_ensure(&st, o.quiet, o.json);
+        return untrust_run(&o, &st);
+    }
+    case CMD_CONFIG: {
+        state_ctx st;
+        if (!state_open_net(&st)) return 2;
+        if (!lock_repair(&st)) return 1;
+        if (!recover_gate(&st, &o, "config")) return 1;
+        state_ensure(&st, o.quiet, o.json);
+        return config_run(&o, &st);
+    }
     case CMD_ADOPT: {
         state_ctx st;
         if (!state_open_net(&st)) return 2;

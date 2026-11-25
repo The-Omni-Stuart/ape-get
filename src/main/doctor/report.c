@@ -75,6 +75,12 @@ void report_lines(const state_ctx *st, strv *issues, strv *warnings,
     DKV("Manifests", "%d", st->manifests);
     if (free_bytes < 0) DKV("Free space", "unknown");
     else DKV("Free space", "%lld MB", free_bytes / (1024 * 1024));
+    DKV("Policy", "%s", st->policy_profile == 1 ? "hardened" : "standard");
+    {
+        int keys = 0, repos = 0;
+        trust_summary(st, &keys, &repos);
+        DKV("Trusted keys", "%d across %d repo(s).", keys, repos);
+    }
 #undef DKV
     puts("");
     if (gpg_ok) ui_msg(stdout, UI_OK, "Signature tool: gpg available");

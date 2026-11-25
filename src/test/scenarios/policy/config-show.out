@@ -1,0 +1,5 @@
+Policy: standard
+  require_signature: false
+  checksum_strict: false
+  signer_change: confirm
+  desktop: auto

@@ -22,6 +22,25 @@ void sig_result_free(sig_result *r);
 sig_status sig_run_gpg(const char *sig_file, const char *artifact,
     const char *asset_name, sig_result *out);
 
+// As sig_run_gpg with an explicit gpg home: NULL keeps gpg's default
+// keyring (~/.gnupg), a directory selects ape-get's own trust keyring.
+sig_status sig_run_gpg_home(const char *home, const char *sig_file,
+    const char *artifact, const char *asset_name, sig_result *out);
+
+// Inspect a key asset without writing any keyring (show-only import into
+// the given home): primary fingerprint + uid. True on success.
+bool sig_key_fingerprint(const char *home, const char *key_file,
+    char **fpr, char **uid, char **err);
+
+// Import a key file into the home keyring / remove a public key from it.
+bool sig_keyring_import(const char *home, const char *key_file, char **err);
+bool sig_keyring_delete(const char *home, const char *fpr, char **err);
+
+// Primary fingerprint of the key holding signing_fpr in the home keyring
+// (NULL = default keyring). False when the key is absent there.
+bool sig_key_primary(const char *home, const char *signing_fpr,
+    char **primary, char **err);
+
 char *sig_message(const sig_result *r);
 bool sig_allows_install(const sig_result *r, bool required);
 

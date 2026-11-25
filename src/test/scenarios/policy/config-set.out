@@ -1,0 +1,1 @@
+Policy: hardened. Override per run with --strict, --require-signature, --allow-signer-change, --no-desktop.

@@ -321,9 +321,14 @@ int phase_install(pipe_ctx *pc)
     if (!inst_failed) pc->entry = desktop_entry_path(pc->st, pc->command);
     // one desktop decision for the manifest, the retire below and the
     // write after the commit point; a foreign file warns once here
-    if (!inst_failed)
-        pc->entry_rec = desktop_recorded(pc->o, pc->entry,
-            pc->kind == K_APPIMAGE);
+    if (!inst_failed) {
+        // the desktop policy decides the default: auto keeps AppImage-only,
+        // always/never force every kind; --desktop/--no-desktop outrank it
+        bool default_on = pc->st->desktop_policy == 1 ? true
+            : pc->st->desktop_policy == 2 ? false
+            : pc->kind == K_APPIMAGE;
+        pc->entry_rec = desktop_recorded(pc->o, pc->entry, default_on);
+    }
     // retire resources the new generation will not own: a --no-command
     // update, or a changed command/install_root, would otherwise lose the
     // only reference to the old launcher/desktop when the manifest swaps,

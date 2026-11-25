@@ -76,6 +76,8 @@ int cmd_providers_remove(const cmd_opts *o, state_ctx *st,
 int providers_run(const cmd_opts *o, state_ctx *st);
 int uninstall_run(const cmd_opts *o, state_ctx *st);
 bool uninstall_one(const state_ctx *st, manifest_entry *m);
+int untrust_run(const cmd_opts *o, state_ctx *st);
+int config_run(const cmd_opts *o, state_ctx *st);
 int adopt_run(const cmd_opts *o, state_ctx *st);
 int lock_run(const cmd_opts *o, state_ctx *st, bool locking);
 int list_run(const cmd_opts *o, state_ctx *st);

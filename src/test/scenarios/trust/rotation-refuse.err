@@ -1,0 +1,3 @@
+Error: Unable to install mock:owner/tool.
+Reason: the release now publishes signing key 9E745999F7EF86FA81CF819B5838BEFF606F1075, but 9E27B3C9E5188E383E69BF9983280334839DF031 is trusted; the policy refuses signer changes.
+If you trust the new signer, rerun with --allow-signer-change.

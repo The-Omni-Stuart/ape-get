@@ -3,6 +3,8 @@ Config: <STATE_ROOT>/grm_config.json
 Index: <STATE_ROOT>/grm_index.json
 Manifests: 0
 Free space: <FREE>
+Policy: standard
+Trusted keys: 0 across 0 repo(s).
 
 Signature tool: gpg <TOOL_STATE>
 Compatibility tools: <WINE>

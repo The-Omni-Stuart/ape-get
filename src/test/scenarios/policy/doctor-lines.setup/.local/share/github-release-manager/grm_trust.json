@@ -1,0 +1,1 @@
+{"kind":"grm.trust","schema_version":1,"repos":{"mock:owner/tool":{"fingerprint":"9E27B3C9E5188E383E69BF9983280334839DF031","uid":"ape-get bucket11 A <b11a@example.invalid>"},"mock:owner/other":{"fingerprint":"9E27B3C9E5188E383E69BF9983280334839DF031","uid":"ape-get bucket11 A <b11a@example.invalid>"}}}

@@ -61,6 +61,7 @@ typedef struct {
     char *mtmp;   // staged grm_manifest.json, renamed at the end
     sig_result sres;
     bool sres_used;
+    bool signer_accepted; // the trust path just accepted a new signing key
     // journal state (staged file: <target>.tmp-<id>)
     char j_id[17], j_created[40];
     char *j_staged, *j_vdir, *j_mfile;

@@ -19,8 +19,11 @@ typedef struct {
     int timeout_seconds;    // config network_timeout_seconds (<=0 = 30)
     int backup_count;       // config backup_count (absent = 0)
     char *update_channel;   // config update_channel raw text or NULL
-    bool strict_verification;  // config strict_verification
-    bool require_signature;    // config require_signature
+    bool strict_verification;  // effective checksum strictness (policy or legacy key)
+    bool require_signature;    // effective signature requirement (policy or legacy key)
+    int policy_profile;        // config policy.profile: 0 standard, 1 hardened
+    int signer_change;         // config policy.signer_change: 0 confirm, 1 refuse
+    int desktop_policy;        // config policy.desktop: 0 auto, 1 always, 2 never
     bool experimental_compat;  // config experimental_compat
     char *wine_path;        // config wine_path override, NULL when unset
     char *proxy;            // config proxy URL, NULL when unset
@@ -76,6 +79,38 @@ void oplog_append(const state_ctx *st, const char *command, const char *ref,
 char *state_config_edit(const state_ctx *st, const char *add_name,
     const char *type, const char *url, const char *api, const char *token_env,
     const char *remove_name);
+
+// Rewrite the config record setting policy.profile to the given word,
+// preserving every other member (normalised field order); NULL on fail.
+char *state_config_set_profile(const state_ctx *st, const char *profile);
+
+// --- signing-key trust (state/trust.c) ---
+
+// <root>/grm_keyring: ape-get's own gpg home, never ~/.gnupg.
+char *state_keyring_dir(const state_ctx *st);
+
+// Recorded fingerprint (and uid, may be NULL) for provider:repo; false when
+// the repo has no trust record.
+bool trust_lookup(const state_ctx *st, const char *prov, const char *repo,
+    char **fpr, char **uid);
+
+// Add or replace the record for provider:repo.
+bool trust_record(const state_ctx *st, const char *prov, const char *repo,
+    const char *fpr, const char *uid);
+
+// One removed record: the ref it was recorded under and its fingerprint.
+typedef struct { char *ref, *fingerprint; } trust_hit;
+
+// Drop records for provider:repo (prov NULL matches every provider);
+// returns the count and hands out the removed records (caller frees).
+int trust_remove(const state_ctx *st, const char *prov, const char *repo,
+    trust_hit **out);
+
+// True while any remaining record still names this fingerprint.
+bool trust_fpr_used(const state_ctx *st, const char *fpr);
+
+// Distinct fingerprints and repo count, for the doctor line.
+void trust_summary(const state_ctx *st, int *keys, int *repos);
 
 // --- provider registry ---
 

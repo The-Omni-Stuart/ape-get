@@ -74,6 +74,95 @@ static bool s_query;
 void state_set_query(void) { s_query = true; }
 bool state_is_query(void) { return s_query; }
 
+// Forgiving policy read: an unknown key or value warns once naming it and
+// falls back to the profile default; a bad policy never blocks a command.
+// Precedence: CLI flag (call sites) > explicit policy key > profile >
+// built-in. The legacy top-level strict_verification/require_signature keys
+// keep working only while no policy object exists: the policy object is the
+// new home and its presence activates the new precedence.
+static void policy_apply(state_ctx *out, const char *cfg)
+{
+    const char *vs, *ve;
+    if (!json_raw(cfg, "policy", &vs, &ve)) return; // absent = standard
+    char *ptext = strndup(vs, (size_t)(ve - vs));
+    jobject po = {0};
+    if (ptext == NULL || !jobject_parse(ptext, &po)) {
+        free(ptext);
+        fprintf(stderr, "Warning: config policy is not an object;"
+            " standard used\n");
+        return;
+    }
+    // po's spans alias ptext: it must outlive every po access below
+    bool hard = false;
+    int f = jobject_find(&po, "profile");
+    if (f >= 0) {
+        char *pv = NULL;
+        if (json_span_string(po.vals[f], po.vends[f], &pv) && pv != NULL) {
+            if (!strcmp(pv, "hardened")) hard = true;
+            else if (strcmp(pv, "standard") != 0)
+                fprintf(stderr, "Warning: config policy: unknown profile"
+                    " \"%s\"; using standard\n", pv);
+        } else {
+            fprintf(stderr, "Warning: config policy: unknown profile value;"
+                " using standard\n");
+        }
+        free(pv);
+    }
+    out->policy_profile = hard ? 1 : 0;
+    out->require_signature = hard;
+    out->strict_verification = hard;
+    out->signer_change = hard ? 1 : 0;
+    out->desktop_policy = 0;
+    static const char *known[] = { "profile", "require_signature",
+        "checksum_strict", "signer_change", "desktop", NULL };
+    for (int k = 0; k < po.n; k++) {
+        const char *key = po.keys[k];
+        bool ok = false;
+        for (int q = 0; known[q] != NULL && !ok; q++)
+            ok = !strcmp(key, known[q]);
+        if (!ok) {
+            fprintf(stderr, "Warning: config policy: unknown key \"%s\""
+                " ignored\n", key);
+            continue;
+        }
+        if (!strcmp(key, "profile")) continue;
+        if (!strcmp(key, "require_signature")
+            || !strcmp(key, "checksum_strict")) {
+            bool b;
+            if (json_span_bool(po.vals[k], po.vends[k], &b)) {
+                if (key[0] == 'r') out->require_signature = b;
+                else out->strict_verification = b;
+            } else {
+                fprintf(stderr, "Warning: config policy: unknown value for"
+                    " \"%s\" ignored\n", key);
+            }
+            continue;
+        }
+        char *s = NULL;
+        bool bad = false;
+        if (json_span_string(po.vals[k], po.vends[k], &s) && s != NULL) {
+            if (!strcmp(key, "signer_change")) {
+                if (!strcmp(s, "confirm")) out->signer_change = 0;
+                else if (!strcmp(s, "refuse")) out->signer_change = 1;
+                else bad = true;
+            } else { // desktop
+                if (!strcmp(s, "auto")) out->desktop_policy = 0;
+                else if (!strcmp(s, "always")) out->desktop_policy = 1;
+                else if (!strcmp(s, "never")) out->desktop_policy = 2;
+                else bad = true;
+            }
+        } else {
+            bad = true;
+        }
+        if (bad)
+            fprintf(stderr, "Warning: config policy: unknown value for"
+                " \"%s\" ignored\n", key);
+        free(s);
+    }
+    jobject_free(&po);
+    free(ptext);
+}
+
 // Detects corrupt records without touching them: repair happens later,
 // by mutation commands only, once the state lock is held (S08).
 bool state_open(state_ctx *out)
@@ -135,6 +224,7 @@ bool state_open(state_ctx *out)
             out->update_channel = ch;
         else
             free(ch);
+        policy_apply(out, cfg);
     } else if (cfg != NULL) {
         out->config_corrupt = true;
     }

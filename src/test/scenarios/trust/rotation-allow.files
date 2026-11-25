@@ -1,0 +1,2 @@
+--- .local/share/github-release-manager/grm_trust.json (0644) ---
+{"kind":"grm.trust","schema_version":1,"repos":{"mock:owner/tool":{"fingerprint":"9E745999F7EF86FA81CF819B5838BEFF606F1075","uid":"ape-get bucket11 B <b11b@example.invalid>"}}}

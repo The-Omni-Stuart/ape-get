@@ -2,7 +2,7 @@
 # install:  complete -F _ape_get ape-get   (or source this file)
 _ape_get()
 {
-    local commands="search install uninstall update list info providers rollback doctor adopt lock unlock about completions help"
+    local commands="search install uninstall untrust update list info providers rollback doctor config adopt lock unlock about completions help"
     local globals="--json --quiet --yes -y --colour --color --no-progress --experimental-compat --help"
     local cur prev
     cur="${COMP_WORDS[COMP_CWORD]}"
