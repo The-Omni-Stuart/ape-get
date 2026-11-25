@@ -17,7 +17,7 @@ static const char *const PROVIDER_VERBS[] = {
 // REF_CMDS: commands whose first positional names an installed release
 // (padded with spaces so the script can substring-match).
 static const char *const REF_CMDS =
-    " uninstall update upgrade info rollback adopt lock unlock untrust ";
+    " uninstall remove update upgrade info rollback adopt lock unlock untrust ";
 
 // help lines are "  --flag <value> - text" or "  -y, --yes - text"; the
 // flags are the comma-separated words ahead of the " - ".

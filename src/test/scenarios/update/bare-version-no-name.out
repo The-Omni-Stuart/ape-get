@@ -1,4 +1,4 @@
-Usage: <ENTRYPOINT> update [name] [options] (alias: upgrade)
+Usage: <ENTRYPOINT> update [name] [options]
 
 Options:
   --all - update every installed package (the default with no name)

@@ -8,6 +8,7 @@ _ape_get()
         'search:search for a release by name'
         'install:install provider:owner/repo or owner/repo'
         'uninstall:uninstall an installed release'
+        'remove:alias for uninstall'
         'untrust:remove a repo'"'"'s trusted signing key'
         'update:update one release or --all'
         'upgrade:alias for update'
