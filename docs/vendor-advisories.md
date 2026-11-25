@@ -1,6 +1,6 @@
 # Vendor advisories and TLS-stack maintenance plan
 
-Owner: _<fill in: named maintainer for vendor pins and TLS/X.509 advisories>_
+Owner: The-Omni-Stuart (org)
 Review cadence: every vendor PIN bump, and a full advisory sweep of this
 table at least every 90 days (also mandatory before any release tag, since
 the size, lifecycle and gate work all run through these pins).
