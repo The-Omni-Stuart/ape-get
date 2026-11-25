@@ -292,6 +292,27 @@ def run_case(case_dir: Path, name: str, cmd, update: bool) -> bool:
         return ok
 
 
+def git_ignored_fixtures():
+    """Fixture files under this tree that .gitignore swallows.
+
+    A fixture no clone contains makes the case pass here and fail in CI, and
+    nothing in the run says which of the two happened: `*.com` in .gitignore
+    once swallowed ten portable-executable fixtures, and the failure came out
+    as `Could not install`, three digits of mode and a vanished file. Asking
+    git is the only way to see it before committing. Empty when there is
+    nothing ignored, or when git cannot be asked.
+    """
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(SCEN), "ls-files", "--others", "--ignored",
+             "--exclude-standard", "--", "."],
+            capture_output=True, text=True)
+    except OSError:
+        return []
+    return sorted(r.stdout.split()) if r.returncode == 0 else []
+
+
 def main():
     global PASS, FAIL
     ap = argparse.ArgumentParser()
@@ -301,6 +322,16 @@ def main():
     ap.add_argument("select", nargs="*", help="groups or group/case")
     a = ap.parse_args()
     cmd = [a.bin]
+
+    ignored = git_ignored_fixtures()
+    if ignored:
+        print("scenario fixtures that git ignores, so no clone has them and "
+              "the cases seeding them cannot run there. Land them at the same "
+              "path with the runner's .exec suffix, or name them outside the "
+              "pattern:")
+        for line in ignored:
+            print(f"  {line}")
+        sys.exit(1)
 
     all_cases = [(d, f.stem) for d in sorted(p for p in SCEN.iterdir() if p.is_dir())
                  for f in sorted(d.glob("*.env"))]
