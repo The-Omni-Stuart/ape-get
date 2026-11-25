@@ -84,7 +84,10 @@ int run_help(const char *cmd)
     const cmd_help *h = cmd_lookup(cmd);
     if (h != NULL) {
         const char *const *l;
-        put_s(stdout, UI_NONE, "Usage: ape-get.com %s %s", cmd, h->usage);
+        // aliases print the canonical command's page: upgrade --help is
+        // byte-identical to update --help, as the usage-error path already does
+        put_s(stdout, UI_NONE, "Usage: ape-get.com %s %s",
+            cmd_usage_name(h->id), h->usage);
         if (h->options[0] != NULL) {
             put_out("");
             put_s(stdout, UI_BOLD, "Options:");

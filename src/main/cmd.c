@@ -85,7 +85,7 @@ static const char *const OPTS_INSTALL[] = {
 };
 
 static const char *const OPTS_UPDATE[] = {
-    "  --all - update every installed package",
+    "  --all - update every installed package (the default with no name)",
     "  --version <tag> - install or update to a specific release",
     "  --asset <name|index> - choose a release asset non-interactively",
     "  --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg",
@@ -139,7 +139,10 @@ static const cmd_help CMDS[] = {
     {"uninstall", "<name> [options]", OPTS_UNINSTALL, CMD_UNINSTALL, 1, 1},
     {"untrust",   "<provider:owner/repo> [options]", OPTS_NONE, CMD_UNTRUST,
         1, 1},
-    {"update",    "<name>|--all [options]", OPTS_UPDATE, CMD_UPDATE, 1, 1},
+    {"update",    "[name] [options] (alias: upgrade)", OPTS_UPDATE,
+        CMD_UPDATE, 1, 1},
+    {"upgrade",   "[name] [options] (alias: upgrade)", OPTS_UPDATE,
+        CMD_UPDATE, 1, 1},
     {"list",      "[options]", OPTS_LIST, CMD_LIST, 0, 0},
     {"info",      "<name> [options]", OPTS_NONE, CMD_INFO, 1, 1},
     {"providers", "[subcommand] [options]", OPTS_PROVIDERS, CMD_PROVIDERS,
@@ -281,8 +284,10 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
         if (!strcmp(c, CMDS[k].name)) {
             out->id = CMDS[k].id;
             /* CmdParser update arity: --all takes no repository, a
-               plain update takes exactly one (Usage.unknown with a
-               blank argument prints the usage text alone) */
+               named update takes exactly one (Usage.unknown with a
+               blank argument prints the usage text alone); a bare
+               update — no name and no --version, so no target to
+               disambiguate — means --all */
             if (out->id == CMD_UPDATE) {
                 if (out->all) {
                     if (n > 1) {
@@ -290,6 +295,8 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
                         out->usage_msg =
                             "--all does not take a repository";
                     }
+                } else if (n == 1 && out->version == NULL) {
+                    out->all = 1;
                 } else if (n != 2) {
                     out->usage_error = 1;
                     out->usage_msg = "";

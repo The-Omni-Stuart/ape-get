@@ -1,0 +1,1 @@
+{"updates":[{"provider":"mock","repo":"owner/app2","from":"2.0.0","to":"2.0.0","status":"up-to-date"},{"provider":"mock","repo":"owner/tool","from":"1.0.0","to":"1.1.0","status":"updated"}]}

@@ -54,7 +54,7 @@ A repository is `owner/repo`, or `provider:owner/repo` to name one provider. `gi
 | `install --version <tag> [owner/repo]` | Install a specific release |
 | `uninstall [owner/repo]` | Uninstall a previously installed release |
 | `update [owner/repo]` | Update an installed release if a newer version is available |
-| `update --all` | Update every installed release |
+| `update` / `update --all` | Update every installed release; `upgrade` is an alias of `update` |
 | `rollback [owner/repo]` | Restore the latest local backup |
 | `lock` / `unlock [owner/repo]` | Keep updates away from a release |
 | `list` | List all installed releases |

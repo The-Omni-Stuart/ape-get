@@ -10,6 +10,7 @@ _ape_get()
         'uninstall:uninstall an installed release'
         'untrust:remove a repo'"'"'s trusted signing key'
         'update:update one release or --all'
+        'upgrade:alias for update'
         'list:list installed releases'
         'info:show details for an installed release'
         'providers:list add update remove or recover provider instances'

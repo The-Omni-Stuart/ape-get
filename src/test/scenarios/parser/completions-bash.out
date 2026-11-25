@@ -38,6 +38,9 @@ _apg_flags() {
     update)
         echo --all --version --asset --kind --channel --reinstall -l --lock --strict --require-signature --allow-signer-change --dry-run --experimental-compat
         ;;
+    upgrade)
+        echo --all --version --asset --kind --channel --reinstall -l --lock --strict --require-signature --allow-signer-change --dry-run --experimental-compat
+        ;;
     list)
         echo --outdated
         ;;
@@ -53,10 +56,10 @@ _apg_flags() {
     esac
     echo --help --json --quiet -y --yes --colour --no-progress --experimental-compat
 }
-_apg_commands="search install uninstall untrust update list info providers rollback doctor config adopt about lock unlock completions help"
+_apg_commands="search install uninstall untrust update upgrade list info providers rollback doctor config adopt about lock unlock completions help"
 _apg_value_flags=" --colour --provider --version --asset --kind --name --icon --channel --type --api --token-env --url "
 _apg_verbs="list show add update remove recover"
-_apg_ref_cmds=" uninstall update info rollback adopt lock unlock untrust "
+_apg_ref_cmds=" uninstall update upgrade info rollback adopt lock unlock untrust "
 _ape_get() {
     local w cmd="" sub="" vals i=1
     local cur="${COMP_WORDS[COMP_CWORD]}"

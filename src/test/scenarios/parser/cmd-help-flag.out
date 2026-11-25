@@ -1,7 +1,7 @@
-Usage: <ENTRYPOINT> update <name>|--all [options]
+Usage: <ENTRYPOINT> update [name] [options] (alias: upgrade)
 
 Options:
-  --all - update every installed package
+  --all - update every installed package (the default with no name)
   --version <tag> - install or update to a specific release
   --asset <name|index> - choose a release asset non-interactively
   --kind <kind> - force appimage, portable-exe, ape, nsis, msi, or dmg
