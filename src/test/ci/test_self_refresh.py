@@ -29,8 +29,7 @@ def run_case(driver, product, base, name):
         path.mkdir(parents=True)
     (state / "grm_lock").touch()
     image = bytearray(128)
-    image[80:87] = b".cosmo\n"
-    image[106:110] = b"PK\x05\x06"
+    image[80:92] = b"PK\x05\x06\x00.cosmo\n"  # the marker order real builds use
     binary.write_bytes(image)
     backup = app / "backups/retained"
     backup.mkdir(parents=True)

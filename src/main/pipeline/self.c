@@ -105,21 +105,35 @@ static void self_journal_drop(const state_ctx *st)
     if (jp != NULL) { remove(jp); free(jp); }
 }
 
-// APE probe: real programs carry ".cosmo" magic plus a zip end-of-central-directory;
-// the standalone loader (which owns /proc/self/exe when a polyglot runs) has neither
+#define APE_MARK "PK\x05\x06\x00.cosmo\n"     /* 12 bytes, measured from our builds */
+#define APE_MARK_N 12
+#define APE_TAIL_CHUNK (64 * 1024)
+#define APE_TAIL_MAX (1024 * 1024)
+
+// APE probe: the standalone loader has neither marker. A Cosmopolitan binary
+// carries "PK\x05\x06" then its comment-length field then ".cosmo\n" — and NOT
+// at the end of the file: a fat build appends its string table after the zip,
+// measured here at 228-254 KB, so a probe anchored to the last bytes
+// identifies none of our binaries. Scanning backwards finds the last hit,
+// which belongs to the live zip; the declared comment length is not consulted
+// because the appended blob has displaced what that field describes.
 static bool self_tail_ok(int fd)
 {
     off_t sz = lseek(fd, 0, SEEK_END);
-    if (sz < 128) return false;
-    unsigned char tail[128];
-    if (pread(fd, tail, sizeof tail, sz - (off_t)sizeof tail)
-        != (ssize_t)sizeof tail) return false;
-    size_t n = sizeof tail;
-    if (memcmp(tail + n - 22, "PK\x05\x06", 4) != 0) return false;
-    n -= 22; // step over the end-of-central-directory
-    for (size_t i = n; i-- > 4; )
-        if (memcmp(tail + i, ".cosmo\n", 7) == 0) return true;
-    return false;
+    if (sz < APE_MARK_N) return false;
+    off_t stop = sz > APE_TAIL_MAX ? sz - APE_TAIL_MAX : 0;
+    unsigned char *buf = malloc(APE_TAIL_CHUNK);
+    if (buf == NULL) return false;
+    bool ok = false;
+    for (off_t end = sz; end > stop && !ok; end -= APE_TAIL_CHUNK - APE_MARK_N) {
+        off_t start = end - APE_TAIL_CHUNK > stop ? end - APE_TAIL_CHUNK : stop;
+        ssize_t got = pread(fd, buf, (size_t)(end - start), start);
+        if (got != end - start) break;
+        for (ssize_t i = got - APE_MARK_N; i >= 0; i--)
+            if (memcmp(buf + i, APE_MARK, APE_MARK_N) == 0) { ok = true; break; }
+    }
+    free(buf);
+    return ok;
 }
 
 static bool self_file_is_apeget(const char *path)

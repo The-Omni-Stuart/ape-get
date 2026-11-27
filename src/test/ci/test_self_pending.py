@@ -59,8 +59,7 @@ def run_case(driver, product, base, name):
                   "asset_sha256": sha(binary_stage.read_bytes()),
                   "manifest_sha256": sha(manifest_stage.read_bytes())}}
     image = bytearray(128)
-    image[80:87] = b".cosmo\n"
-    image[106:110] = b"PK\x05\x06"
+    image[80:92] = b"PK\x05\x06\x00.cosmo\n"  # the marker order real builds use
     executable = root / "download.com"
     executable.write_bytes(image)
     mode = "normal"

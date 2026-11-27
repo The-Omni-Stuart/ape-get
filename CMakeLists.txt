@@ -201,7 +201,12 @@ if(APEGET_SELF)
   add_executable(test_self_path ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_path.c)
   target_link_libraries(test_self_path PRIVATE m_path)
   apeget_test_entry(test_self_path SELF_PATH_TEST_EXE)
-  add_test(NAME self_executable_path COMMAND "${SELF_PATH_TEST_EXE}")
+  # the real-build check skips a path it cannot stat, so the fat and
+  # single-arch builds are offered and used only when they exist
+  add_test(NAME self_executable_path COMMAND "${SELF_PATH_TEST_EXE}"
+    "${CMAKE_BINARY_DIR}/ape-get-x86_64.com"
+    "${CMAKE_BINARY_DIR}/ape-get-aarch64.com"
+    "${CMAKE_BINARY_DIR}/ape-get.com")
   add_executable(test_self_refresh ${CMAKE_SOURCE_DIR}/src/test/ci/test_self_refresh.c)
   target_link_libraries(test_self_refresh PRIVATE
     -Wl,--start-group ${APESRC_LIBS} -Wl,--end-group)
