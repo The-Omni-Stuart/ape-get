@@ -73,11 +73,11 @@ const char *desktop_recorded(const cmd_opts *o, const char *e, bool d)
 bool desktop_entry_owned(const char *e) { (void)e; abort(); }
 char *desktop_icon_copy(const char *r, const char *a)
 { (void)r; (void)a; abort(); }
-char *desktop_icon_from_appimage(const char *i, const char *a)
-{ (void)i; (void)a; abort(); }
+char *desktop_appimage_read(const char *i, const char *a, desktop_hint *h)
+{ (void)i; (void)a; if (h != NULL) memset(h, 0, sizeof *h); abort(); }
 void desktop_entry_write(const char *e, const char *c, const char *l,
-    const char *r, const char *i, bool t)
-{ (void)e; (void)c; (void)l; (void)r; (void)i; (void)t; abort(); }
+    const char *r, const char *i, const desktop_hint *h, bool t)
+{ (void)e; (void)c; (void)l; (void)r; (void)i; (void)h; (void)t; abort(); }
 const char *sig_status_str(sig_status s) { (void)s; abort(); }
 void txn_new_id(char out[17]) { (void)out; abort(); }
 bool state_rebuild_index(const state_ctx *st) { (void)st; abort(); }

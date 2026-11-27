@@ -442,12 +442,16 @@ int phase_install(pipe_ctx *pc)
             && (pc->o->desktop || !desktop_entry_owned(pc->entry))) {
             // --desktop rewrites; an AppImage default or an inherited
             // managed file is left alone once it exists
+            // --icon means the user named the picture: nothing is unpacked and
+            // the repo's own slug is the label, exactly as before any of this
+            desktop_hint hint = {0};
             char *ic = pc->o->icon != NULL
                 ? desktop_icon_copy(pc->o->icon, pc->app_dir)
-                : desktop_icon_from_appimage(pc->target, pc->app_dir);
+                : desktop_appimage_read(pc->target, pc->app_dir, &hint);
             desktop_entry_write(pc->entry, pc->command, pc->launcher, pc->path, ic,
-                pc->o->terminal != 0);
+                &hint, pc->o->terminal != 0);
             free(ic);
+            desktop_hint_free(&hint);
         }
         if (!pc->o->json && !pc->o->quiet) {
             pc->detail = path_fmt("Installed to: %s", pc->target);

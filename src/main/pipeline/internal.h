@@ -112,17 +112,35 @@ char *cn_from_asset(const char *repo_path, const char *asset_name);
 
 // pipeline/desktop.c: Linux desktop entries
 char *desktop_entry_path(const state_ctx *st, const char *command);
+
+// What an app's own desktop entry says about it, display metadata only. The
+// command, the entry's file name and the launcher stay ours: a branded name
+// never renames anything a shell, a PATH or a manifest knows.
+typedef struct {
+    char *name;       // Name=    within [Desktop Entry], no locale variants
+    char *comment;    // Comment=
+    char *categories; // Categories=
+    char *keywords;   // Keywords=
+    char *wm_class;   // StartupWMClass=
+    char *notify;     // StartupNotify= when it says true or false, else NULL
+} desktop_hint;
+
+void desktop_hint_free(desktop_hint *h);
+
 char *desktop_icon_copy(const char *requested, const char *app_dir);
 
-// AppImages carry their own icon; ask the runtime to unpack into a scratch
-// directory, take the icon its .desktop names, and copy it where --icon's
-// file would have gone. NULL (no icon, no complaint) for anything that is not
-// an AppImage, has no runtime, or yields nothing: an entry without an icon is
-// a fine outcome, a failed install is not.
-char *desktop_icon_from_appimage(const char *image, const char *app_dir);
+// AppImages carry their own icon and their own name. Asks the runtime to unpack
+// into a scratch directory, copies the icon its .desktop names into the place
+// --icon's file would have gone, and returns what that .desktop advertises.
+// NULL icon and a zero-filled hint for anything that is not an AppImage, has no
+// runtime, or yields nothing: an entry without an icon is a fine outcome, a
+// failed install is not. --icon skips this entirely — an explicit icon means the
+// user is naming the picture, so we stop asking the image anything.
+char *desktop_appimage_read(const char *image, const char *app_dir,
+    desktop_hint *hint);
 void desktop_entry_write(const char *entry, const char *command,
     const char *launcher, const char *repo_path, const char *icon,
-    bool terminal);
+    const desktop_hint *hint, bool terminal);
 const char *desktop_recorded(const cmd_opts *o, const char *entry,
     bool default_on);
 bool desktop_entry_owned(const char *entry);

@@ -110,53 +110,116 @@ static bool has_suffix_ci(const char *name, const char *suffix)
     return ln >= ls && strcasecmp(name + ln - ls, suffix) == 0;
 }
 
-// The Icon= value of a .desktop file, trimmed; false if the key is absent.
-static bool desktop_file_icon_key(const char *path, char *out, size_t cap)
+// Store the first value seen for a key, bounded: these strings come out of a
+// downloaded artifact and straight into a file a desktop environment parses.
+static void take(char **slot, const char *v, size_t n)
 {
+    if (*slot != NULL) return;
+    while (n > 0 && (v[n - 1] == ' ' || v[n - 1] == '\t')) n--;
+    while (n > 0 && (*v == ' ' || *v == '\t')) { v++; n--; }
+    if (n == 0) return;
+    if (n > 512) n = 512;
+    char *s = malloc(n + 1);
+    if (s == NULL) return;
+    memcpy(s, v, n);
+    s[n] = '\0';
+    *slot = s;
+}
+
+// Reads the keys we care about out of a .desktop file, from its [Desktop Entry]
+// group only: a [Desktop Action …] group may repeat Name= for a menu item, and
+// taking that labels the app "New Window"; Name[de]= is a translation, not the
+// label, so the character after a key must be '='. Values stop at the line end,
+// so an untrusted file cannot inject a key we did not ask for. Returns whether
+// the file had a [Desktop Entry] group at all.
+static bool desktop_file_read(const char *path, desktop_hint *h, char *icon,
+    size_t icon_cap)
+{
+    struct { const char *key; char **slot; } want[] = {
+        { "Name", &h->name },           { "Comment", &h->comment },
+        { "Categories", &h->categories }, { "Keywords", &h->keywords },
+        { "StartupWMClass", &h->wm_class }, { "StartupNotify", &h->notify },
+    };
     FILE *f = fopen(path, "r");
     if (f == NULL) return false;
     char line[1024];
-    bool found = false;
+    bool in_entry = false, saw_entry = false;
     while (fgets(line, sizeof line, f) != NULL) {
-        if (strncmp(line, "Icon=", 5) != 0) continue;
-        char *v = line + 5;
-        while (*v == ' ' || *v == '\t') v++;
-        size_t n = strcspn(v, "\r\n");
-        while (n > 0 && (v[n - 1] == ' ' || v[n - 1] == '\t')) n--;
-        if (n == 0) continue;
-        if (n >= cap) n = cap - 1;
-        memcpy(out, v, n);
-        out[n] = '\0';
-        found = true;
+        if (line[0] == '[') {
+            in_entry = strncmp(line, "[Desktop Entry]", 15) == 0;
+            saw_entry = saw_entry || in_entry;
+            continue;
+        }
+        if (!in_entry) continue;
+        for (size_t i = 0; i < sizeof want / sizeof *want; i++) {
+            size_t kl = strlen(want[i].key);
+            if (strncmp(line, want[i].key, kl) != 0 || line[kl] != '=') continue;
+            const char *v = line + kl + 1;
+            take(want[i].slot, v, strcspn(v, "\r\n"));
+            break;
+        }
+        if (icon != NULL && icon[0] == '\0' && strncmp(line, "Icon=", 5) == 0) {
+            const char *v = line + 5;
+            size_t n = strcspn(v, "\r\n");
+            while (n > 0 && (v[n - 1] == ' ' || v[n - 1] == '\t')) n--;
+            if (n >= icon_cap) n = icon_cap - 1;
+            memcpy(icon, v, n);
+            icon[n] = '\0';
+        }
     }
     fclose(f);
-    return found;
+    return saw_entry;
 }
 
-// Which file in an unpacked AppImage represents it: the image its own top-level
-// .desktop names in Icon=, else the runtime's .DirIcon. The Icon= value is a
-// theme-style name with no extension, so it matches as a stem over the formats a
-// desktop entry may point at. Only the top level is scanned: deeper icons live
-// under usr/share/icons by size, and the choice there is a guess we can make
-// wrong, while the top level is where the runtime keeps the one it advertises.
-static char *pick_appimage_icon(const char *root)
+static int names_cmp(const void *a, const void *b)
 {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+// What the unpacked image's own desktop entry advertises. Top level only, and
+// sorted: readdir order is not stable, and which file answers decides the name
+// the user sees, so the alphabet decides instead. The first entry file with a
+// [Desktop Entry] group answers for everything — reading one file's Name and
+// another's Icon would invent an app that exists nowhere.
+static void read_appimage_entry(const char *root, desktop_hint *h, char *icon,
+    size_t icon_cap)
+{
+    icon[0] = '\0';
     DIR *d = opendir(root);
-    if (d == NULL) return NULL;
-    char want[256];
-    want[0] = '\0';
+    if (d == NULL) return;
+    char *names[16];
+    size_t n = 0;
     struct dirent *e;
-    while ((e = readdir(d)) != NULL) {
+    while (n < sizeof names / sizeof *names && (e = readdir(d)) != NULL) {
         if (!has_suffix_ci(e->d_name, ".desktop")) continue;
-        char *dp = path_fmt("%s/%s", root, e->d_name);
-        bool got = dp != NULL && desktop_file_icon_key(dp, want, sizeof want);
-        free(dp);
-        if (got) break;
+        names[n] = strdup(e->d_name);
+        if (names[n] == NULL) break;
+        n++;
     }
+    closedir(d);
+    qsort(names, n, sizeof *names, names_cmp);
+    for (size_t i = 0; i < n; i++) {
+        bool answered = false;
+        char *dp = path_fmt("%s/%s", root, names[i]);
+        if (dp != NULL) answered = desktop_file_read(dp, h, icon, icon_cap);
+        free(dp);
+        free(names[i]);
+        if (answered) return;
+    }
+}
+
+// Which file in the unpacked tree represents it: the image its entry names in
+// Icon=, else the runtime's .DirIcon. The Icon= value is a theme-style name with
+// no extension, so it matches as a stem over the formats a desktop entry may
+// point at.
+static char *pick_appimage_icon(const char *root, const char *want)
+{
     const char *stem = strrchr(want, '/') != NULL ? strrchr(want, '/') + 1 : want;
     size_t ls = strlen(stem);
     char *named = NULL, *fallback = NULL;
-    rewinddir(d);
+    DIR *d = opendir(root);
+    if (d == NULL) return NULL;
+    struct dirent *e;
     while ((e = readdir(d)) != NULL) {
         if (named == NULL && ls > 0 && strncasecmp(e->d_name, stem, ls) == 0
             && e->d_name[ls] == '.'
@@ -193,18 +256,35 @@ static bool looks_like_appimage(const char *image)
     return elf;
 }
 
+void desktop_hint_free(desktop_hint *h)
+{
+    if (h == NULL) return;
+    free(h->name);
+    free(h->comment);
+    free(h->categories);
+    free(h->keywords);
+    free(h->wm_class);
+    free(h->notify);
+    memset(h, 0, sizeof *h);
+}
+
 // The AppImage runtime unpacks into <cwd>/squashfs-root, so this runs in a
 // scratch directory and asks for nothing outside it. Payloads are large
 // (measured: 162 MB out of a 77 MB image in 0.23 s, 211 MB out of 135 MB in
-// 0.64 s, peak RSS under 14 MB), which is why the scratch dir sits next to the
-// app rather than in /tmp: /tmp is tmpfs on the machines we ship to, so a big
-// image would be paid for in RAM. The deadline is short on purpose — an icon
-// is decoration, and a runtime whose helper will not exit must not stall the
-// install that only wanted to look at it. A runtime that detaches a helper
-// also escapes the group kill, so this is the real bound, not a courtesy.
-// Nothing here is fatal: an install that loses an icon still installs.
-char *desktop_icon_from_appimage(const char *image, const char *app_dir)
+// 0.64 s, 209 MB out of 96 MB in 0.29 s, peak RSS under 14 MB), which is why the
+// scratch dir sits next to the app rather than in /tmp: /tmp is tmpfs on the
+// machines we ship to, so a big image would be paid for in RAM. The deadline is
+// short on purpose — an icon and a name are decoration, and a runtime whose
+// helper will not exit must not stall the install that only wanted to look at
+// them. A runtime that detaches a helper also escapes the group kill, so this is
+// the real bound, not a courtesy. Nothing here is fatal: an install that loses
+// its icon and its metadata still installs, with our own defaults.
+char *desktop_appimage_read(const char *image, const char *app_dir,
+    desktop_hint *hint)
 {
+    desktop_hint local;
+    if (hint == NULL) hint = &local;
+    memset(hint, 0, sizeof *hint);
     if (image == NULL || app_dir == NULL) return NULL;
     if (!has_suffix_ci(image, ".AppImage")) return NULL;
     if (!looks_like_appimage(image)) return NULL;
@@ -216,27 +296,42 @@ char *desktop_icon_from_appimage(const char *image, const char *app_dir)
     const char *av[] = { image, "--appimage-extract", NULL };
     (void)proc_run_env(av, NULL, dir, 25000, NULL);
 
-    char *picked = pick_appimage_icon(root);
+    char want[256];
+    read_appimage_entry(root, hint, want, sizeof want);
+    // a runtime that says something else about startup is on its own; only the
+    // two documented values are safe to put in front of a desktop environment
+    if (hint->notify != NULL && strcmp(hint->notify, "true") != 0
+        && strcmp(hint->notify, "false") != 0) {
+        free(hint->notify);
+        hint->notify = NULL;
+    }
+    char *picked = pick_appimage_icon(root, want);
     char *copied = picked != NULL ? desktop_icon_copy(picked, app_dir) : NULL;
-    // no icon is a fine outcome and says nothing: the entry renders, the
-    // install succeeded, and every AppImage whose runtime declines would
-    // otherwise read this line on every install
+    // no icon and no metadata is a fine outcome and says nothing: the entry
+    // renders with our own defaults, the install succeeded, and every AppImage
+    // whose runtime declines would otherwise read this line on every install
     (void)fs_rm_tree(dir);
+    if (hint == &local) desktop_hint_free(&local);
     free(picked);
     free(root);
     free(tmpl);
     return copied;
 }
 
-// generic desktop entry, plus the C-only X-ApeGet-Managed key
+// generic desktop entry, plus the C-only X-ApeGet-Managed key. The app's own
+// words win where it has them; the repo slug and Utility; are what an app with
+// nothing to say falls back to.
 void desktop_entry_write(const char *entry, const char *command,
     const char *launcher, const char *repo_path, const char *icon,
-    bool terminal)
+    const desktop_hint *hint, bool terminal)
 {
     if (entry == NULL) return;
     const char *slash = strrchr(repo_path, '/');
     const char *name = slash != NULL ? slash + 1 : repo_path;
     if (name == NULL) name = command;
+    if (hint != NULL && hint->name != NULL) name = hint->name;
+    const char *cats = hint != NULL && hint->categories != NULL
+        ? hint->categories : "Utility;";
     char *parent = strdup(entry);
     if (parent != NULL) {
         char *p = strrchr(parent, '/');
@@ -246,8 +341,15 @@ void desktop_entry_write(const char *entry, const char *command,
     FILE *f = fopen(entry, "w");
     if (f == NULL) return;
     fprintf(f, "[Desktop Entry]\nType=Application\nName=%s\n"
-        "Exec=\"%s\"\nTerminal=%s\nCategories=Utility;\n",
-        name, launcher, terminal ? "true" : "false");
+        "Exec=\"%s\"\nTerminal=%s\nCategories=%s\n",
+        name, launcher, terminal ? "true" : "false", cats);
+    if (hint != NULL) {
+        if (hint->comment != NULL) fprintf(f, "Comment=%s\n", hint->comment);
+        if (hint->keywords != NULL) fprintf(f, "Keywords=%s\n", hint->keywords);
+        if (hint->wm_class != NULL) fprintf(f, "StartupWMClass=%s\n",
+            hint->wm_class);
+        if (hint->notify != NULL) fprintf(f, "StartupNotify=%s\n", hint->notify);
+    }
     if (icon != NULL) fprintf(f, "Icon=%s\n", icon);
     fputs("X-ApeGet-Managed=true\n", f);
     fclose(f);
