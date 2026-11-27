@@ -15,6 +15,7 @@ A command-line tool for managing GitHub, Gitea/Forgejo/Codeberg, GitLab, and rng
 - **Update** installed releases if newer versions are available
 - **Uninstall** installed release
 - **List** all installed releases
+- **Setup** so a shell finds `ape-get` as a command
 - **Help** for usage guidance
 
 Supported formats: appimage, ape, portable exe (incl. through wine)
@@ -34,12 +35,23 @@ chmod +x ape-get.com
 ```
 
 On Windows, run it from Command Prompt (`ape-get.com list`) or from PowerShell (`.\ape-get.com list`).
+There is no `setup` there yet: the `.com` runs where it is.
 
-The first run registers `ape-get` (pun intended) as a command by installing a copy to `~/.local/bin/ape-get`; the downloaded file can then be deleted. From there `ape-get` updates itself like any release it manages:
+The downloaded file works as it is, from wherever you downloaded it. To have
+`ape-get` as a command, run `setup`: it installs a copy to `~/.local/bin/ape-get`
+and adds that directory to your shell's profile only if the shell cannot already
+find it. The downloaded file can then be deleted.
 
 ```bash
+./ape-get.com setup
 ape-get update ape-get
 ```
+
+`setup` shows its plan and asks once — `--dry-run` plans without changing
+anything, `-y` answers for you. `ape-get update ape-get` keeps the installed copy
+current from then on, like any release ape-get manages; a copy you placed there
+yourself is left alone, and ape-get running from a download says so and points at
+`setup`.
 
 ---
 
@@ -62,6 +74,7 @@ A repository is `owner/repo`, or `provider:owner/repo` to name one provider. `gi
 | `providers ...` | List, add, update, remove, or recover providers |
 | `doctor` | Diagnose state and platform issues, `--heal` applies fixes |
 | `adopt [owner/repo]` | Adopt an existing Linux install |
+| `setup` | Install ape-get where a shell finds it, and put that directory on PATH |
 | `completions bash\|zsh` | Print a shell completion script |
 | `help` | Show usage instructions |
 
