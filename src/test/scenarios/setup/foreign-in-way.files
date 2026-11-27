@@ -1,0 +1,4 @@
+--- .profile (absent) ---
+--- .local/bin/ape-get (0755) ---
+#!/bin/sh
+echo "someone else's ape-get"

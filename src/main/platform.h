@@ -34,6 +34,10 @@ const char *platform_os_name(platform_os os);
 // written here, or without $HOME.
 char *platform_path_target(platform_os os);
 
+// Whether dir is already one of this process's PATH entries. The shell that
+// ran the command can already find the command, so nothing needs writing.
+bool platform_path_effective(const char *dir);
+
 // Whether dir is already in that file exactly as register would write it.
 bool platform_path_registered(platform_os os, const char *dir);
 

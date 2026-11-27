@@ -1,0 +1,5 @@
+ape-get setup --dry-run
+  System:  Linux x86_64
+  Command: <INSTALL_ROOT>/ape-get (would be written)
+  PATH:    <INSTALL_ROOT> is not in <HOME>/.profile (would add the line)
+Nothing was written (--dry-run).

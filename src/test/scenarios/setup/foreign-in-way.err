@@ -1,0 +1,4 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Error: <INSTALL_ROOT>/ape-get already exists and is not this ape-get. ape-get never overwrites it: move it aside and run setup again.

@@ -1,0 +1,8 @@
+ape-get setup
+  System:  Linux x86_64
+  Command: <INSTALL_ROOT>/ape-get (to be written)
+  PATH:    <INSTALL_ROOT> is not in <HOME>/.profile (setup adds the line)
+ape-get installed at <INSTALL_ROOT>/ape-get.
+Added <INSTALL_ROOT> to PATH in <HOME>/.profile.
+If you ran this from a download, you can safely delete that file.
+Open a new terminal, then check with: ape-get about.

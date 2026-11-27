@@ -2,7 +2,7 @@
 # install:  complete -F _ape_get ape-get   (or source this file)
 _ape_get()
 {
-    local commands="search install uninstall remove untrust update upgrade list info providers rollback doctor config adopt lock unlock about completions help"
+    local commands="setup search install uninstall remove untrust update upgrade list info providers rollback doctor config adopt lock unlock about completions help"
     local globals="--json --quiet --yes -y --colour --color --no-progress --experimental-compat --help"
     local cur prev
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -20,6 +20,9 @@ _ape_get()
             return ;;
         --channel)
             COMPREPLY=( $(compgen -W "stable beta" -- "$cur") )
+            return ;;
+        --override-platform)
+            COMPREPLY=( $(compgen -W "linux macos windows" -- "$cur") )
             return ;;
         --asset|--version|--name|--icon|--api|--token-env)
             return ;;

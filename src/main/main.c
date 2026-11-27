@@ -139,8 +139,10 @@ int main(int argc, char **argv)
             return 2;
         }
         const char *arg = NULL;
+        bool bare = false;   // the message names the word that was not understood
         if (o.usage_msg != NULL) {
             arg = o.usage_msg;
+            bare = strchr(o.usage_msg, ' ') == NULL;
         } else if (o.nargs > 0) {
             static char joined[512];
             joined[0] = '\0';
@@ -149,14 +151,29 @@ int main(int argc, char **argv)
                 strncat(joined, o.args[k], sizeof(joined) - strlen(joined) - 1);
             }
             arg = joined;
+            bare = true;
         }
-        if (arg != NULL && arg[0] != '\0')
-            put_s(stderr, UI_ERROR, "Unknown command: %s", arg);
+        // only a bare word gets the "unknown command" label: the parser's own
+        // sentences explain themselves, and relabelling one reads as nonsense
+        if (arg != NULL && arg[0] != '\0') {
+            if (bare) put_s(stderr, UI_ERROR, "Unknown command: %s", arg);
+            else put_s(stderr, UI_ERROR, "%s", arg);
+        }
         global_help(stderr);
         return 2;
     }
 
     switch (o.id) {
+    case CMD_SETUP: {
+        // setup writes the self manifest, so it passes the same state gates as
+        // any other mutation; it asks nothing of the network, so no proxy
+        state_ctx st;
+        if (!state_open(&st)) return 2;
+        if (!lock_repair(&st)) return 1;
+        if (!recover_gate(&st, &o, "setup")) return 1;
+        state_ensure(&st, o.quiet, o.json);
+        return setup_run(&o, &st);
+    }
     case CMD_ABOUT:
         return run_about();
     case CMD_COMPLETIONS:

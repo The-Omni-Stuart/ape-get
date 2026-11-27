@@ -24,6 +24,19 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st);
 // entries uninstall may remove.
 bool desktop_entry_owned(const char *entry);
 
+// setup's reading of the installed copy, by comparing it with the running
+// executable: SELF_OK is this very file, SELF_BLOCKED is anything else there.
+// The two are not told apart, because telling them apart reliably needs a
+// marker our fat builds do not carry (see issues-internal#3), and setup
+// refuses both the same way. target gets the path whenever it can be named,
+// whatever the answer. self_enabled covers both switches that can turn the
+// mechanism off — the build option and the run's environment — because a
+// caller deciding what to promise needs the answer for this run.
+typedef enum { SELF_NONE = 0, SELF_OK, SELF_BLOCKED } self_state;
+
+bool self_enabled(void);
+self_state self_install_status(const state_ctx *st, char **target);
+
 // Remembers argv[0] for self-integration's loader fallback; a no-op unless
 // the build enables APEGET_SELF.
 void self_set_argv0(const char *argv0);

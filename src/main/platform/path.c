@@ -63,6 +63,24 @@ char *platform_path_target(platform_os os)
     return target;
 }
 
+// Whether this process's PATH already holds dir as one of its entries. A
+// shell that can already find the command needs no line written for it, and
+// ~/.local/bin is on PATH out of the box on the systems setup runs on.
+bool platform_path_effective(const char *dir)
+{
+    const char *path = getenv("PATH");
+    if (path == NULL || dir == NULL) return false;
+    size_t dl = strlen(dir);
+    if (dl == 0) return false;
+    for (const char *p = path; ; ) {
+        const char *e = strchr(p, ':');
+        size_t len = e != NULL ? (size_t)(e - p) : strlen(p);
+        if (len == dl && !strncmp(p, dir, len)) return true;
+        if (e == NULL) return false;
+        p = e + 1;
+    }
+}
+
 bool platform_path_registered(platform_os os, const char *dir)
 {
     char *file = platform_path_target(os);

@@ -1,0 +1,7 @@
+Usage: <ENTRYPOINT> setup [options]
+
+Options:
+  --override-platform <linux|macos> - install for this system
+  --dry-run - show what would happen without changing anything
+
+Common: --json --quiet --yes --colour <auto|always|never>

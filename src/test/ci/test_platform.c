@@ -177,6 +177,25 @@ static void path_cases(void)
         "export PATH=\"/z/bin:$PATH\"  # ape-get\n");
     free(text);
 
+    // A directory the environment already lists needs no line written for it.
+    // Entries are compared whole, so a look-alike prefix is not a hit.
+    char *saved = getenv("PATH") != NULL ? strdup(getenv("PATH")) : NULL;
+    setenv("PATH", "/usr/bin:/x/bin:/bin", 1);
+    expect_bool("a middle entry is effective",
+        platform_path_effective("/x/bin"), true);
+    expect_bool("the first entry counts",
+        platform_path_effective("/usr/bin"), true);
+    expect_bool("the last entry counts", platform_path_effective("/bin"), true);
+    expect_bool("a prefix of an entry is not effective",
+        platform_path_effective("/x"), false);
+    expect_bool("an extension of an entry is not effective",
+        platform_path_effective("/x/bin2"), false);
+    setenv("PATH", "", 1);
+    expect_bool("an empty PATH holds nothing",
+        platform_path_effective("/x/bin"), false);
+    if (saved != NULL) { setenv("PATH", saved, 1); free(saved); }
+    else unsetenv("PATH");
+
     // A file present but unreadable is never clobbered. Root reads anything,
     // so that case is only meaningful for someone who cannot.
     if (geteuid() != 0) {

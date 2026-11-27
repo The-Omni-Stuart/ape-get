@@ -1,0 +1,4 @@
+ape-get setup
+  System:  Linux x86_64
+  Command: <INSTALL_ROOT>/ape-get (something else is in the way)
+  PATH:    <INSTALL_ROOT> is not in <HOME>/.profile (setup adds the line)

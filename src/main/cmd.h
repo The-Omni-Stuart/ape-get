@@ -9,7 +9,7 @@ typedef enum cmd_id {
     CMD_INFO, CMD_PROVIDERS, CMD_ROLLBACK, CMD_DOCTOR, CMD_ADOPT,
     CMD_HELP, CMD_USAGE,
     CMD_LOCK, CMD_UNLOCK, CMD_ABOUT, CMD_COMPLETIONS,
-    CMD_UNTRUST, CMD_CONFIG
+    CMD_UNTRUST, CMD_CONFIG, CMD_SETUP
 } cmd_id;
 
 typedef struct cmd_opts {
@@ -19,6 +19,7 @@ typedef struct cmd_opts {
     int experimental_compat, no_progress, help;
     const char *channel, *provider, *asset, *version, *kind, *name, *icon;
     const char *colour;
+    const char *override_platform;   // setup only: the system to lay out for
     char **args;   // positional args after flag stripping; NUL-terminated
     int nargs;
     cmd_id id;

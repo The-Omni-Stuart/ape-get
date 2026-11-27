@@ -2,6 +2,7 @@ Error: Unknown command: --strcit
 Usage: <ENTRYPOINT> [command] [options]
 
 Commands:
+  setup - install ape-get itself where a shell finds it
   search [name] - search for a release by name
   install [name] - install provider:owner/repo, or a bare owner/repo across providers
   uninstall [name] - uninstall the release by name

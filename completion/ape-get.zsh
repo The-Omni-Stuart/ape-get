@@ -5,6 +5,7 @@ _ape_get()
 {
     local -a commands
     commands=(
+        'setup:install ape-get itself where a shell finds it'
         'search:search for a release by name'
         'install:install provider:owner/repo or owner/repo'
         'uninstall:uninstall an installed release'
@@ -60,6 +61,12 @@ _ape_get()
         doctor)
             _values 'doctor flags' \
                 '--diagnose[report only]' '--heal[report then repair]' \
+                '--json' '--quiet' '--colour[styling]:colour:(auto always never)'
+            return ;;
+        setup)
+            _values 'setup flags' \
+                '--override-platform[system to install for]:system:(linux macos windows)' \
+                '--dry-run[show what would happen]' \
                 '--json' '--quiet' '--colour[styling]:colour:(auto always never)'
             return ;;
     esac

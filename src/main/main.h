@@ -73,6 +73,7 @@ int cmd_providers_remove(const cmd_opts *o, state_ctx *st,
 } while (0)
 
 // command entry points; rc is the process exit code
+int setup_run(const cmd_opts *o, state_ctx *st);
 int providers_run(const cmd_opts *o, state_ctx *st);
 int uninstall_run(const cmd_opts *o, state_ctx *st);
 bool uninstall_one(const state_ctx *st, manifest_entry *m);

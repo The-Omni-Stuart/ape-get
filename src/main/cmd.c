@@ -22,6 +22,7 @@
 // graph keeps it ui-free at level 0.
 
 static const char *const HELP_COMMANDS[] = {
+    "  setup - install ape-get itself where a shell finds it",
     "  search [name] - search for a release by name",
     "  install [name] - install provider:owner/repo,"
     " or a bare owner/repo across providers",
@@ -55,6 +56,12 @@ static const char *const GLOBAL_OPTIONS[] = {
 };
 
 static const char *const OPTS_NONE[] = { NULL };
+
+static const char *const OPTS_SETUP[] = {
+    "  --override-platform <linux|macos> - install for this system",
+    "  --dry-run - show what would happen without changing anything",
+    NULL
+};
 
 static const char *const OPTS_SEARCH[] = {
     "  --provider <name> - use a configured provider for search or install",
@@ -134,6 +141,7 @@ static const char *const OPTS_DOCTOR[] = {
 };
 
 static const cmd_help CMDS[] = {
+    {"setup",     "[options]", OPTS_SETUP, CMD_SETUP, 0, 0},
     {"search",    "<name> [options]", OPTS_SEARCH, CMD_SEARCH, 1, -1},
     {"install",   "<name> [options]", OPTS_INSTALL, CMD_INSTALL, 1, 1},
     {"uninstall", "<name> [options] (alias: remove)", OPTS_UNINSTALL,
@@ -238,6 +246,8 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
         else if (!strcmp(a, "--kind")) VALV(out->kind, "--kind");
         else if (!strcmp(a, "--name")) VALV(out->name, "--name");
         else if (!strcmp(a, "--icon")) VALV(out->icon, "--icon");
+        else if (!strcmp(a, "--override-platform"))
+            VALV(out->override_platform, "--override-platform");
         else if (!strcmp(a, "--no-command")) out->no_command = 1;
         else if (!strcmp(a, "--assimilate")) out->assimilate = 1;
         else if (!strcmp(a, "--desktop")) out->desktop = 1;
@@ -281,7 +291,14 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
         return;
     }
 
-    if (n == 0) { out->id = CMD_HELP; return; }
+    if (n == 0) {
+        out->id = CMD_HELP;
+        if (out->override_platform != NULL) {   // a flag with no command for it
+            out->usage_error = 1;
+            out->usage_msg = "--override-platform needs the setup command";
+        }
+        return;
+    }
     const char *c = pos[0];
     for (size_t k = 0; k < sizeof(CMDS) / sizeof(CMDS[0]); k++)
         if (!strcmp(c, CMDS[k].name)) {
@@ -319,6 +336,13 @@ void cmd_parse(char **argv, int argc, cmd_opts *out)
                 && !out->usage_error) {
                 out->usage_error = 1;
                 out->usage_msg = unknown;
+            }
+            // a flag belonging to one command only is refused elsewhere: it
+            // would otherwise be accepted and silently do nothing
+            if (out->override_platform != NULL && out->id != CMD_SETUP
+                && !out->usage_error) {
+                out->usage_error = 1;
+                out->usage_msg = "--override-platform is only for setup";
             }
             return;
         }

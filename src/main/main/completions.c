@@ -150,6 +150,7 @@ int run_completions(const cmd_opts *o)
           "    case \"$1\" in\n"
           "    --colour) echo auto always never ;;\n"
           "    --kind) echo appimage portable-exe ape nsis msi dmg ;;\n"
+          "    --override-platform) echo linux macos windows ;;\n"
           "    --channel) echo stable beta ;;\n"
           "    --type) echo auto github gitea gitlab rngit ;;\n"
           "    --provider) _apg_providers ;;\n"

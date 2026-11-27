@@ -19,6 +19,7 @@ _apg_values() {
     case "$1" in
     --colour) echo auto always never ;;
     --kind) echo appimage portable-exe ape nsis msi dmg ;;
+    --override-platform) echo linux macos windows ;;
     --channel) echo stable beta ;;
     --type) echo auto github gitea gitlab rngit ;;
     --provider) _apg_providers ;;
@@ -26,6 +27,9 @@ _apg_values() {
 }
 _apg_flags() {
     case "$1" in
+    setup)
+        echo --override-platform --dry-run
+        ;;
     search)
         echo --provider
         ;;
@@ -59,8 +63,8 @@ _apg_flags() {
     esac
     echo --help --json --quiet -y --yes --colour --no-progress --experimental-compat
 }
-_apg_commands="search install uninstall remove untrust update upgrade list info providers rollback doctor config adopt about lock unlock completions help"
-_apg_value_flags=" --colour --provider --version --asset --kind --name --icon --channel --type --api --token-env --url "
+_apg_commands="setup search install uninstall remove untrust update upgrade list info providers rollback doctor config adopt about lock unlock completions help"
+_apg_value_flags=" --colour --override-platform --provider --version --asset --kind --name --icon --channel --type --api --token-env --url "
 _apg_verbs="list show add update remove recover"
 _apg_ref_cmds=" uninstall remove update upgrade info rollback adopt lock unlock untrust "
 _ape_get() {

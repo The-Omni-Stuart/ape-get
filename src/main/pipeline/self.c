@@ -601,6 +601,28 @@ done:
     free(exe);
 }
 
+bool self_enabled(void)
+{
+    // the run-level switch is part of the answer: a caller asking whether
+    // self-integration will happen must not be told "yes" by the build flags
+    const char *off = getenv("APEGET_NO_SELF");
+    return !(off != NULL && strcmp(off, "1") == 0);
+}
+
+self_state self_install_status(const state_ctx *st, char **target)
+{
+    if (target != NULL) *target = NULL;
+    char *exe = self_exe_path();
+    char *path = path_join(st->install_root, SELF_NAME);
+    self_state s = SELF_NONE;
+    if (exe != NULL && path != NULL && fs_exists(path))
+        s = self_identical(exe, path) ? SELF_OK : SELF_BLOCKED;
+    if (target != NULL) *target = path;
+    else free(path);
+    free(exe);
+    return s;
+}
+
 #else /* !APEGET_SELF */
 
 void self_set_argv0(const char *argv0)
@@ -612,6 +634,15 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st)
 {
     (void)o;
     (void)st;
+}
+
+bool self_enabled(void) { return false; }
+
+self_state self_install_status(const state_ctx *st, char **target)
+{
+    (void)st;
+    if (target != NULL) *target = NULL;
+    return SELF_NONE;
 }
 
 #endif /* APEGET_SELF */

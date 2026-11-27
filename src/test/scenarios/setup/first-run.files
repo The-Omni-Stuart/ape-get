@@ -1,0 +1,2 @@
+--- .profile (0644) ---
+export PATH="<INSTALL_ROOT>:$PATH"  # ape-get

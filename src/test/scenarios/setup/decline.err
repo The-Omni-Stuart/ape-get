@@ -1,0 +1,6 @@
+First-time setup complete.
+  config: <STATE_ROOT>/grm_config.json
+  index:  <STATE_ROOT>/grm_index.json
+Install ape-get at <INSTALL_ROOT>/ape-get and list <INSTALL_ROOT> in <HOME>/.profile?
+Confirmation required. Re-run with --yes (or -y) to approve.
+Error: Setup declined. Nothing has been changed.
