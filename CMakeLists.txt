@@ -306,12 +306,14 @@ set_tests_properties(source_probe_missing PROPERTIES
   PASS_REGULAR_EXPRESSION "No repository with a published release matching 'owner/tool'")
 
 add_executable(test_platform ${CMAKE_SOURCE_DIR}/src/test/ci/test_platform.c)
-target_link_libraries(test_platform PRIVATE m_platform m_path)
+target_link_libraries(test_platform PRIVATE m_platform m_fs m_path)
 target_link_options(test_platform PRIVATE -Wl,--wrap=uname)
 apeget_test_entry(test_platform PLATFORM_TEST_EXE)
 add_test(NAME platform_description COMMAND "${PLATFORM_TEST_EXE}")
 add_test(NAME platform_description_without_kernel
          COMMAND "${PLATFORM_TEST_EXE}" no-kernel)
+add_test(NAME platform_detection COMMAND "${PLATFORM_TEST_EXE}" detect)
+add_test(NAME platform_path COMMAND "${PLATFORM_TEST_EXE}" path)
 
 add_test(NAME deps_graph_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/check_deps_graph.py
