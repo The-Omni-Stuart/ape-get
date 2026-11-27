@@ -104,6 +104,20 @@ int run_help(const char *cmd)
     return 2;
 }
 
+// Until the file someone downloaded becomes an installed command, every
+// command says so: running from a download is where everyone starts, and the
+// remedy is two words away. Never in --json or --quiet output, never on a
+// pipe, never on setup itself or the script completions prints.
+static void portable_notice(const cmd_opts *o)
+{
+    if (o->json || o->quiet) return;
+    if (o->id == CMD_SETUP || o->id == CMD_COMPLETIONS) return;
+    if (!isatty(fileno(stderr))) return;
+    if (!self_enabled() || self_is_installed()) return;
+    put_s(stderr, UI_NONE, "ape-get is running in portable mode. Run"
+        " 'ape-get setup' to install it where a shell can find it.");
+}
+
 int main(int argc, char **argv)
 {
     // a disconnected peer must surface as EPIPE from the write paths, not as a fatal signal
@@ -128,6 +142,8 @@ int main(int argc, char **argv)
 
     if (o.help) // C-only flag: --help / <command> --help
         return run_help(o.nargs >= 1 ? o.args[0] : NULL);
+
+    portable_notice(&o);
 
     if (o.usage_error) {
         // the argument doubles as the usage-error message (unknown command,

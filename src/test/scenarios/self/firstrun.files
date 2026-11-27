@@ -1,2 +1,1 @@
---- .local/share/github-release-manager/grm_config.json (0644) ---
-{"kind":"grm.config","schema_version":1,"strict_verification":false,"require_signature":false,"backup_count":1,"install_root":null,"providers":{"forge":{"type":"gitea","url":"https://forge.example","api":"https://forge.example/api/v1","token_env":null}},"search_all_providers":true,"update_channel":"stable","auto_update":"off","update_interval_hours":24,"network_timeout_seconds":30,"proxy":null}--- .local/share/github-release-manager/applications/self/ape-get/grm_manifest.json (absent) ---
+--- .local/share/github-release-manager/applications/self (absent) ---

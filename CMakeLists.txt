@@ -337,6 +337,9 @@ add_test(NAME completions_check
 add_test(NAME completions_pty_check
          COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_completions_pty.py
                  ${APEGET_TEST_EXE})
+add_test(NAME portable_notice_pty_check
+         COMMAND ${PYTHON3} ${CMAKE_SOURCE_DIR}/src/test/ci/test_portable_notice_pty.py
+                 ${APEGET_TEST_EXE})
 
 # delta round-trip: vendored xdelta3 encoder (test-only build; never
 # linked into the product) -> product decode path (xdelta_apply_fd).

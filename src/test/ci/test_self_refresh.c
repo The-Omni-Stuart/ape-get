@@ -113,7 +113,9 @@ int main(int argc, char **argv)
         free(text);
         printf("{\"written\":%s}\n", ok ? "true" : "false");
     } else {
-        pipeline_self_after(&o, &st);
+        // every mode here is a registration crash window: the journalled copy
+        // and manifest write that only setup performs
+        pipeline_self_register(&o, &st);
         printf("{\"version\":\"%s\",\"checked_journals\":%d}\n",
             APEGET_VERSION, checked_journals);
     }

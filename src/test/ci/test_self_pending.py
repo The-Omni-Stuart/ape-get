@@ -178,15 +178,11 @@ def run_case(driver, product, base, name):
             journal.chmod(0o644)
     assert p.returncode == (1 if kind == "lock" else 0), (name, p.returncode, p.stdout, p.stderr)
     if main_case:
-        if kind == "list":
-            assert target.read_bytes() == executable.read_bytes(), name
-            assert json.loads(self_manifest.read_text())["asset"]["sha256"] == sha(target.read_bytes()), name
-        elif kind == "uninstall":
-            assert not journal.exists(), (name, p.stderr)
-            assert target.exists() and self_manifest.exists(), (name, p.stderr)
-        else:
-            assert not target.exists() and not self_manifest.exists(), (name, p.stderr)
-            assert not journal.exists(), name
+        # A command run from a downloaded file registers nothing for itself:
+        # that is setup's decision alone now. Whatever the command achieved,
+        # it leaves no self target, no self manifest and no journal behind.
+        assert not journal.exists(), (name, p.stderr)
+        assert not target.exists() and not self_manifest.exists(), (name, p.stderr)
     elif writer and kind in {"same", "absent"}:
         assert json.loads(p.stdout)["written"], (name, p.stdout, p.stderr)
         assert journal.read_text() == executable.read_text(), name

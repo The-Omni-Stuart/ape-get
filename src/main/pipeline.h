@@ -14,11 +14,21 @@ int pipeline_update_all(const cmd_opts *o, state_ctx *st);
 // list --outdated; read-only, no op log.
 int pipeline_outdated(const cmd_opts *o, state_ctx *st);
 
-// First run copies the binary into the install root under the journal, plus
-// self manifest; never alters the caller's result. Absent: APEGET_SELF=OFF.
-// Locking: mutation commands hold the state lock already; a query command
-// reaching this takes it for the registration writes, or skips them.
+// Keeps a registered ape-get's manifest current after a successful command;
+// installs nothing, and does nothing at all where nothing was registered.
+// Never alters the caller's result. Absent: APEGET_SELF=OFF. Locking:
+// mutation commands hold the state lock already; a query command reaching
+// this takes it for the writes, or skips them.
 void pipeline_self_after(const cmd_opts *o, state_ctx *st);
+
+// Registers the running executable: the copy, the manifest, the journal.
+// Only setup calls it — it is the step that decides ape-get is installed
+// rather than a file someone happens to be running.
+void pipeline_self_register(const cmd_opts *o, state_ctx *st);
+
+// True when a self manifest exists: what tells the portable notice to keep
+// quiet. Needs no state, so commands that never open any can still ask.
+bool self_is_installed(void);
 
 // True when a desktop entry carries ape-get's managed marker: the only
 // entries uninstall may remove.

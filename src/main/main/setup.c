@@ -199,7 +199,7 @@ int setup_run(const cmd_opts *o, state_ctx *st)
     // the order the user needs. Warnings still come through unsilenced.
     cmd_opts quieter = *o;
     quieter.quiet = 1;
-    pipeline_self_after(&quieter, st);
+    pipeline_self_register(&quieter, st);
 
     state = self_install_status(st, NULL);
     if (state != SELF_OK) {

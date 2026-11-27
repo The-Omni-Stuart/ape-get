@@ -1,6 +1,8 @@
-// Self-integration: after successful commands (queries included, under the
-// lock), copy the executable into the install
-// root, journalled and staged .tmp-<id> for recovery; never fails the caller.
+// Self-integration: the copy of ape-get that lives in the install root, plus
+// the self manifest that lets `update ape-get` keep it current. Registering
+// that copy is setup's decision alone; every other command only refreshes what
+// setup already wrote. Journalled and staged .tmp-<id> for recovery; never
+// fails the caller.
 
 #include "pipeline.h"
 #include "repo.h"
@@ -440,7 +442,7 @@ drop:
     jb_free(&b);
 }
 
-void pipeline_self_after(const cmd_opts *o, state_ctx *st)
+static void self_after(const cmd_opts *o, state_ctx *st, bool allow_first_run)
 {
     const char *off = getenv("APEGET_NO_SELF");
     if (off != NULL && strcmp(off, "1") == 0) return;
@@ -502,6 +504,11 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st)
         }
         goto done;
     }
+
+    // No manifest means there is nothing to refresh, and registering one copies
+    // a binary and writes state: a decision, not a side effect, so only setup
+    // asks for it.
+    if (!allow_first_run) goto done;
 
     // an existing non-identical file is never overwritten
     if (tg && !self_identical(exe, target)) {
@@ -601,6 +608,34 @@ done:
     free(exe);
 }
 
+// Every successful command reaches this: it keeps an already-registered
+// ape-get's manifest current and never installs anything.
+void pipeline_self_after(const cmd_opts *o, state_ctx *st)
+{
+    self_after(o, st, false);
+}
+
+// setup only: registers this executable, which is what makes `update ape-get`
+// able to keep the installed copy current.
+void pipeline_self_register(const cmd_opts *o, state_ctx *st)
+{
+    self_after(o, st, true);
+}
+
+// Whether this machine has a registered ape-get. The manifest is the fact
+// itself, and its place does not move with a config install_root, so the
+// portable notice can be decided without reading any configuration.
+bool self_is_installed(void)
+{
+    char *root = path_state_root();
+    char *mfile = root != NULL
+        ? manifest_path(root, SELF_PROVIDER, SELF_NAME) : NULL;
+    bool ok = mfile != NULL && fs_exists(mfile);
+    free(mfile);
+    free(root);
+    return ok;
+}
+
 bool self_enabled(void)
 {
     // the run-level switch is part of the answer: a caller asking whether
@@ -635,6 +670,14 @@ void pipeline_self_after(const cmd_opts *o, state_ctx *st)
     (void)o;
     (void)st;
 }
+
+void pipeline_self_register(const cmd_opts *o, state_ctx *st)
+{
+    (void)o;
+    (void)st;
+}
+
+bool self_is_installed(void) { return false; }
 
 bool self_enabled(void) { return false; }
 
