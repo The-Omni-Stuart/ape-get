@@ -113,6 +113,13 @@ char *cn_from_asset(const char *repo_path, const char *asset_name);
 // pipeline/desktop.c: Linux desktop entries
 char *desktop_entry_path(const state_ctx *st, const char *command);
 char *desktop_icon_copy(const char *requested, const char *app_dir);
+
+// AppImages carry their own icon; ask the runtime to unpack into a scratch
+// directory, take the icon its .desktop names, and copy it where --icon's
+// file would have gone. NULL (no icon, no complaint) for anything that is not
+// an AppImage, has no runtime, or yields nothing: an entry without an icon is
+// a fine outcome, a failed install is not.
+char *desktop_icon_from_appimage(const char *image, const char *app_dir);
 void desktop_entry_write(const char *entry, const char *command,
     const char *launcher, const char *repo_path, const char *icon,
     bool terminal);

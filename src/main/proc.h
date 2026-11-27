@@ -14,8 +14,10 @@ bool proc_dir_on_path(const char *dir);        // exact directory entry on $PATH
 long proc_run(const char *const argv[], int timeout_ms, char **out);
 
 // Same with an explicit NULL-terminated child env (gpg and friends must run
-// scrubbed); NULL inherits the parent's.
+// scrubbed; NULL inherits the parent's) and an explicit child cwd (NULL keeps
+// ours). cwd matters for children that write where they run rather than
+// wherever they are named — a missing directory is a spawn failure, not a 127.
 long proc_run_env(const char *const argv[], char *const env[],
-    int timeout_ms, char **out);
+    const char *cwd, int timeout_ms, char **out);
 
 #endif

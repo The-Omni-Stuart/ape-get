@@ -187,7 +187,7 @@ sig_status sig_run_gpg_home(const char *home, const char *sig_file,
         return out->status;
     }
     char *o = NULL;
-    long rc = proc_run_env(argv, env, gpg_timeout_ms(), &o);
+    long rc = proc_run_env(argv, env, NULL, gpg_timeout_ms(), &o);
     if (env != NULL) free_env(env);
     if (rc < 0 && rc != -2) {
         free(o);
@@ -261,7 +261,7 @@ static long gpg_home_run(const char *const *argv, char **out)
 {
     char **env = sanitized_env();
     if (env == NULL) return -1;
-    long rc = proc_run_env(argv, env, gpg_timeout_ms(), out);
+    long rc = proc_run_env(argv, env, NULL, gpg_timeout_ms(), out);
     free_env(env);
     return rc;
 }

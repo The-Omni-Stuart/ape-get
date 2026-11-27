@@ -73,6 +73,8 @@ const char *desktop_recorded(const cmd_opts *o, const char *e, bool d)
 bool desktop_entry_owned(const char *e) { (void)e; abort(); }
 char *desktop_icon_copy(const char *r, const char *a)
 { (void)r; (void)a; abort(); }
+char *desktop_icon_from_appimage(const char *i, const char *a)
+{ (void)i; (void)a; abort(); }
 void desktop_entry_write(const char *e, const char *c, const char *l,
     const char *r, const char *i, bool t)
 { (void)e; (void)c; (void)l; (void)r; (void)i; (void)t; abort(); }

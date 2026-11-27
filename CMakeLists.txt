@@ -99,7 +99,7 @@ target_link_libraries(m_txn PUBLIC m_crypto)
 target_link_libraries(m_state PUBLIC m_crypto)
 
 # the one module allowed to consume liblzma and xdelta3 (the decode stage)
-target_link_libraries(m_pipeline PUBLIC lzmadec xdelta3dec)
+target_link_libraries(m_pipeline PUBLIC lzmadec xdelta3dec m_proc)
 
 # Embedded trust store: the CA bundle compiles into http;
 # $APEGET_CA_BUNDLE overrides it at runtime.
@@ -295,6 +295,12 @@ target_link_libraries(test_proc_run PRIVATE m_proc)
 apeget_test_entry(test_proc_run PROC_RUN_TEST_EXE)
 add_test(NAME proc_run_check COMMAND "${PROC_RUN_TEST_EXE}")
 set_tests_properties(proc_run_check PROPERTIES TIMEOUT 30)
+
+add_executable(test_appimage_icon ${CMAKE_SOURCE_DIR}/src/test/ci/test_appimage_icon.c)
+target_link_libraries(test_appimage_icon PRIVATE m_pipeline m_ui m_path m_fs)
+apeget_test_entry(test_appimage_icon APPIMAGE_ICON_TEST_EXE)
+add_test(NAME appimage_icon COMMAND "${APPIMAGE_ICON_TEST_EXE}")
+set_tests_properties(appimage_icon PROPERTIES TIMEOUT 120)
 
 add_executable(test_source_lookup ${CMAKE_SOURCE_DIR}/src/test/ci/test_source_lookup.c)
 target_link_libraries(test_source_lookup PRIVATE m_pipeline m_ui m_path)

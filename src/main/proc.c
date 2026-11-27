@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -73,16 +74,26 @@ bool proc_dir_on_path(const char *dir)
 
 long proc_run(const char *const argv[], int timeout_ms, char **out)
 {
-    return proc_run_env(argv, NULL, timeout_ms, out);
+    return proc_run_env(argv, NULL, NULL, timeout_ms, out);
 }
 
 long proc_run_env(const char *const argv[], char *const env[],
-    int timeout_ms, char **out)
+    const char *cwd, int timeout_ms, char **out)
 {
+    // a caller that wants no output must not be handed a null place to write to
+    char *sink = NULL;
+    if (out == NULL) out = &sink;
     *out = NULL;
     // resolve before forking so a missing program fails with -1, not a 127 from the child
     char *exe = proc_find_executable(argv[0]);
     if (exe == NULL) return -1;
+    // likewise for the cwd: checking here means a caller that asked to run
+    // somewhere specific never silently ran in ours
+    struct stat sb;
+    if (cwd != NULL && (stat(cwd, &sb) != 0 || !S_ISDIR(sb.st_mode))) {
+        free(exe);
+        return -1;
+    }
 
     int fds[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
@@ -92,6 +103,7 @@ long proc_run_env(const char *const argv[], char *const env[],
     if (pid == 0) {
         signal(SIGPIPE, SIG_DFL); // the ignore is ours, not the child's
         setpgid(0, 0);
+        if (cwd != NULL && chdir(cwd) != 0) _exit(127);
         dup2(fds[1], STDOUT_FILENO);
         dup2(fds[1], STDERR_FILENO);
         close(fds[0]);
@@ -164,8 +176,9 @@ long proc_run_env(const char *const argv[], char *const env[],
         poll(NULL, 0, 20); // nfds 0: portable sleep, poll is already linked
     }
     close(fds[0]);
-    if (!killed && WIFSIGNALED(status)) { free(buf); return -1; }
+    if (!killed && WIFSIGNALED(status)) { free(buf); free(sink); return -1; }
     buf[n] = '\0';
     *out = buf;
+    free(sink);
     return killed ? -2 : (long)WEXITSTATUS(status);
 }
