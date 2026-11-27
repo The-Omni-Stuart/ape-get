@@ -100,7 +100,12 @@ int pipeline_update(const cmd_opts *o, state_ctx *st)
         }
     int rv = 1;
     if (prev == NULL) {
-        char *d = path_fmt("Release %s is not found.", ref);
+        // the bare word `ape-get` is how a portable run asks to update
+        // itself; naming the self ref hides that setup is the missing step
+        char *d = strcmp(prov, "self") == 0
+            ? strdup("ape-get is not registered here; run `ape-get setup`"
+                " to install it")
+            : path_fmt("Release %s is not found.", ref);
         ui_msg(stderr, UI_ERROR, "%s", d != NULL ? d : "not found");
         free(d);
     } else if (prev->locked) {
